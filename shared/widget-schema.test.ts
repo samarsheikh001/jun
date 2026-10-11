@@ -89,6 +89,9 @@ test("W-30: named states: ours, else ChatKit Studio's; each must fit the schema 
   const encoded = Buffer.from(JSON.stringify(studio)).toString("base64url");
   const fromStudio = parseWidgetFile("w", JSON.stringify({ version: "1.0", template, encodedWidget: encoded }));
   assert.deepEqual(fromStudio.states, [{ name: "Landed", data: { city: "https://widgets.chatkit.studio/img.png" } }], "Studio's images point at Studio, as for its default");
+  const removed = parseWidgetFile("w", JSON.stringify({ version: "1.0", template, encodedWidget: encoded, states: [] }));
+  assert.equal(removed.states, undefined, "an own list, even empty, replaces Studio's");
+  assert.deepEqual(removed.sample, { city: "SF" }, "Studio's default still fills in");
 
   const schema = { type: "object", properties: { city: { type: "string" } }, required: ["city"] };
   assert.doesNotThrow(() => checkExamples(parseWidgetFile("w", JSON.stringify({ version: "1.0", template, sample: { city: "SF" }, jsonSchema: schema, states: [{ name: "Delayed", data: { city: "LA" } }] }))));

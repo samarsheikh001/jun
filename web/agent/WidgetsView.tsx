@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { readYaml } from "../lib/agentFiles.ts";
 import { useThemePref } from "../lib/theme.ts";
-import { parseWidgetFile, previewSummary, previewWidget, renderWidget, starterWidget, widgetSchema, type WidgetNode } from "../../shared/widgets.ts";
+import { MAX_WIDGET_STATES, parseWidgetFile, previewSummary, previewWidget, renderWidget, starterWidget, widgetSchema, type WidgetNode } from "../../shared/widgets.ts";
 import { schemaFromSample, schemaParams, withDescription, withRequired, type JsonSchema } from "../../shared/widget-schema.ts";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Field as UiField, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import type { WidgetTemplate } from "./widget-templates.ts";
-import { ExternalLinkIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon, UploadIcon } from "../components/icons.tsx";
+import { ExternalLinkIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon, TrashIcon, UploadIcon } from "../components/icons.tsx";
 import { formatTemplate } from "../../shared/widget-ai.ts";
 import { CodeArea } from "./CodeArea.tsx";
 import { WidgetChat } from "./AiChat.tsx";
@@ -49,20 +49,22 @@ function usedBy(cfg: AgentConfig, name: string): string[] {
     .map((p) => TOOL.exec(p)![1]!);
 }
 
-function render(name: string, text: string, state?: string): { root: WidgetNode | null; problem: string | null } {
+type WidgetState = { name: string; data: Record<string, unknown> };
+
+function render(name: string, text: string, state = -1): { root: WidgetNode | null; problem: string | null } {
   try {
     // W-30: a named state draws with its own data.
-    const named = state ? parseWidgetFile(name, text).states?.find((s) => s.name === state) : undefined;
+    const named = state >= 0 ? parseWidgetFile(name, text).states?.[state] : undefined;
     return { root: named ? renderWidget(parseWidgetFile(name, text), named.data) : previewWidget(name, text), problem: null };
   } catch (error) {
     return { root: null, problem: (error as Error).message };
   }
 }
 
-/** W-30: the names of a widget file's states (Studio's or ours), [] when it has none or doesn't parse. */
-function stateNames(name: string, text: string): string[] {
+/** W-30: a widget file's named states (Studio's or ours), [] when it has none or doesn't parse. */
+function statesOf(name: string, text: string): WidgetState[] {
   try {
-    return (parseWidgetFile(name, text).states ?? []).map((s) => s.name);
+    return parseWidgetFile(name, text).states ?? [];
   } catch {
     return [];
   }
@@ -251,7 +253,8 @@ function TemplateTile({ template, onOpen }: { template: WidgetTemplate; onOpen: 
         </div>
       </div>
       <div className="agent-tile-text">
-        <button type="button" className="agent-tile-link" onClick={onOpen}>
+        {/* data-plain: the desk's pressed nudge (a transform) would shrink the whole-tile ::after to the name mid-click. */}
+        <button type="button" className="agent-tile-link" data-plain onClick={onOpen}>
           {template.name}
         </button>
         <span className="agent-tile-sub">{template.description}</span>
@@ -368,11 +371,11 @@ function withKey(text: string, key: string, value: unknown): string {
 function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string }) {
   const text = cfg.draft[path] ?? "";
   const [theme, setTheme] = useState<Theme>(pageTheme);
-  // W-30: which example the preview draws: the default ("") or a named state.
-  const states = stateNames(name, text);
-  const [state, setState] = useState("");
-  const shown = states.includes(state) ? state : "";
-  const { root, problem } = render(name, text, shown || undefined);
+  // W-30: which example the preview draws and Code edits: the default (-1) or a named state, as in Studio.
+  const states = statesOf(name, text);
+  const [state, setState] = useState(-1);
+  const shown = state < states.length ? state : -1;
+  const { root, problem } = render(name, text, shown);
 
   return (
     <Studio
@@ -387,16 +390,16 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
       }}
       panes={[
         ...(canEdit ? [{ id: "ai" as const, label: "AI", content: <WidgetChat cfg={cfg} path={path} name={name} /> }] : []),
-        { id: "code" as const, label: "Code", content: <WidgetCode cfg={cfg} path={path} canEdit={canEdit} /> },
+        { id: "code" as const, label: "Code", content: <WidgetCode cfg={cfg} path={path} canEdit={canEdit} states={states} state={shown} setState={setState} /> },
         { id: "details" as const, label: "Details", content: <WidgetDetails cfg={cfg} path={path} name={name} canEdit={canEdit} /> },
       ]}
       right={
         <section className="agent-stage agent-wed-canvas" data-preview={theme} aria-label="Preview">
           {states.length > 0 && (
             <div className="agent-canvas-state">
-              <NativeSelect size="sm" aria-label="Example to preview" value={shown} onChange={(e) => setState(e.target.value)}>
-                <NativeSelectOption value="">Default</NativeSelectOption>
-                {states.map((s) => <NativeSelectOption key={s} value={s}>{s}</NativeSelectOption>)}
+              <NativeSelect size="sm" aria-label="Example to preview" value={String(shown)} onChange={(e) => setState(Number(e.target.value))}>
+                <NativeSelectOption value="-1">Default</NativeSelectOption>
+                {states.map((s, i) => <NativeSelectOption key={i} value={String(i)}>{s.name}</NativeSelectOption>)}
               </NativeSelect>
             </div>
           )}
@@ -411,41 +414,45 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
           <div className="agent-stage-card">
             {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} theme={theme} /> : <p className="agent-canvas-error">{problem}</p>}
           </div>
-          <p className="agent-canvas-caption">{shown ? `State "${shown}", as a customer sees it` : "With example data, as a customer sees it"}</p>
+          <p className="agent-canvas-caption">{shown >= 0 ? `State "${states[shown]!.name}", as a customer sees it` : "With example data, as a customer sees it"}</p>
         </section>
       }
     />
   );
 }
 
-/** Code: the template (indented) over the example data and the summary line, like ChatKit Studio. */
-function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; canEdit: boolean }) {
+/**
+ * Code: the template (indented) over the data, like ChatKit Studio: Default and each named state as
+ * tabs (+ adds one, copying the default), then Schema, Summary and the whole file.
+ */
+function WidgetCode({ cfg, path, canEdit, states, state, setState }: { cfg: AgentConfig; path: string; canEdit: boolean; states: WidgetState[]; state: number; setState: (i: number) => void }) {
   const text = cfg.draft[path] ?? "";
   const file = readFile(text);
   const template = typeof file?.template === "string" ? file.template : "";
-  const sampleJson = file?.sample === undefined ? "{\n}" : JSON.stringify(file.sample, null, 2);
   const summary = typeof file?.summary === "string" ? file.summary : "";
-  const [bottom, setBottom] = useState<"sample" | "schema" | "states" | "summary" | "file">("sample");
+  const [bottom, setBottom] = useState<"data" | "schema" | "summary" | "file">("data");
 
   // What the fields show: kept while you type, replaced when the file changes elsewhere (the AI, Undo, Discard).
   const [tpl, setTpl] = useState(() => formatTemplate(template));
   const wroteTpl = useRef(template);
-  const [sample, setSample] = useState(sampleJson);
-  const wroteSample = useRef(sampleJson);
-  const [sampleError, setSampleError] = useState<string | null>(null);
   useEffect(() => {
     if (template !== wroteTpl.current) {
       wroteTpl.current = template;
       setTpl(formatTemplate(template));
     }
   }, [template]);
-  useEffect(() => {
-    if (sampleJson !== wroteSample.current) {
-      wroteSample.current = sampleJson;
-      setSample(sampleJson);
-      setSampleError(null);
-    }
-  }, [sampleJson]);
+  const pick = (i: number) => {
+    setState(i);
+    setBottom("data");
+  };
+  const addState = () => {
+    const taken = new Set(states.map((s) => s.name));
+    let n = states.length + 1;
+    while (taken.has(`State ${n}`)) n++;
+    const sample = typeof file?.sample === "object" && file.sample !== null ? structuredClone(file.sample as Record<string, unknown>) : {};
+    cfg.setFile(path, withKey(text, "states", [...states, { name: `State ${n}`, data: sample }]));
+    pick(states.length);
+  };
 
   if (!file) {
     return (
@@ -472,35 +479,24 @@ function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; ca
       </div>
       <div className="wcode-bottom">
         <div className="wcode-tabs" role="tablist" aria-label="Data">
-          <button type="button" role="tab" aria-selected={bottom === "sample"} onClick={() => setBottom("sample")}>Example data</button>
+          <button type="button" role="tab" aria-selected={bottom === "data" && state < 0} onClick={() => pick(-1)}>Default</button>
+          {states.map((s, i) => (
+            <button key={i} type="button" role="tab" aria-selected={bottom === "data" && state === i} onClick={() => pick(i)}>{s.name}</button>
+          ))}
+          {canEdit && states.length < MAX_WIDGET_STATES && (
+            <button type="button" className="wcode-add" aria-label="Add a state" title="Add a state: another example to preview and check" onClick={addState}>
+              <PlusIcon />
+            </button>
+          )}
+          <span className="wcode-tabs-gap" />
           <button type="button" role="tab" aria-selected={bottom === "schema"} onClick={() => setBottom("schema")}>Schema</button>
-          <button type="button" role="tab" aria-selected={bottom === "states"} onClick={() => setBottom("states")}>States</button>
           <button type="button" role="tab" aria-selected={bottom === "summary"} onClick={() => setBottom("summary")}>Summary</button>
           <button type="button" role="tab" aria-selected={bottom === "file"} onClick={() => setBottom("file")}>Whole file</button>
         </div>
-        {bottom === "sample" ? (
-          <>
-            <CodeArea
-              label="Example data"
-              value={sample}
-              readOnly={!canEdit}
-              onChange={(next) => {
-                setSample(next);
-                try {
-                  const value = JSON.parse(next) as unknown;
-                  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Example data is a JSON object: { … }.");
-                  setSampleError(null);
-                  wroteSample.current = JSON.stringify(value, null, 2);
-                  cfg.setFile(path, withKey(text, "sample", value));
-                } catch (error) {
-                  setSampleError(error instanceof SyntaxError ? "Not valid JSON yet." : (error as Error).message);
-                }
-              }}
-            />
-            <p className={sampleError ? "wcode-hint error" : "wcode-hint"}>{sampleError ?? "Data shaped like your action's response; the preview uses it."}</p>
-          </>
-        ) : bottom === "schema" || bottom === "states" ? (
-          <JsonKey key={bottom} cfg={cfg} path={path} canEdit={canEdit} file={file} which={bottom} />
+        {bottom === "data" ? (
+          <ExampleData key={state} cfg={cfg} path={path} canEdit={canEdit} file={file} states={states} state={state} setState={setState} />
+        ) : bottom === "schema" ? (
+          <SchemaCode cfg={cfg} path={path} canEdit={canEdit} file={file} />
         ) : bottom === "summary" ? (
           <div className="wcode-summary">
             <Input
@@ -524,19 +520,91 @@ function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; ca
 }
 
 /**
- * W-30: Code's Schema and States tabs: the file's `jsonSchema` (shown worked out from the example
- * data when it has none; editing it makes it the widget's own) or `states` (`[{ name, data }]`), as
- * JSON, written to the file once it parses.
+ * W-30: one example's data, as in Studio's Default and state tabs: the file's `sample`, or a named
+ * state's data (written to our own `states`, which then replaces Studio's). A state can be renamed or
+ * removed. Written to the file once it parses.
  */
-function JsonKey({ cfg, path, canEdit, file, which }: { cfg: AgentConfig; path: string; canEdit: boolean; file: Record<string, unknown>; which: "schema" | "states" }) {
+function ExampleData({ cfg, path, canEdit, file, states, state, setState }: { cfg: AgentConfig; path: string; canEdit: boolean; file: Record<string, unknown>; states: WidgetState[]; state: number; setState: (i: number) => void }) {
   const text = cfg.draft[path] ?? "";
-  const key = which === "schema" ? "jsonSchema" : "states";
-  const own = file[key] !== undefined && !(which === "schema" && typeof file.jsonSchema === "object" && file.jsonSchema !== null && Object.keys(file.jsonSchema).length === 0);
-  const studioStates = which === "states" && !own ? stateNames("w", text) : [];
-  const current =
-    which === "schema"
-      ? JSON.stringify(own ? file.jsonSchema : schemaFromSample(file.sample ?? {}), null, 2)
-      : JSON.stringify(own ? file.states : studioStates.length ? (parseWidgetFile("w", text).states ?? []) : [], null, 2);
+  const named = state >= 0 ? states[state] : undefined;
+  const current = JSON.stringify(named ? named.data : (file.sample ?? {}), null, 2);
+  const [value, setValue] = useState(current);
+  const wrote = useRef(current);
+  const [error, setError] = useState<string | null>(null);
+  const [title, setTitle] = useState(named?.name ?? "");
+  useEffect(() => {
+    if (current !== wrote.current) {
+      wrote.current = current;
+      setValue(current);
+      setError(null);
+    }
+  }, [current]);
+  // No states left: the key goes, unless an empty list must hide Studio's own.
+  const writeStates = (next: WidgetState[]) => cfg.setFile(path, withKey(text, "states", next.length || typeof file.encodedWidget === "string" ? next : undefined));
+  return (
+    <>
+      {named && (
+        <div className="wcode-state">
+          <Input
+            aria-label="State name"
+            value={title}
+            readOnly={!canEdit}
+            maxLength={40}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              const name = e.target.value.trim();
+              if (name) writeStates(states.map((s, i) => (i === state ? { ...s, name } : s)));
+            }}
+          />
+          {canEdit && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Remove this state"
+              title="Remove this state"
+              onClick={() => {
+                writeStates(states.filter((_, i) => i !== state));
+                setState(-1);
+              }}
+            >
+              <TrashIcon />
+            </Button>
+          )}
+        </div>
+      )}
+      <CodeArea
+        label={named ? `${named.name} data` : "Example data"}
+        value={value}
+        readOnly={!canEdit}
+        onChange={(next) => {
+          setValue(next);
+          try {
+            const parsed = JSON.parse(next) as unknown;
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Example data is a JSON object: { … }.");
+            setError(null);
+            wrote.current = JSON.stringify(parsed, null, 2);
+            if (named) writeStates(states.map((s, i) => (i === state ? { ...s, data: parsed as Record<string, unknown> } : s)));
+            else cfg.setFile(path, withKey(text, "sample", parsed));
+          } catch (e) {
+            setError(e instanceof SyntaxError ? "Not valid JSON yet." : (e as Error).message);
+          }
+        }}
+      />
+      <p className={error ? "wcode-hint error" : "wcode-hint"}>
+        {error ?? (named ? "Another example to preview the card with. It must fit the schema and draw." : "Data shaped like your action's response; the preview uses it.")}
+      </p>
+    </>
+  );
+}
+
+/**
+ * W-30: Code's Schema tab: the file's `jsonSchema` (shown worked out from the example data when it
+ * has none; editing it makes it the widget's own), as JSON, written to the file once it parses.
+ */
+function SchemaCode({ cfg, path, canEdit, file }: { cfg: AgentConfig; path: string; canEdit: boolean; file: Record<string, unknown> }) {
+  const text = cfg.draft[path] ?? "";
+  const own = typeof file.jsonSchema === "object" && file.jsonSchema !== null && Object.keys(file.jsonSchema).length > 0;
+  const current = JSON.stringify(own ? file.jsonSchema : schemaFromSample(file.sample ?? {}), null, 2);
   const [value, setValue] = useState(current);
   const wrote = useRef(current);
   const [error, setError] = useState<string | null>(null);
@@ -547,27 +615,23 @@ function JsonKey({ cfg, path, canEdit, file, which }: { cfg: AgentConfig; path: 
       setError(null);
     }
   }, [current]);
-  const hint =
-    which === "schema"
-      ? own
-        ? "The widget's parameters as JSON Schema (ChatKit Studio's Schema tab). Actions and the AI fill the card in this shape."
-        : "Worked out from the example data. Edit it to make it the widget's own, with descriptions and optional fields."
-      : 'More examples to preview and check, like Studio\'s states: [{ "name": "Delayed", "data": { … } }].';
+  const hint = own
+    ? "The widget's parameters as JSON Schema (ChatKit Studio's Schema tab). Actions and the AI fill the card in this shape."
+    : "Worked out from the example data. Edit it to make it the widget's own, with descriptions and optional fields.";
   return (
     <>
       <CodeArea
-        label={which === "schema" ? "Schema" : "States"}
+        label="Schema"
         value={value}
         readOnly={!canEdit}
         onChange={(next) => {
           setValue(next);
           try {
             const parsed = JSON.parse(next) as unknown;
-            if (which === "schema" && (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))) throw new Error("The schema is a JSON object: { \"type\": \"object\", … }.");
-            if (which === "states" && !Array.isArray(parsed)) throw new Error('States are a list: [{ "name": …, "data": { … } }].');
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("The schema is a JSON object: { \"type\": \"object\", … }.");
             setError(null);
             wrote.current = JSON.stringify(parsed, null, 2);
-            cfg.setFile(path, withKey(text, key, parsed));
+            cfg.setFile(path, withKey(text, "jsonSchema", parsed));
           } catch (e) {
             setError(e instanceof SyntaxError ? "Not valid JSON yet." : (e as Error).message);
           }

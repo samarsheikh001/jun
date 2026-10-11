@@ -230,11 +230,13 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
           .map((s) => ({ name: (s.name as string).trim() || "State", data: studioImages(s[key]) as Record<string, unknown> }))
       : [];
   let states = named(file.states, "data");
-  if (typeof file.encodedWidget === "string" && (!sample || !states.length)) {
+  // An own list, even an empty one, replaces Studio's (removing the last state in the editor).
+  const ownStates = Array.isArray(file.states);
+  if (typeof file.encodedWidget === "string" && (!sample || !ownStates)) {
     try {
       const studio = JSON.parse(decodeBase64Url(file.encodedWidget)) as unknown;
       if (!sample && isRecord(studio) && isRecord(studio.defaultState)) sample = studioImages(studio.defaultState) as Record<string, unknown>;
-      if (!states.length && isRecord(studio)) {
+      if (!ownStates && isRecord(studio)) {
         const list = typeof studio.states === "string" ? (JSON.parse(studio.states) as unknown) : studio.states;
         states = named(list, "value");
       }
