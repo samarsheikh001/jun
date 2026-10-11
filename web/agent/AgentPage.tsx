@@ -89,8 +89,8 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         className="agent-tabs"
         actions={
           tab !== "settings" && <>
-            {/* A widget's page has its own AI / Code / Details tabs. */}
-            {!(tab === "widgets" && item) && (
+            {/* An item's page (a widget, an action, a procedure) has its own AI / Code tabs. */}
+            {!(item && (tab === "widgets" || tab === "actions" || tab === "procedures")) && (
               <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
                 <TabsList className="kb-tabs agent-view-switch" aria-label="View">
                   <TabsTrigger value="form">Form</TabsTrigger>

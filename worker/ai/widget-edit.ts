@@ -1,6 +1,9 @@
 import { applyWidgetEdit, parseWidgetEdit, widgetEditInput, widgetEditPrompt, type WidgetEditTurn } from "../../shared/widget-ai.ts";
 import { CHATKIT_AUTHORING_GUIDE } from "./chatkit-authoring.ts";
-import { MAX_WIDGET_JSON, previewWidget } from "../../shared/widgets.ts";
+import { describeActions } from "../../shared/action-brief.ts";
+import { checkExamples, MAX_WIDGET_JSON, parseWidgetFile, previewWidget, toolButtonInputs } from "../../shared/widgets.ts";
+import { actionBriefs } from "./agent-file-edit.ts";
+import { parseConfig, type ConfigFiles } from "./config.ts";
 import { completeText, createModel, loadAiSettings } from "./providers.ts";
 import { recordUsage } from "./topics.ts";
 
@@ -27,10 +30,18 @@ export interface WidgetEditResult {
   changed: boolean;
 }
 
+/** W-27: buttons whose action would run without a required input, said in the reply. */
+function inputsNote(buttons: ReturnType<typeof toolButtonInputs>, reply: string): string {
+  const gaps = buttons.filter((b) => b.missing.length);
+  if (!gaps.length) return reply;
+  const parts = gaps.map((b) => `"${b.label}" runs ${b.tool} without ${b.missing.map((m) => (m.like ? `${m.name} (the field ${m.like} isn't named ${m.name})` : m.name)).join(", ")}`);
+  return `${reply} Note: ${parts.join("; ")}.`;
+}
+
 export async function editWidget(
   env: Env,
   workspaceId: string,
-  input: { name: string; file: string; message: string; history: WidgetEditTurn[] },
+  input: { name: string; file: string; message: string; history: WidgetEditTurn[]; files?: ConfigFiles },
 ): Promise<WidgetEditResult | { skipped: WidgetEditSkip }> {
   const [settings, usage] = await Promise.all([
     loadAiSettings(env, workspaceId),
@@ -47,14 +58,20 @@ export async function editWidget(
   }
   const template = typeof current.template === "string" ? current.template : "";
   const summary = typeof current.summary === "string" ? current.summary : null;
+  const schema = typeof current.jsonSchema === "object" && current.jsonSchema !== null && !Array.isArray(current.jsonSchema) && Object.keys(current.jsonSchema).length ? (current.jsonSchema as Record<string, unknown>) : undefined;
 
-  const model = createModel(env, workspaceId, settings, "widgets");
+  // W-27: the desk's actions (from the draft), so buttons and fields fit the actions they run.
+  const config = input.files ? parseConfig(input.files).config : null;
+  const actions = config ? describeActions(actionBriefs(config)) : undefined;
+  const inputsOf = (tool: string) => config?.tools.find((t) => t.name === tool)?.input ?? null;
+
+  const model = createModel(env, workspaceId, settings, "editor");
   let failed: { template: string; message: string } | undefined;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     const result = await completeText({
       model: model.model,
       ...model.prompt(PROMPT),
-      messages: [{ role: "user", content: widgetEditInput({ name: input.name, template, sample: current.sample, summary, history: input.history, message: input.message, ...(failed ? { error: failed } : {}) }) }],
+      messages: [{ role: "user", content: widgetEditInput({ name: input.name, template, sample: current.sample, summary, ...(schema ? { schema } : {}), ...(actions ? { actions } : {}), history: input.history, message: input.message, ...(failed ? { error: failed } : {}) }) }],
       maxOutputTokens: 6000,
       temperature: 0.2,
       abortSignal: AbortSignal.timeout(EDIT_TIMEOUT_MS),
@@ -74,13 +91,16 @@ export async function editWidget(
     const changed =
       edit.template.trim() !== template.trim() ||
       (edit.sample !== undefined && JSON.stringify(edit.sample) !== JSON.stringify(current.sample)) ||
-      (edit.summary !== undefined && edit.summary !== (summary ?? ""));
+      (edit.summary !== undefined && edit.summary !== (summary ?? "")) ||
+      (edit.schema !== undefined && JSON.stringify(edit.schema) !== JSON.stringify(schema ?? null));
     if (!changed) return { reply: edit.reply, file: input.file, changed: false };
     const file = applyWidgetEdit(input.file, edit);
     try {
       if (file.length > MAX_WIDGET_JSON * 2) throw new Error("The widget is too big.");
-      previewWidget(input.name, file);
-      return { reply: edit.reply, file, changed: true };
+      const tree = previewWidget(input.name, file);
+      // W-30: the example data and states must still fit the widget's parameters.
+      checkExamples(parseWidgetFile(input.name, file));
+      return { reply: config ? inputsNote(toolButtonInputs(tree, inputsOf), edit.reply) : edit.reply, file, changed: true };
     } catch (error) {
       failed = { template: edit.template, message: (error as Error).message };
     }

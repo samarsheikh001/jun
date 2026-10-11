@@ -7,6 +7,7 @@
 // the tree is drawn by our own renderer (web/widget/chatkit/). Pure: Worker, widget and tests.
 
 import { compileTemplate, TemplateError, type Template } from "./jinja.ts";
+import { checkData, schemaFromSample, type JsonSchema } from "./widget-schema.ts";
 
 /** Every component the renderer knows. Anything else makes the widget invalid. */
 export const WIDGET_COMPONENTS = new Set([
@@ -81,6 +82,9 @@ export const TOOL_ACTION = /^tool:([a-z][a-z0-9_]*)$/;
 /** W-17: `open_url` with `payload.url` opens an https link (checkout, invoice); handled in the browser, never sent. */
 export const OPEN_URL = "open_url";
 
+/** W-27: `dismiss` folds the card on the visitor's side (our own type, like `open_url`); never sent. */
+export const DISMISS = "dismiss";
+
 /** The https URL an `open_url` action opens, or null. */
 export function actionUrl(action: WidgetActionConfig): string | null {
   if (action.type !== OPEN_URL || !isRecord(action.payload) || typeof action.payload.url !== "string") return null;
@@ -100,8 +104,10 @@ export interface WidgetActionMeta {
   /**
    * W-17: a `tool:<name>` action ran that tool. `output` is never stored here (meta reaches the
    * visitor): the Conversation object keeps it for the AI's history, agents see it in the audit log.
+   * `done` (W-27): the action's `widget_done` line, which answered the press (on the card and under
+   * the press), so the AI takes no turn for it. It's what the visitor sees anyway.
    */
-  tool?: { name: string; status: "ok" | "error"; output?: string };
+  tool?: { name: string; status: "ok" | "error"; output?: string; done?: string };
 }
 
 /** A parsed `widgets/<name>.widget`. */
@@ -114,7 +120,43 @@ export interface WidgetSpec {
   summary?: Template;
   /** The data the widget was designed with (ChatKit Studio's default state), when the file has it. */
   sample?: Record<string, unknown>;
+  /** W-29 (ours, `"aiFill": true`): the AI may show this card with data it fills in itself (`show_widget`). */
+  aiFill?: boolean;
+  /** W-30: the data's JSON Schema (ChatKit Studio's `jsonSchema`), when the file has one. */
+  schema?: JsonSchema;
+  /** W-30: more named examples (ChatKit Studio's states; ours: `states: [{ name, data }]`). */
+  states?: { name: string; data: Record<string, unknown> }[];
 }
+
+/**
+ * W-30: the example data and every named state must fit the widget's schema (when it has its own)
+ * and draw the card. Throws WidgetError naming which one and why.
+ */
+export function checkExamples(spec: WidgetSpec): void {
+  const examples = [...(spec.sample ? [{ label: "Example data", data: spec.sample }] : []), ...(spec.states ?? []).map((s) => ({ label: `State "${s.name}"`, data: s.data }))];
+  for (const { label, data } of examples) {
+    const problems = spec.schema ? checkData(spec.schema, data) : [];
+    if (problems.length) throw new WidgetError(`${label} doesn't fit the schema: ${problems.join("; ")}.`);
+    try {
+      renderWidget(spec, data);
+    } catch (error) {
+      throw new WidgetError(`${label}: ${(error as Error).message}`);
+    }
+  }
+}
+
+/** W-30: at most this many named states per widget. */
+export const MAX_WIDGET_STATES = 10;
+
+/** W-30: a widget's parameters: its own schema, else one worked out from its example data. */
+export function widgetSchema(spec: Pick<WidgetSpec, "schema" | "sample">): JsonSchema | null {
+  return spec.schema ?? (spec.sample ? schemaFromSample(spec.sample) : null);
+}
+
+/** W-29: the AI's built-in tool that shows a card it fills in itself (only widgets with `aiFill`). */
+export const SHOW_WIDGET_TOOL = "show_widget";
+
+
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -179,15 +221,39 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
   }
   // `sample`: data to preview and check it with (ours; ChatKit ignores it). Else ChatKit Studio's default state.
   let sample: Record<string, unknown> | undefined = isRecord(file.sample) ? file.sample : undefined;
-  if (!sample && typeof file.encodedWidget === "string") {
+  // W-30: named states: ours (`states: [{ name, data }]`), else ChatKit Studio's (`{ name, value }`).
+  const named = (list: unknown, key: "data" | "value") =>
+    Array.isArray(list)
+      ? list
+          .filter((s): s is Record<string, unknown> => isRecord(s) && typeof s.name === "string" && isRecord(s[key]))
+          .slice(0, MAX_WIDGET_STATES)
+          .map((s) => ({ name: (s.name as string).trim() || "State", data: studioImages(s[key]) as Record<string, unknown> }))
+      : [];
+  let states = named(file.states, "data");
+  if (typeof file.encodedWidget === "string" && (!sample || !states.length)) {
     try {
       const studio = JSON.parse(decodeBase64Url(file.encodedWidget)) as unknown;
-      if (isRecord(studio) && isRecord(studio.defaultState)) sample = studioImages(studio.defaultState) as Record<string, unknown>;
+      if (!sample && isRecord(studio) && isRecord(studio.defaultState)) sample = studioImages(studio.defaultState) as Record<string, unknown>;
+      if (!states.length && isRecord(studio)) {
+        const list = typeof studio.states === "string" ? (JSON.parse(studio.states) as unknown) : studio.states;
+        states = named(list, "value");
+      }
     } catch {
       // not ours to judge: the sample is only for checking
     }
   }
-  return { name, title: typeof file.name === "string" && file.name.trim() ? file.name.trim() : name, template, ...(summary ? { summary } : {}), ...(sample ? { sample } : {}) };
+  // W-30: the data's schema: Studio's `jsonSchema` (an empty one says nothing).
+  const schema = isRecord(file.jsonSchema) && (isRecord(file.jsonSchema.properties) || typeof file.jsonSchema.type === "string") ? file.jsonSchema : undefined;
+  return {
+    name,
+    title: typeof file.name === "string" && file.name.trim() ? file.name.trim() : name,
+    template,
+    ...(summary ? { summary } : {}),
+    ...(sample ? { sample } : {}),
+    ...(file.aiFill === true ? { aiFill: true } : {}),
+    ...(schema ? { schema } : {}),
+    ...(states.length ? { states } : {}),
+  };
 }
 
 /**
@@ -403,7 +469,7 @@ export function matchWidgetAction(
   item?: unknown,
 ): { label: string; action: WidgetActionConfig; values: Record<string, string | boolean>; item?: string } | null {
   const want = actionOf(sent);
-  if (!want || want.type === OPEN_URL) return null;
+  if (!want || want.type === OPEN_URL || want.type === DISMISS) return null;
   const same = widgetActions(root).filter((a) => a.action.type === want.type && sameJson(a.action.payload, want.payload));
   // The same action can sit in several rows ("Add" with the same payload): the row the visitor says, else the first.
   const hit = same.find((a) => (a.item ?? null) === (typeof item === "string" ? item : null)) ?? same[0];
@@ -482,6 +548,93 @@ export function toolActionInput(action: WidgetActionConfig, values: Record<strin
     else out[name] = typeof v === "string" ? v : JSON.stringify(v);
   }
   return out;
+}
+
+/** W-27: a control that runs an action (`tool:<name>`), and which of the action's inputs a press fills. */
+export interface ToolButtonInputs {
+  /** The button's label, or the field's label or name for a field's `onChangeAction` (`field`). */
+  label: string;
+  field?: true;
+  tool: string;
+  /** The action's inputs a press fills: a field of the card or a key of the button's payload. */
+  sends: string[];
+  /** Required inputs nothing fills (the action runs without them); `like`: a field with a close name. */
+  missing: { name: string; like?: string }[];
+}
+
+const loose = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** Edit distance, for "did you mean" (short names only). */
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const next = Math.min(row[j]! + 1, row[j - 1]! + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = row[j]!;
+      row[j] = next;
+    }
+  }
+  return row[b.length]!;
+}
+
+/**
+ * W-27: for every control of a rendered card that runs an action, which of the action's inputs a
+ * press fills. A press sends every field of the card plus the button's payload; the action keeps
+ * the names it takes (toolActionInput), so a required input with no field or payload key of that
+ * exact name is sent empty. `inputs(tool)` is the action's inputs, or null when there's no such action.
+ */
+export function toolButtonInputs(root: WidgetNode, inputs: (tool: string) => Record<string, { required: boolean }> | null): ToolButtonInputs[] {
+  const fields = [...widgetFields(root)];
+  const controls: { label: string; action: WidgetActionConfig; field?: true }[] = widgetActions(root).map((a) => ({ label: a.label, action: a.action }));
+  for (const node of walk(root)) {
+    const change = isClientAction(node.onChangeAction) ? null : actionOf(node.onChangeAction);
+    if (change) controls.push({ label: typeof node.label === "string" && node.label ? node.label : String(node.name ?? node.type), action: change, field: true });
+  }
+  const out: ToolButtonInputs[] = [];
+  const seen = new Set<string>();
+  for (const { label, action, field } of controls) {
+    const tool = TOOL_ACTION.exec(action.type)?.[1];
+    const takes = tool ? inputs(tool) : null;
+    if (!tool || !takes) continue;
+    const sent = new Set([...fields, ...(isRecord(action.payload) ? Object.keys(action.payload) : [])]);
+    const sends = Object.keys(takes).filter((n) => sent.has(n));
+    const missing = Object.entries(takes)
+      .filter(([n, spec]) => spec.required && !sent.has(n))
+      .map(([name]) => {
+        // A field that isn't one of the action's inputs, with nearly this name ("e_mail", "Email").
+        const like = fields.find((f) => !(f in takes) && (loose(f) === loose(name) || (name.length >= 4 && distance(loose(f), loose(name)) <= 2)));
+        return like ? { name, like } : { name };
+      });
+    // A list's rows repeat the same button: report it once.
+    const key = `${label}\n${tool}\n${sends.join()}\n${missing.map((m) => m.name).join()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ label, tool, sends, missing, ...(field ? { field } : {}) });
+  }
+  return out;
+}
+
+/** W-27: the most an action's `widget_done` / `widget_failed` line shows (after rendering). */
+export const MAX_ACTION_LINE = 140;
+
+/**
+ * W-27: an action's `widget_done` or `widget_failed` line for a press: a Jinja template over what
+ * the visitor entered and the action's JSON result (its fields win), as one line of plain text cut
+ * at MAX_ACTION_LINE. "" when it renders empty or fails: the card then behaves as without one.
+ */
+export function renderActionLine(template: Template, values: Record<string, unknown>, result: unknown): string {
+  let text: string;
+  try {
+    text = template.render({ ...values, ...(result === undefined || result === null ? {} : widgetData(result)) });
+  } catch {
+    return "";
+  }
+  // A value left empty ("Sorry {{ name }}, …") leaves no stray space before the punctuation.
+  const line = text.replace(/\s+/g, " ").replace(/ ([,.!?;:])/g, "$1").trim();
+  if (!/[\p{L}\p{N}]/u.test(line)) return "";
+  return line.length > MAX_ACTION_LINE ? `${line.slice(0, MAX_ACTION_LINE - 1).trimEnd()}…` : line;
 }
 
 /** The visible words of a node and its children, in order (for previews and labels). */

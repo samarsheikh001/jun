@@ -6,7 +6,7 @@ import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import type { AiAnswerView } from "../components/MessageList.tsx";
 import { ActionCard } from "./action.tsx";
-import { WidgetCard, WidgetPeek, type WidgetActionEvent, type WidgetChangeEvent, type WidgetClientEvent } from "./chatkit/WidgetCard.tsx";
+import { WidgetCard, WidgetPeek, type WidgetActionEvent, type WidgetActionOutcome, type WidgetChangeEvent, type WidgetClientEvent } from "./chatkit/WidgetCard.tsx";
 
 // An AI answer in the widget: words resolve out of a blur as they stream, citations become
 // inline source chips, then copy, the cited sources and follow-up questions appear. The body is
@@ -217,7 +217,8 @@ export function AiAnswer({
   onFollowUp?: (question: string) => void;
   controls?: ActionControls;
   /** W-09: the visitor pressed one of a card's actions (saved answers only). */
-  onWidgetAction?: (messageId: string, widget: MessageWidget, event: WidgetActionEvent) => void;
+  /** May resolve with why it didn't go through (W-27: the action's widget_failed line), shown on the card. */
+  onWidgetAction?: (messageId: string, widget: MessageWidget, event: WidgetActionEvent) => void | Promise<WidgetActionOutcome>;
   /** D-51: a card action with `handler: "client"`, for the host page. */
   onWidgetClient?: (event: WidgetClientEvent) => void;
   /** D-51: a card field's `tool:<name>` `onChangeAction` (saved answers only). */

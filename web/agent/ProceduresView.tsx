@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { editFrontmatter, readFrontmatter, setBody } from "../lib/agentFiles.ts";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
-import { AddDialog, Advanced, CodeEditor, Field, ItemHead, ItemList, Problems, SKILL, TextList, Unreadable, go, humanize, slug, useCodeView } from "./parts.tsx";
+import { AddDialog, Advanced, Field, ItemIndex, Problems, SKILL, TextList, Unreadable, go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { MentionText, useMentionActions } from "./MentionText.tsx";
+import { FileStudio } from "./FileStudio.tsx";
 
-// /agent/procedures[/<name>]: skills/<name>/SKILL.md as a form: when it applies (description),
-// the steps (body), and, folded away, how the customer's app can open a chat with it (AI-20 intent).
+// /agent/procedures[/<name>]: skills/<name>/SKILL.md: when it applies (description), the steps (body),
+// and, folded away, how the customer's app can open a chat with it (AI-20 intent). /agent/procedures
+// lists them as cards; a procedure's page is laid out like a widget's (FileStudio): AI and Code on
+// the left, the form on the right (W-24).
 
 const starter = (name: string) =>
   `---\nname: ${name}\ndescription: \n---\n1. First, …\n2. Then, …\n3. Hand over to a person if …\n`;
@@ -18,25 +22,39 @@ export function ProceduresView({ cfg, canEdit, selected }: { cfg: AgentConfig; c
     .filter((x): x is { path: string; name: string } => Boolean(x.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(({ path, name }) => ({ id: name, path, label: humanize(name), sub: (readFrontmatter(cfg.draft[path]!).data?.description as string | undefined) ?? "" }));
-  const current = items.find((i) => i.id === selected) ?? items[0] ?? null;
+  const current = selected === null ? null : (items.find((i) => i.id === selected) ?? null);
+  // A procedure that's gone (removed, discarded, another version): back to the list.
+  const gone = selected !== null && current === null && cfg.state !== null;
+  useEffect(() => {
+    if (gone) go("/agent/procedures");
+  }, [gone]);
 
+  if (current) {
+    return (
+      <FileStudio
+        key={current.path}
+        cfg={cfg}
+        canEdit={canEdit}
+        path={current.path}
+        title={current.label}
+        kind="procedure"
+        back={{ path: "/agent/procedures", label: "All procedures" }}
+        form={<ProcedureForm cfg={cfg} canEdit={canEdit} path={current.path} name={current.id} />}
+      />
+    );
+  }
   return (
-    <div className="agent-split" data-picked={selected !== null && current?.id === selected ? "" : undefined}>
-      <ItemList
+    <>
+      <ItemIndex
         cfg={cfg}
         items={items}
-        selected={current?.id ?? null}
-        onSelect={(id) => go(`/agent/procedures/${id}`)}
+        base="/agent/procedures"
         onAdd={() => setAdding(true)}
         addLabel="New procedure"
         canEdit={canEdit}
-        empty="No procedures yet. A procedure is the steps the AI follows in one situation, like a refund or a plan change."
+        noun="procedures"
+        empty={{ title: "Teach the AI your way", text: "A procedure is the steps the AI follows in one situation, like a refund or a plan change." }}
       />
-      {current ? (
-        <ProcedureForm key={current.path} cfg={cfg} canEdit={canEdit} path={current.path} name={current.id} />
-      ) : (
-        <div className="agent-form agent-blank muted">Add a procedure to teach the AI how your team handles a situation step by step.</div>
-      )}
       <AddDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -55,7 +73,7 @@ export function ProceduresView({ cfg, canEdit, selected }: { cfg: AgentConfig; c
           go(`/agent/procedures/${name}`);
         }}
       />
-    </div>
+    </>
   );
 }
 
@@ -64,22 +82,13 @@ function ProcedureForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit
   const { data, body } = readFrontmatter(text);
   const set = (next: string) => cfg.setFile(path, next);
   const field = (key: string, value: unknown) => set(editFrontmatter(text, { op: "set", path: [key], value }));
-  const code = useCodeView();
-  if (code) {
-    return (
-      <section className="agent-form agent-code">
-        <ItemHead back={{ path: "/agent/procedures", label: "All procedures" }} title={humanize(name)} canEdit={canEdit} onRemove={() => { cfg.setFile(path, undefined); go("/agent/procedures"); }} />
-        <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
-      </section>
-    );
-  }
+  const actions = useMentionActions(cfg);
   const str = (key: string) => (typeof data?.[key] === "string" ? (data[key] as string) : "");
   const replies = Array.isArray(data?.replies) ? (data.replies as unknown[]).map(String) : [];
   const intent = str("intent");
 
   return (
-    <section className="agent-form">
-      <ItemHead back={{ path: "/agent/procedures", label: "All procedures" }} title={humanize(name)} canEdit={canEdit} onRemove={() => { cfg.setFile(path, undefined); go("/agent/procedures"); }} />
+    <div className="agent-form">
       {data === null ? (
         <Unreadable />
       ) : (
@@ -87,8 +96,8 @@ function ProcedureForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit
           <Textarea id="proc-when" rows={2} value={str("description")} readOnly={!canEdit} placeholder="e.g. The customer asks to change their plan." onChange={(e) => field("description", e.target.value)} />
         </Field>
       )}
-      <Field label="Steps" hint="What the AI does, in order. Say what it may offer, and when it should hand over to a person." htmlFor="proc-steps">
-        <Textarea id="proc-steps" className="agent-prose" rows={12} value={body} readOnly={!canEdit} onChange={(e) => set(setBody(text, e.target.value))} />
+      <Field label="Steps" hint="What the AI does, in order. Say what it may offer, and when it should hand over to a person. Type @ to name an action." htmlFor="proc-steps">
+        <MentionText id="proc-steps" className="mention-boxed" value={body} readOnly={!canEdit} onChange={(next) => set(setBody(text, next))} actions={actions} />
       </Field>
       {data !== null && (
         <Advanced title="Start it from a button in your app" defaultOpen={Boolean(intent)}>
@@ -115,6 +124,6 @@ function ProcedureForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit
         </Advanced>
       )}
       <Problems issues={cfg.issuesFor(path)} />
-    </section>
+    </div>
   );
 }

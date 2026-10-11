@@ -5,13 +5,12 @@ import { Input } from "@/components/ui/input.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.tsx";
 import { Field as UiField, FieldDescription, FieldError, FieldLabel, FieldTitle } from "@/components/ui/field.tsx";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
-import { ChevronRightIcon, PlusIcon, TrashIcon } from "../components/icons.tsx";
+import { ChevronRightIcon, PlusIcon, SearchIcon, TrashIcon } from "../components/icons.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import type { AgentConfig, Issue } from "./useAgentConfig.ts";
 
-// Building blocks of the Agent page's plain views: the item list, list-of-text fields, problems,
+// Building blocks of the Agent page's plain views: the index of cards, list-of-text fields, problems,
 // the save bar, and where each file lives on the page.
 
 /** "add_seats" → "Add seats". */
@@ -84,77 +83,73 @@ export interface ListItem {
   path: string;
 }
 
-/** The left column of a list view: items, an Add button, and a dot on items with problems. */
-export function ItemList({ cfg, items, selected, onSelect, onAdd, addLabel, canEdit, empty }: {
+/**
+ * A list of items as a page of cards (actions, procedures), like the Widgets gallery: search, New, and
+ * a card per item with what it does and its state. Opening one goes to its page (Studio.tsx).
+ */
+export function ItemIndex({ cfg, items, base, onAdd, addLabel, canEdit, empty, noun }: {
   cfg: AgentConfig;
   items: ListItem[];
-  selected: string | null;
-  onSelect: (id: string) => void;
-  onAdd?: () => void;
+  /** The list's URL; an item is `${base}/${id}`. */
+  base: string;
+  onAdd: () => void;
   addLabel: string;
   canEdit: boolean;
-  empty: ReactNode;
+  empty: { title: string; text: string };
+  /** "actions", "procedures": in the search box. */
+  noun: string;
 }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q ? items.filter((i) => `${i.label} ${i.id} ${i.sub ?? ""}`.toLowerCase().includes(q)) : items;
   return (
-    <aside className="agent-list">
-      {canEdit && onAdd && (
-        <Button variant="outline" size="sm" className="agent-list-add" onClick={onAdd}>
-          <PlusIcon /> {addLabel}
-        </Button>
-      )}
-      {items.length === 0 && <p className="muted small agent-list-empty">{empty}</p>}
-      {items.map((item) => {
-        const change = changeOf(cfg, item.path);
-        const problems = cfg.issuesFor(item.path).length;
-        return (
-          <Item
-            key={item.id}
-            size="sm"
-            className="agent-list-item"
-            data-active={item.id === selected ? "" : undefined}
-            aria-current={item.id === selected ? "true" : undefined}
-            render={<button type="button" onClick={() => onSelect(item.id)} />}
-          >
-            <ItemContent>
-              <ItemTitle>{item.label}</ItemTitle>
-              {item.sub && <ItemDescription className="agent-list-sub">{item.sub}</ItemDescription>}
-            </ItemContent>
-            {(problems > 0 || change) && (
-              <ItemActions>
-                {problems > 0 && <Badge variant="destructive" title="Has problems">{problems === 1 ? "1 problem" : `${problems} problems`}</Badge>}
-                {change && <Badge variant="secondary">{change}</Badge>}
-              </ItemActions>
-            )}
-          </Item>
-        );
-      })}
-    </aside>
-  );
-}
-
-/** An item's heading row: its name and Remove. */
-export function ItemHead({ title, canEdit, onRemove, back, children }: {
-  title: string;
-  canEdit: boolean;
-  onRemove?: () => void;
-  /** The list's URL: on phones the list and the form take turns, and this goes back to the list. */
-  back?: { path: string; label: string };
-  children?: ReactNode;
-}) {
-  return (
-    <div className="agent-item-head">
-      {back && (
-        <button type="button" className="link-button agent-back small" onClick={() => go(back.path)}>
-          ← {back.label}
-        </button>
-      )}
-      <h2>{title}</h2>
-      {children}
-      <span className="spacer" />
-      {canEdit && onRemove && (
-        <Button variant="outline" size="sm" onClick={onRemove} title="Removed when you save">
-          <TrashIcon /> Remove
-        </Button>
+    <div className="agent-gallery">
+      <div className="agent-gallery-bar">
+        <div className="agent-gallery-search">
+          <SearchIcon />
+          <Input type="search" placeholder={`Search ${noun}…`} aria-label={`Search ${noun}`} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        <span className="spacer" />
+        {canEdit && (
+          <Button onClick={onAdd}>
+            <PlusIcon /> {addLabel}
+          </Button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <div className="agent-gallery-empty">
+          <h2>{empty.title}</h2>
+          <p>{empty.text}</p>
+          {canEdit && (
+            <Button onClick={onAdd}>
+              <PlusIcon /> {addLabel}
+            </Button>
+          )}
+        </div>
+      ) : shown.length === 0 ? (
+        <p className="muted small agent-gallery-none">Nothing matches "{query}".</p>
+      ) : (
+        <ul className="agent-index-grid">
+          {shown.map((item) => {
+            const change = changeOf(cfg, item.path);
+            const problems = cfg.issuesFor(item.path).length;
+            const href = `${base}/${item.id}`;
+            return (
+              <li key={item.id} className="agent-index-card">
+                <a className="agent-index-link" href={href} onClick={(e) => { e.preventDefault(); go(href); }}>
+                  {item.label}
+                </a>
+                <p className="agent-index-sub">{item.sub || <span className="muted">No description yet</span>}</p>
+                {(problems > 0 || change) && (
+                  <div className="agent-index-badges">
+                    {problems > 0 && <Badge variant="destructive">{problems === 1 ? "1 problem" : `${problems} problems`}</Badge>}
+                    {change && <Badge variant="secondary">{change}</Badge>}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

@@ -931,14 +931,6 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 /* Agent page, plain views (Instructions, Procedures, Actions, Widgets, Tests): a list and a form. */
 .page-tabs-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .agent-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.agent-split { flex: 1; display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; }
-.agent-list { position: sticky; top: 0; display: grid; gap: 2px; padding: 16px 12px; border-right: 1px solid var(--border); align-self: stretch; align-content: start; }
-.agent-list-add { justify-self: start; margin-bottom: 8px; }
-.agent-list-empty { margin: 0; padding: 4px; line-height: 1.5; }
-.agent-list-item { text-align: left; cursor: pointer; }
-.agent-list-item:hover { background: var(--muted); }
-.agent-list-item[data-active] { background: var(--accent); color: var(--accent-foreground); }
-.agent-list-sub { font-size: 12px; line-height: 1.4; }
 .agent-form { display: grid; gap: 20px; align-content: start; padding: 24px; max-width: 820px; min-width: 0; }
 .agent-form.settings-sections { padding: 0; max-width: 860px; gap: 32px; }
 .agent-form-foot { margin: 0; padding: 0 24px 24px; }
@@ -946,7 +938,65 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .agent-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .agent-item-head h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 665; letter-spacing: -0.4px; }
 .agent-item-head .spacer { flex: 1; }
-.agent-back { display: none; color: var(--muted-foreground); text-decoration: none; }
+/* W-24: actions and procedures. Their list is a page of cards; an item's page is the widget page's
+   layout (Studio.tsx) with the form where a widget's preview is. */
+.agent-index-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.agent-index-card { position: relative; display: grid; gap: 6px; align-content: start; min-width: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); transition: border-color 150ms ease; }
+.agent-index-card:hover, .agent-index-card:has(:focus-visible) { border-color: color-mix(in oklab, var(--foreground) 22%, transparent); }
+.agent-index-link { font-size: 15px; line-height: 22px; font-weight: 600; color: var(--foreground); text-decoration: none; outline: none; }
+.agent-index-link::after { content: ""; position: absolute; inset: 0; border-radius: 14px; }
+.agent-index-link:focus-visible::after { box-shadow: 0 0 0 2px var(--ring); }
+.agent-index-sub { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted-foreground); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.agent-index-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.agent-wed-form { min-height: 0; height: 100%; overflow-y: auto; background: color-mix(in oklab, var(--muted) 35%, var(--background)); }
+.agent-wed-form > .agent-form { max-width: 760px; margin: 0 auto; padding: 28px 32px 56px; }
+.agent-wed-raw.agent-wed-code-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.agent-wed-code-pane .agent-text { flex: 1; min-height: 120px; height: auto; resize: none; }
+/* W-25: "Connected": what an action, a procedure or a widget points at, as links. */
+.agent-links { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.agent-links h3 { margin: 0; font-size: 12px; line-height: 18px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted-foreground); }
+.agent-links-row { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; }
+.agent-links-label { flex: none; min-width: 150px; font-size: 13px; color: var(--muted-foreground); }
+.agent-links-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.agent-link-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); color: var(--foreground); font-size: 13px; line-height: 20px; text-decoration: none; }
+.agent-link-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-foreground); }
+.agent-link-chip[data-kind="action"]::before { background: oklch(0.65 0.15 250); }
+.agent-link-chip[data-kind="procedure"]::before { background: oklch(0.7 0.14 150); }
+.agent-link-chip[data-kind="widget"]::before { background: oklch(0.72 0.15 60); }
+.agent-link-chip:hover { border-color: color-mix(in oklab, var(--foreground) 30%, transparent); }
+.agent-links-button { display: grid; grid-template-columns: minmax(150px, max-content) 1fr; align-items: baseline; gap: 6px 12px; }
+.agent-links-button > .agent-links-label { min-width: 0; }
+.agent-links-button > .agent-links-warn { grid-column: 1 / -1; }
+.agent-links-sends { align-self: center; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.agent-links-empty { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted-foreground); }
+.agent-links-warn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; background: color-mix(in oklab, oklch(0.78 0.15 75) 16%, var(--card)); font-size: 13px; line-height: 19px; }
+.agent-links-warn > span { flex: 1 1 240px; }
+.agent-links-wrap { max-width: 760px; margin: 0 auto; padding: 24px 32px 0; }
+.agent-links-wrap + .agent-form { padding-top: 20px; }
+/* W-26: @mentions of actions. The text is drawn twice: highlighted behind (.mention-back), and in a
+   textarea with transparent text on top; both share every metric so the highlights sit under the words. */
+.mention-field { position: relative; min-width: 0; }
+.mention-back, .mention-input { box-sizing: border-box; margin: 0; padding: 10px 12px; border: 1px solid transparent; font: inherit; font-size: 14px; line-height: 1.6; letter-spacing: normal; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 2; }
+.mention-back { position: absolute; inset: 0; overflow: hidden; color: var(--foreground); pointer-events: none; }
+.mention-input { position: relative; display: block; width: 100%; min-height: 220px; resize: vertical; background: transparent; color: transparent; caret-color: var(--foreground); outline: none; field-sizing: content; }
+.mention-input::placeholder { color: var(--muted-foreground); }
+.mention-input::selection { background: color-mix(in oklab, #3b82f6 35%, transparent); color: transparent; }
+.mention-boxed { border-radius: 10px; background: color-mix(in oklab, var(--input) 30%, transparent); }
+.mention-boxed .mention-input { border-color: var(--input); border-radius: 10px; }
+.mention-boxed:focus-within .mention-input { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 35%, transparent); }
+.mention-plain .mention-back, .mention-plain .mention-input { padding: 14px 40px 14px 0; border: 0; font-size: 14px; line-height: 1.7; }
+.mention-plain .mention-input { min-height: 320px; resize: none; }
+.mention-input:focus, .mention-input:focus-visible { outline: none; }
+.mention-plain .mention-input:focus, .mention-plain .mention-input:focus-visible { box-shadow: none; border: 0; }
+.mention-large .mention-back, .mention-large .mention-input { font-size: 15px; padding-right: 8px; }
+.mention-large .mention-input { min-height: 0; height: min(70dvh, 760px); field-sizing: fixed; overflow-y: auto; }
+mark.mention { color: inherit; background: color-mix(in oklab, oklch(0.65 0.15 250) 22%, transparent); border-radius: 4px; box-shadow: 0 0 0 1px color-mix(in oklab, oklch(0.65 0.15 250) 35%, transparent); }
+mark.mention.mention-missing { background: color-mix(in oklab, oklch(0.78 0.15 75) 26%, transparent); box-shadow: 0 0 0 1px color-mix(in oklab, oklch(0.78 0.15 75) 45%, transparent); text-decoration: underline wavy color-mix(in oklab, oklch(0.7 0.16 60) 80%, transparent); text-underline-offset: 3px; }
+.mention-menu { position: absolute; z-index: 30; width: 280px; max-height: 264px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); }
+.mention-option { display: grid; gap: 1px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.mention-option[aria-selected="true"] { background: var(--accent); color: var(--accent-foreground); }
+.mention-option-name { font-family: var(--font-mono); font-size: 12.5px; }
+.mention-option-desc { font-size: 12px; line-height: 16px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-field { min-width: 0; }
 textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-height: 1.6; min-height: 160px; }
 .agent-form .mono, .agent-param .mono, .agent-pair .mono { font-family: var(--font-mono); font-size: 13px; }
@@ -985,6 +1035,20 @@ textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-heig
 .agent-gallery-empty h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .agent-gallery-empty p { margin: 0 0 8px; max-width: 46ch; font-size: 14px; line-height: 21px; color: var(--muted-foreground); }
 .agent-gallery-none { margin: 0; }
+/* W-23: My widgets / Templates, and a template up close (preview beside its name and Use). */
+.agent-gallery-tabs { justify-self: start; width: fit-content; }
+.agent-gallery-note { margin: -4px 0 0; }
+.agent-gallery-empty-actions { justify-content: center; gap: 8px; flex-wrap: wrap; }
+button.agent-tile-link { padding: 0; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; font-weight: 600; text-align: left; cursor: pointer; }
+.agent-template-dialog { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0; width: min(920px, calc(100vw - 32px)); max-width: none !important; padding: 0; overflow: hidden; }
+.agent-template-stage { display: flex; align-items: safe center; justify-content: center; min-height: 460px; max-height: calc(100dvh - 64px); overflow: auto; padding: 32px 24px; }
+.agent-template-side { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 28px 24px 24px; border-left: 1px solid var(--border); }
+.agent-template-side > [data-slot="button"] { align-self: flex-start; }
+@media (max-width: 720px) {
+  .agent-template-dialog { grid-template-columns: minmax(0, 1fr); max-height: calc(100dvh - 32px); overflow: auto; }
+  .agent-template-stage { min-height: 280px; max-height: none; }
+  .agent-template-side { border-left: 0; border-top: 1px solid var(--border); }
+}
 .agent-tile { position: relative; display: grid; gap: 12px; min-width: 0; }
 .agent-tile-stage { height: 300px; display: flex; align-items: safe center; justify-content: center; padding: 16px; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; mask-image: linear-gradient(black 90%, transparent); transition: border-color 150ms ease; }
 .agent-tile-stage .agent-stage-card { transition: transform 200ms ease-out; }
@@ -1005,6 +1069,17 @@ textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-heig
 .agent-wed-head .spacer { flex: 1; }
 .agent-wed-group { display: grid; gap: 6px; }
 .agent-wed-group h3 { margin: 0; font-size: 13px; line-height: 20px; font-weight: 600; }
+.agent-params-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; }
+.agent-params-list li { display: grid; gap: 4px; }
+.agent-param-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 18px; }
+.agent-param-head code { font-weight: 600; }
+.agent-param-type { color: var(--muted-foreground); font-size: 12px; }
+.agent-param-optional { font: inherit; font-size: 11px; line-height: 16px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.agent-param-optional[data-on] { background: var(--muted); border-color: transparent; }
+.agent-param-optional:disabled { cursor: default; }
+.agent-canvas-state { position: absolute; top: 12px; left: 12px; z-index: 1; }
+.agent-wed-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.agent-wed-group p.agent-wed-warn { color: oklch(0.6 0.15 60); }
 .agent-wed-group p { margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
 .agent-wed-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; }
 .agent-wed-links a { color: var(--foreground); }
@@ -1108,6 +1183,11 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
   .agent-view:has(> .agent-wed-studio) { flex: 1; height: auto; min-height: 0; }
   .agent-wed-studio { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
   .agent-wed-studio .agent-wed-side { height: min(72dvh, 640px); padding: 0; }
+  .agent-wed-form { height: auto; overflow: visible; }
+  .agent-wed-form > .agent-form { padding: 20px 16px 40px; }
+  .agent-links-wrap { padding: 16px 16px 0; }
+  .agent-links-label { min-width: 0; flex-basis: 100%; }
+  .agent-links-button { grid-template-columns: 1fr; }
   .agent-wed-studio .agent-wed-canvas { height: auto; min-height: 420px; }
 }
 .agent-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding: 10px 24px; border-top: 1px solid var(--border); background: var(--background); }
@@ -1742,11 +1822,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
 @media (max-width: 900px) {
   /* One column: the page grows and the main scroller (.desk-main) scrolls it. */
   .desk-main-body:has(> .page-tabs > .page-tabs-panel:not([hidden]) > :is(.appear-page)) { height: auto; }
-  .agent-split { grid-template-columns: minmax(0, 1fr); }
   /* Phones: the list, or the open item with a way back. */
-  .agent-split[data-picked] > .agent-list, .agent-split:not([data-picked]) > .agent-form { display: none; }
-  .agent-back { display: block; flex-basis: 100%; text-align: left; }
-  .agent-list { border-right: none; border-bottom: 1px solid var(--border); position: static; max-height: none; }
   .agent-form { padding: 16px; }
   .agent-param { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .agent-param > :nth-child(3) { grid-column: 1 / -1; grid-row: 2; }

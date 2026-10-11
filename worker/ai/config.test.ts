@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { systemPrompt } from "./agent.ts";
 import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, parseConfig, splitFrontmatter } from "./config.ts";
 import { TEMPLATE } from "../../packages/cli/src/template.ts";
-import { buildRequest, httpTools, runTool, shapeOutput, WIDGET_SHOWN_NOTE } from "./tools.ts";
+import { buildRequest, httpTools, runTool, shapeOutput, showWidgetTool, WIDGET_SHOWN_NOTE, type ToolAction } from "./tools.ts";
 import { starterWidget } from "../../shared/widgets.ts";
 import { dedupeSse } from "./workers-ai.ts";
 
@@ -376,4 +376,70 @@ test("W-17: a widget's `tool:<name>` button must name a tool; runTool runs one f
   const missing = await runTool(config.tools[0]!, {}, { secrets: () => undefined, fetch: (() => assert.fail("no call")) as typeof fetch }, "wb2");
   assert.equal(missing.action.status, "error");
   assert.match(missing.action.output, /Missing input: sku/);
+});
+
+test("W-27: an action's card lines (widget_done, widget_failed) are short Jinja lines", () => {
+  const ok = parseConfig({
+    "AGENTS.md": "Hi",
+    "tools/book_demo.yaml": `description: Book a demo
+method: POST
+url: https://api.acme.test/demos
+widget_done: "Thanks {{ name }}, we'll call you today."
+widget_failed: That didn't go through. Please try again.
+`,
+  });
+  assert.deepEqual(ok.issues, []);
+  assert.equal(ok.config.tools[0]!.widgetDone, "Thanks {{ name }}, we'll call you today.");
+  assert.equal(ok.config.tools[0]!.widgetFailed, "That didn't go through. Please try again.");
+  const bad = parseConfig({ "AGENTS.md": "Hi", "tools/x.yaml": `description: X\nurl: https://a.test\nwidget_done: "{% if %}"\nwidget_failed: "${"a".repeat(201)}"\n` });
+  assert.deepEqual(bad.issues.map((i) => i.message.split(":")[0]), ["widget_done", "widget_failed must be one short line for the customer (at most 200 characters), like \"Thanks {{ name }}, we'll be in touch.\""]);
+});
+
+test("W-28: an action that only shows a widget needs no address; any other needs a whole one", async () => {
+  const card = JSON.stringify({ version: "1.0", name: "Player", template: '{"type":"Card","children":[{"type":"Title","value":{{ (name ~ " #" ~ number) | tojson }}}]}', sample: { name: "Froge", number: "22" } });
+  const { config, issues } = parseConfig({
+    "AGENTS.md": "Hi",
+    "widgets/player.widget": card,
+    "tools/show_player.yaml": "description: Show the player card.\nwidget: player\ninput:\n  name: { type: string, required: false }\n",
+  });
+  assert.deepEqual(issues, []);
+  // Nothing is called: the widget's example data, with what the AI filled in on top.
+  const shown = await runTool(config.tools[0]!, { name: "Ana" }, { secrets: () => undefined, widgets: config.widgets, fetch: (() => assert.fail("no call")) as typeof fetch }, "wb1");
+  assert.equal(shown.action.status, "ok");
+  assert.deepEqual(JSON.parse(shown.action.output), { name: "Ana", number: "22" });
+  assert.match(JSON.stringify(shown.widget?.root), /Ana #22/);
+
+  const messages = (files: Record<string, string>) => parseConfig({ "AGENTS.md": "Hi", ...files }).issues.map((i) => i.message);
+  assert.match(messages({ "tools/x.yaml": "description: X\n" }).join(), /url is required/);
+  assert.match(messages({ "tools/x.yaml": "description: X\nurl: https://\n" }).join(), /isn't a whole address yet/);
+  assert.deepEqual(messages({ "tools/x.yaml": "description: X\nurl: https://api.acme.test/orders/{id}\ninput:\n  id: string\n" }), []);
+});
+
+test("W-29: show_widget fills a card the AI may fill itself; bad data comes back as an error to fix", async () => {
+  const card = (aiFill: boolean, sample = true) =>
+    JSON.stringify({ version: "1.0", name: "Player", template: '{"type":"Card","children":[{"type":"Title","value":{{ (name ~ " #" ~ number) | tojson }}}{% for s in stats %},{"type":"Text","value":{{ (s.label ~ " " ~ s.value) | tojson }}}{% endfor %}]}', ...(sample ? { sample: { name: "Froge", number: "22", stats: [{ value: "18", label: "PTS" }] } } : {}), ...(aiFill ? { aiFill: true } : {}) });
+  assert.match(parseConfig({ "AGENTS.md": "Hi", "widgets/player.widget": card(true, false) }).issues.map((i) => i.message).join(), /aiFill needs example data/);
+  assert.match(parseConfig({ "AGENTS.md": "Hi", "tools/show_widget.yaml": "description: x\nurl: https://a.test\n" }).issues.map((i) => i.message).join(), /show_widget/);
+  const { config, issues } = parseConfig({ "AGENTS.md": "Hi", "widgets/player.widget": card(true), "widgets/plain.widget": card(false) });
+  assert.deepEqual(issues, []);
+  assert.deepEqual(config.widgets.map((w) => [w.name, Boolean(w.aiFill)]), [["plain", false], ["player", true]]);
+
+  const fillable = config.widgets.filter((w) => w.aiFill);
+  const actions: ToolAction[] = [];
+  const shown: unknown[] = [];
+  const t = showWidgetTool(fillable, { onAction: (a) => actions.push(a), onWidget: (w) => shown.push(w) });
+  // W-30: the card's parameters (worked out from its example data here) and its example.
+  assert.match(String(t.description), /player \(Player\): data schema \{"type":"object","properties":\{"name":\{"type":"string"\}.*"required":\["name","number","stats"\]\}; example: \{"name":"Froge"/);
+  const run = (input: unknown) => (t.execute as (i: unknown, o: unknown) => Promise<string>)(input, { toolCallId: "c", messages: [] });
+
+  assert.equal(await run({ widget: "player", data: JSON.stringify({ name: "Ana", number: "9", stats: [{ value: "3", label: "GLS" }] }) }), WIDGET_SHOWN_NOTE);
+  assert.match(JSON.stringify(shown[0]), /Ana #9.*GLS 3/);
+  assert.equal(actions[0]!.status, "ok");
+
+  assert.match(await run({ widget: "player", data: "not json" }), /^ERROR: the card didn't draw/);
+  assert.match(await run({ widget: "plain", data: "{}" }), /no card called plain/);
+  // W-30: data that doesn't fit the card's parameters never reaches it.
+  assert.match(await run({ widget: "player", data: JSON.stringify({ name: "Ana", stats: [{ value: 3, label: "GLS" }] }) }), /doesn't fit the card's schema: number is missing; stats\[0\]\.value should be string, not number/);
+  assert.deepEqual(actions.slice(1).map((a) => a.status), ["error", "error", "error"]);
+  assert.equal(shown.length, 1);
 });

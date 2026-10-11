@@ -5,6 +5,8 @@ import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
 import { editWidget, WidgetEditError } from "../ai/widget-edit.ts";
+import { AgentFileEditError, editAgentFile } from "../ai/agent-file-edit.ts";
+import { agentFileKind } from "../../shared/agent-file-ai.ts";
 import { MAX_EDIT_HISTORY, MAX_EDIT_MESSAGE, type WidgetEditTurn } from "../../shared/widget-ai.ts";
 import { MAX_WIDGET_JSON } from "../../shared/widgets.ts";
 import { getSessionUser, requireUser } from "../auth/session.ts";
@@ -133,7 +135,7 @@ agent.put("/workspaces/:id/agent", async (c) => {
 
 const WIDGET_EDIT_SKIPS = {
   ai_off: "Turn on the AI first (Agent → Settings).",
-  cap_reached: "The monthly AI limit is reached, so the AI can't edit widgets until next month.",
+  cap_reached: "The monthly AI limit is reached, so the AI can't make changes here until next month.",
 } as const;
 
 // W-22: one change to a widget, asked for in plain words. Body: { name, file, message, history? }.
@@ -152,11 +154,41 @@ agent.post("/workspaces/:id/agent/widget-edit", async (c) => {
     .map((t) => ({ role: t.role, text: t.text.slice(0, MAX_EDIT_MESSAGE) }));
   let result: Awaited<ReturnType<typeof editWidget>>;
   try {
-    result = await editWidget(c.env, workspaceId, { name, file: body.file, message, history });
+    // W-27: the draft (optional), so the AI sees the actions the widget's buttons run.
+    const files = body.files === undefined ? undefined : readFiles(body);
+    result = await editWidget(c.env, workspaceId, { name, file: body.file, message, history, ...(files ? { files } : {}) });
   } catch (error) {
     if (error instanceof WidgetEditError) throw new HttpError(502, "edit_failed", error.message);
     if (error instanceof AiUnavailableError) throw new HttpError(400, "ai_unavailable", error.message);
     console.warn("widget edit failed:", (error as Error).message);
+    throw new HttpError(502, "ai_failed", "The AI couldn't make the change just now (it failed or took too long). Try again in a minute.");
+  }
+  if ("skipped" in result) throw new HttpError(400, result.skipped, WIDGET_EDIT_SKIPS[result.skipped]);
+  return c.json(result);
+});
+
+// W-24: one change to an action or a procedure, asked for in plain words. Body: { path, files, message,
+// history? } (files: the whole draft, so the change is checked like a save). Returns { reply, file,
+// changed }; nothing is saved.
+agent.post("/workspaces/:id/agent/file-edit", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const body = await readJson(c.req);
+  const path = text(body, "path", { max: 200 });
+  if (!agentFileKind(path)) throw new HttpError(400, "invalid_field", "path must be an action (tools/<name>.yaml) or a procedure (skills/<name>/SKILL.md).");
+  const files = readFiles(body);
+  const message = text(body, "message", { max: MAX_EDIT_MESSAGE });
+  const history: WidgetEditTurn[] = (Array.isArray(body.history) ? body.history : [])
+    .filter((t): t is WidgetEditTurn => typeof t === "object" && t !== null && (t.role === "user" || t.role === "assistant") && typeof t.text === "string")
+    .slice(-MAX_EDIT_HISTORY)
+    .map((t) => ({ role: t.role, text: t.text.slice(0, MAX_EDIT_MESSAGE) }));
+  let result: Awaited<ReturnType<typeof editAgentFile>>;
+  try {
+    result = await editAgentFile(c.env, workspaceId, { path, files, message, history });
+  } catch (error) {
+    if (error instanceof AgentFileEditError) throw new HttpError(502, "edit_failed", error.message);
+    if (error instanceof AiUnavailableError) throw new HttpError(400, "ai_unavailable", error.message);
+    console.warn("agent file edit failed:", (error as Error).message);
     throw new HttpError(502, "ai_failed", "The AI couldn't make the change just now (it failed or took too long). Try again in a minute.");
   }
   if ("skipped" in result) throw new HttpError(400, result.skipped, WIDGET_EDIT_SKIPS[result.skipped]);

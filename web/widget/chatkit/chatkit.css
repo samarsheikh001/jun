@@ -129,8 +129,8 @@
 .ck-img-btn { cursor: pointer; }
 .ck-img-btn:focus-visible { outline: 2px solid var(--ck-accent); outline-offset: 2px; }
 .ck-flush { margin-inline: calc(-1 * var(--ck-pad, 16px)); width: auto; max-width: none; }
-.ck-card > .ck-flush:first-child { margin-top: calc(-1 * var(--ck-pad, 16px)); }
-.ck-card > .ck-flush:last-child { margin-bottom: calc(-1 * var(--ck-pad, 16px)); }
+.ck-card > .ck-card-body:first-child > .ck-flush:first-child { margin-top: calc(-1 * var(--ck-pad, 16px)); }
+.ck-card > .ck-card-body:last-child > .ck-flush:last-child { margin-bottom: calc(-1 * var(--ck-pad, 16px)); }
 .ck-divider { align-self: stretch; margin: 2px 0; border: 0; border-top: 1px solid var(--ck-border-soft); }
 
 /* Text */
@@ -211,6 +211,9 @@
 .ck-btn-icon.ck-size-xs { width: 28px; padding: 0; }
 .ck-btn-icon.ck-size-sm { width: 30px; padding: 0; }
 .ck-block { width: 100%; align-self: stretch; }
+/* The card's body, kept mounted while folded (hidden) so typed values survive. */
+.ck-card-body { display: contents; }
+.ck-card-body[hidden] { display: none; }
 .ck-card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
 .ck-card-actions .ck-btn { flex: 1 1 auto; }
 
@@ -383,6 +386,9 @@
 /* The inbox shows what the visitor saw, at chat width. */
 .ai-widget { width: 100%; max-width: 400px; margin: 4px 0; }
 .widget-values { margin-top: 2px; }
+/* W-27: an action's widget_done line under the press it answered, on the reply's side. */
+.widget-done { display: flex; align-items: flex-start; gap: 6px; font-size: 14px; line-height: 20px; text-align: left; }
+.widget-done svg { flex: none; margin-top: 3px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; color: var(--ck-success, #16a34a); }
 /* A reply with a card takes the chat's full width, also while it streams (rows otherwise fit their content). */
 .msg.ai:has(> .w-answer .ck) { width: 100%; }
 .msg.ai > .w-answer:has(.ck) { justify-self: stretch; width: 100%; }

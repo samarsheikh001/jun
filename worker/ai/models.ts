@@ -17,22 +17,23 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
  * Every AI call names its job. `answer`: visitor replies (runAgent, live and in evals);
  * `brief`: handoff brief; `nudge`: nudges and AI openers; `draft`: issue drafts;
  * `topics`: topic labels; `judge`: eval grading; `suggestions`: the widget's suggested
- * questions drafted from the knowledge base (W-15); `widgets`: a widget edited by chat on the
- * Agent page (W-22).
+ * questions drafted from the knowledge base (W-15); `editor`: a widget, action or procedure
+ * edited by chat on the Agent page (W-22, W-24).
  */
-export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions", "followups", "widgets"] as const;
+export const AI_JOBS = ["answer", "brief", "nudge", "draft", "topics", "judge", "suggestions", "followups", "editor"] as const;
 export type AiJob = (typeof AI_JOBS)[number];
 export type JobModels = Partial<Record<AiJob, string>>;
 
 /**
- * A job's own default per provider, used unless an admin set a model for that job. Widget editing
- * writes whole templates against ChatKit's long guide (W-22), so it gets the large model where the
+ * A job's own default per provider, used unless an admin set a model for that job. Editing on the
+ * Agent page writes whole files (widget templates against ChatKit's long guide, W-22; actions and
+ * procedures, W-24), so it gets the large model where the
  * provider has one (user's pick, 2026-10-11). An id the provider rejects falls back to the
  * workspace model, like an override.
  */
 export const JOB_DEFAULTS: Record<ProviderId, JobModels> = {
-  chatgpt: { widgets: "gpt-6-astra" },
-  openai: { widgets: "gpt-6-astra" },
+  chatgpt: { editor: "gpt-6-astra" },
+  openai: { editor: "gpt-6-astra" },
   "workers-ai": {},
 };
 

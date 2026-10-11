@@ -75,5 +75,21 @@ test("widget AI: the prompt is ChatKit's whole guide, then this desk's rules and
   const guide = prompt.indexOf(CHATKIT_AUTHORING_GUIDE);
   assert.ok(guide > 0);
   assert.ok(prompt.indexOf("# How this desk stores a widget") > guide + CHATKIT_AUTHORING_GUIDE.length, "our rules come after the guide");
-  assert.ok(prompt.trimEnd().endsWith("</summary>"), "the answer's shape is last");
+  assert.ok(prompt.trimEnd().endsWith("</schema>"), "the answer's shape is last");
+});
+
+test("W-30: the model may send the widget's schema; new example data that breaks the old one gets a new one, descriptions kept", () => {
+  const edit = parseWidgetEdit('<reply>Added a gate.</reply>\n<template>\n{}\n</template>\n<schema>\n{"type":"object","properties":{"gate":{"type":"string"}}}\n</schema>');
+  assert.deepEqual(edit?.schema, { type: "object", properties: { gate: { type: "string" } } });
+  assert.throws(() => parseWidgetEdit("<template>\n{}\n</template>\n<schema>[1]</schema>"), /JSON Schema object/);
+
+  const file = JSON.stringify({ version: "1.0", template: "{}", sample: { city: "SF" }, jsonSchema: { type: "object", properties: { city: { type: "string", description: "Where from" } }, required: ["city"] } });
+  const fits = JSON.parse(applyWidgetEdit(file, { template: "{}", sample: { city: "LA" } }));
+  assert.equal(fits.jsonSchema.properties.city.description, "Where from", "still fits: the schema is kept as it is");
+  const grown = JSON.parse(applyWidgetEdit(file, { template: "{}", sample: { gate: "B2" } }));
+  assert.deepEqual(grown.jsonSchema, { type: "object", properties: { gate: { type: "string" } }, required: ["gate"] });
+  const both = JSON.parse(applyWidgetEdit(file, { template: "{}", sample: { city: "LA", gate: 2 } }));
+  assert.deepEqual(both.jsonSchema.properties.city, { type: "string", description: "Where from" }, "a widened shape keeps the descriptions");
+  const none = JSON.parse(applyWidgetEdit(JSON.stringify({ version: "1.0", template: "{}" }), { template: "{}", sample: { a: 1 } }));
+  assert.equal(none.jsonSchema, undefined, "a widget without a schema keeps working it out from its example");
 });

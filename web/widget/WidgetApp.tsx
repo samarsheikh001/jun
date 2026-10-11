@@ -766,9 +766,13 @@ function WidgetThread({
   const onTyping = useTypingSignal(thread.setTyping);
 
   const lastMessage = thread.messages.at(-1);
+  // W-27: a card's press its action's widget_done line answered: the AI won't answer it.
+  const pressAnswered = lastMessage?.authorType === "visitor" && Boolean(lastMessage.meta.widgetAction?.tool?.done);
   // An agent's invite starts a conversation with that agent, not the AI.
   const awaitingAi = Boolean(
-    (handling === "ai" || (!conversationId && starting && aiEnabled && !opener?.inviteId)) && !thread.aiStream && (thread.pending.length > 0 || lastMessage?.authorType === "visitor" || starting),
+    (handling === "ai" || (!conversationId && starting && aiEnabled && !opener?.inviteId)) &&
+      !thread.aiStream &&
+      (thread.pending.length > 0 || (lastMessage?.authorType === "visitor" && !pressAnswered) || starting),
   );
 
   const latest = lastMessage?.seq ?? 0;
@@ -821,8 +825,8 @@ function WidgetThread({
    */
   const [pressed, setPressed] = useState(false);
   useEffect(() => {
-    if (lastMessage && lastMessage.authorType !== "visitor") setPressed(false);
-  }, [lastMessage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (lastMessage && (lastMessage.authorType !== "visitor" || pressAnswered)) setPressed(false);
+  }, [lastMessage?.id, pressAnswered]); // eslint-disable-line react-hooks/exhaustive-deps
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
     setPressed(false);
@@ -926,9 +930,17 @@ function WidgetThread({
         onWidgetAction={(messageId, widget, event) => {
           if (island) setPressed(true);
           // W-09: in order with anything typed before it, with the page's context like a typed message.
-          flushing.current = flushing.current.then(async () => {
-            const { context, actions } = await hostContext();
-            thread.sendWidgetAction(event.label, { messageId, widgetId: widget.id, action: event.action, values: event.values, ...(event.item ? { item: event.item } : {}) }, context, actions);
+          const outcome = new Promise<{ ok: boolean; message?: string }>((resolve) => {
+            flushing.current = flushing.current.then(async () => {
+              const { context, actions } = await hostContext();
+              // Not awaited: what's typed next goes out now, not after the action has run.
+              resolve(thread.sendWidgetAction(event.label, { messageId, widgetId: widget.id, action: event.action, values: event.values, ...(event.item ? { item: event.item } : {}) }, context, actions));
+            });
+          });
+          // W-27: a refused press (the action's widget_failed line) ends the wait here; the card says why.
+          return outcome.then((r) => {
+            if (!r.ok) setPressed(false);
+            return r;
           });
         }}
         // D-51: ChatKit's handler "client" goes to the host page (the loader's widgetAction event).

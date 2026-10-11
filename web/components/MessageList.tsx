@@ -202,7 +202,9 @@ export function MessageList({
         </div>
       );
     }
-    return (
+    // W-27: the action's widget_done line answered this press: a row of its own, where the reply would be.
+    const done = m.meta.widgetAction?.tool?.done;
+    const row = (
       <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`} data-anchor={anchors && own ? m.clientMsgId : undefined}>
         {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}</div>}
         {m.authorType === "ai" && actionsFor(m.clientMsgId)}
@@ -227,6 +229,18 @@ export function MessageList({
         )}
         {m.seq === lastSeenSeq && <div className="seen muted small">Seen</div>}
       </div>
+    );
+    if (!done) return row;
+    return (
+      <Fragment key={m.clientMsgId}>
+        {row}
+        <div className={`msg ${own ? "other" : "own"} widget-done-row`}>
+          <div className="widget-done" role="status">
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+            <span>{done}</span>
+          </div>
+        </div>
+      </Fragment>
     );
   });
   const lastMessage = messages.at(-1);

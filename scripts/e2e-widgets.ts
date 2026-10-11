@@ -280,4 +280,84 @@ await step("D-51: a field's onChangeAction runs its tool quietly and the card is
   s.close();
 });
 
+// ---------- W-27: an action's own lines for the card (widget_done / widget_failed) ----------
+
+// A small "talk to sales" form: Submit books the demo (httpbin echoes the POST); "Try the old form"
+// runs an action whose API fails (HTTP 500).
+const demo = [
+  '{"type":"Card","size":"sm","children":[',
+  '{"type":"Title","value":"Talk to sales","size":"sm"},',
+  '{"type":"Input","name":"name","placeholder":"Your name"},',
+  '{"type":"Input","name":"email","placeholder":"Work email"},',
+  '{"type":"Row","children":[{"type":"Button","label":"Book a demo","onClickAction":{"type":"tool:book_demo"}},',
+  '{"type":"Button","label":"Try the old form","variant":"outline","onClickAction":{"type":"tool:old_form"}},',
+  '{"type":"Button","label":"Close","variant":"ghost","onClickAction":{"type":"dismiss"}}]}',
+  "]}",
+].join("");
+const demoFiles = {
+  ...files,
+  "AGENTS.md": `${files["AGENTS.md"]}- When the customer wants to talk to sales or book a demo, call sales_form.\n`,
+  "tools/sales_form.yaml": ["description: Shows the customer a form to book a demo with sales.", "status: Opening the form", "url: https://httpbin.org/anything", "widget: demo", ""].join("\n"),
+  "tools/book_demo.yaml": [
+    "description: Books a demo with sales.",
+    "method: POST",
+    "url: https://httpbin.org/anything",
+    "input:",
+    "  name: { type: string }",
+    "  email: { type: string }",
+    "body: { name: \"{name}\", email: \"{email}\" }",
+    'widget_done: "Thanks {{ json.name }}, we\'ll email {{ email }} today."',
+    "",
+  ].join("\n"),
+  "tools/old_form.yaml": ["description: The old sales form.", "method: POST", "url: https://httpbin.org/status/500", "input:", "  name: { type: string }", 'widget_failed: "Sorry {{ name }}, that didn\'t go through. Try Book a demo."', ""].join("\n"),
+  "widgets/demo.widget": JSON.stringify({ version: "1.0", name: "Talk to sales", template: demo, sample: {} }),
+};
+
+await step("W-27: widget_failed keeps the card open with its line (nothing sent); widget_done folds it and the AI doesn't answer; dismiss is never sent", async () => {
+  const res = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: demoFiles, base: null, force: true, message: "demo" } });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  const visitor = new Client();
+  const token = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
+  const started = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "I'd like to book a demo with your sales team." }, headers: { "X-Visitor-Token": token } });
+  assert.equal(started.status, 200, JSON.stringify(started.json));
+  const conversation = started.json.conversation.id as string;
+  const s = new TestSocket(`/api/widget/${widgetKey}/conversations/${conversation}/ws?since=1`, { protocols: [token] });
+  await s.opened;
+  const answer = (await s.next((e) => e.type === "message" && e.message.authorType === "ai", AI_TIMEOUT)).message;
+  const card = answer.meta.widgets?.[0];
+  assert.equal(card?.name, "demo", JSON.stringify(answer.meta));
+  const press = (type: string, label: string) => {
+    const clientMsgId = crypto.randomUUID();
+    s.send({ type: "send", clientMsgId, body: label, attachments: [], widgetAction: { messageId: answer.id, widgetId: card.id, action: { type }, values: { name: "Sam", email: "sam@acme.test" } } });
+    return clientMsgId;
+  };
+
+  // dismiss stays in the browser.
+  const close = press("dismiss", "Close");
+  assert.equal((await s.next((e) => e.type === "error" && e.clientMsgId === close)).code, "bad_widget_action");
+
+  // The failing action: its line comes back as the error, and the card opens again.
+  const old = press("tool:old_form", "Try the old form");
+  const reopened = s.next((e) => e.type === "message" && e.message.id === answer.id && !e.message.meta.widgets[0].used);
+  const failed = await s.next((e) => e.type === "error" && e.clientMsgId === old, 60_000);
+  assert.equal(failed.code, "action_failed");
+  assert.equal(failed.message, "Sorry Sam, that didn't go through. Try Book a demo.");
+  await reopened;
+
+  // The booking: its line folds the card; the visitor's press is saved as answered; no AI turn.
+  const book = press("tool:book_demo", "Book a demo");
+  const folded = s.next((e) => e.type === "message" && e.message.id === answer.id && e.message.meta.widgets[0].used?.label === "Thanks Sam, we'll email sam@acme.test today.", 60_000);
+  const sent = (await s.next((e) => e.type === "message" && e.message.clientMsgId === book, 60_000)).message;
+  assert.equal(sent.body, "Book a demo");
+  assert.deepEqual(sent.meta.widgetAction.tool, { name: "book_demo", status: "ok", done: "Thanks Sam, we'll email sam@acme.test today." }, JSON.stringify((await agent.call(`/conversations/${conversation}/actions`)).json).slice(0, 1500));
+  await folded;
+  await assert.rejects(s.next((e) => e.type === "message" && e.message.seq > sent.seq, 8000), /Timed out/);
+
+  // Agents see both runs in the audit log, and the AI's next turn knows what happened.
+  const actions = (await agent.call(`/conversations/${conversation}/actions`)).json;
+  const tools = JSON.stringify(actions);
+  assert.ok(tools.includes("old_form") && tools.includes("book_demo"), tools.slice(0, 400));
+  s.close();
+});
+
 summary();

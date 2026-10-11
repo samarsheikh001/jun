@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { agentLinks } from "../../shared/agent-links.ts";
 import { editYaml, freshName, readYaml, type Edit } from "../lib/agentFiles.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Checkbox } from "@/components/ui/checkbox.tsx";
@@ -6,11 +7,14 @@ import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { PlusIcon, TrashIcon } from "../components/icons.tsx";
-import { AddDialog, Advanced, CodeEditor, Field, ItemHead, ItemList, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize, slug, useCodeView } from "./parts.tsx";
+import { AddDialog, Advanced, Field, ItemIndex, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { FileStudio } from "./FileStudio.tsx";
 
-// /agent/actions[/<name>]: tools/<name>.yaml as a form. An action is a request to the customer's
-// own systems the AI can make: look something up (GET) or change something (POST).
+// /agent/actions[/<name>]: tools/<name>.yaml. An action is a request to the customer's own systems
+// the AI can make: look something up (GET) or change something (POST). /agent/actions lists them as
+// cards; an action's page is laid out like a widget's (FileStudio): AI and Code on the left, the form
+// on the right (W-24).
 
 const starter = () =>
   `description: \nstatus: Looking that up\nmethod: GET\nurl: https://\n`;
@@ -35,26 +39,40 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
       const data = readYaml(cfg.draft[path]!);
       return { id: name, path, label: humanize(name), sub: isRecord(data) && typeof data.description === "string" ? data.description : "" };
     });
-  const current = items.find((i) => i.id === selected) ?? items[0] ?? null;
+  const current = selected === null ? null : (items.find((i) => i.id === selected) ?? null);
   const names = new Set(items.map((i) => i.id));
+  // An action that's gone (removed, discarded, another version): back to the list.
+  const gone = selected !== null && current === null && cfg.state !== null;
+  useEffect(() => {
+    if (gone) go("/agent/actions");
+  }, [gone]);
 
+  if (current) {
+    return (
+      <FileStudio
+        key={current.path}
+        cfg={cfg}
+        canEdit={canEdit}
+        path={current.path}
+        title={current.label}
+        kind="action"
+        back={{ path: "/agent/actions", label: "All actions" }}
+        form={<ActionForm cfg={cfg} canEdit={canEdit} path={current.path} />}
+      />
+    );
+  }
   return (
-    <div className="agent-split" data-picked={selected !== null && current?.id === selected ? "" : undefined}>
-      <ItemList
+    <>
+      <ItemIndex
         cfg={cfg}
         items={items}
-        selected={current?.id ?? null}
-        onSelect={(id) => go(`/agent/actions/${id}`)}
+        base="/agent/actions"
         onAdd={() => setAdding(true)}
         addLabel="New action"
         canEdit={canEdit}
-        empty="No actions yet. An action lets the AI look something up in your systems (an order, a plan) or make a change for the customer."
+        noun="actions"
+        empty={{ title: "Let the AI do things", text: "An action lets the AI look something up in your systems (an order, a plan) or make a change for the customer." }}
       />
-      {current ? (
-        <ActionForm key={current.path} cfg={cfg} canEdit={canEdit} path={current.path} name={current.id} />
-      ) : (
-        <div className="agent-form agent-blank muted">Add an action so the AI can check an order, a plan or an invoice in your own systems.</div>
-      )}
       <AddDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -74,31 +92,24 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
           go(`/agent/actions/${name}`);
         }}
       />
-    </div>
+    </>
   );
 }
 
-function ActionForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string }) {
+function ActionForm({ cfg, canEdit, path }: { cfg: AgentConfig; canEdit: boolean; path: string }) {
   const text = cfg.draft[path] ?? "";
+  const name = TOOL.exec(path)?.[1] ?? "";
+  // W-27: a widget's button runs it, so the card's own lines matter (else they wait under More options).
+  const runFrom = useMemo(() => agentLinks(cfg.draft).actionRunFrom[name] ?? [], [cfg.draft, name]);
   const data = readYaml(text);
   const edit = (...edits: Edit[]) => cfg.setFile(path, editYaml(text, ...edits));
   const set = (key: string, value: unknown) => edit({ op: "set", path: [key], value });
-  const code = useCodeView();
-  if (code) {
-    return (
-      <section className="agent-form agent-code">
-        <ItemHead back={{ path: "/agent/actions", label: "All actions" }} title={humanize(name)} canEdit={canEdit} onRemove={() => { cfg.setFile(path, undefined); go("/agent/actions"); }} />
-        <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
-      </section>
-    );
-  }
   if (!isRecord(data)) {
     return (
-      <section className="agent-form">
-        <ItemHead back={{ path: "/agent/actions", label: "All actions" }} title={humanize(name)} canEdit={canEdit} onRemove={() => { cfg.setFile(path, undefined); go("/agent/actions"); }} />
+      <div className="agent-form">
         <Unreadable />
         <Problems issues={cfg.issuesFor(path)} />
-      </section>
+      </div>
     );
   }
   const str = (key: string) => (typeof data[key] === "string" || typeof data[key] === "number" ? String(data[key]) : "");
@@ -119,15 +130,18 @@ function ActionForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: b
   };
 
   return (
-    <section className="agent-form">
-      <ItemHead back={{ path: "/agent/actions", label: "All actions" }} title={humanize(name)} canEdit={canEdit} onRemove={() => { cfg.setFile(path, undefined); go("/agent/actions"); }} />
+    <div className="agent-form">
       <Field label="What it does" hint="The AI reads this to decide when to use it. Say what it returns or changes." htmlFor="act-desc">
         <Textarea id="act-desc" rows={2} value={str("description")} readOnly={!canEdit} placeholder="e.g. Finds an order by its number and returns its status and delivery date." onChange={(e) => set("description", e.target.value)} />
       </Field>
       <Field label="While it runs, the customer sees" htmlFor="act-status">
         <Input id="act-status" value={str("status")} readOnly={!canEdit} maxLength={60} placeholder="e.g. Checking your order" onChange={(e) => set("status", e.target.value)} />
       </Field>
-      <Field label="Request" hint={<>Your developer can give you this address. Put details the AI fills in inside braces: <code>https://api.acme.com/orders/{"{order_id}"}</code>.</>} htmlFor="act-url">
+      <Field
+        label="Request"
+        hint={<>Your developer can give you this address. Put details the AI fills in inside braces: <code>https://api.acme.com/orders/{"{order_id}"}</code>. Only showing a widget? Leave it empty: the widget shows with its example data.</>}
+        htmlFor="act-url"
+      >
         <div className="agent-request">
           <NativeSelect aria-label="Kind of request" value={method} disabled={!canEdit} onChange={(e) => set("method", e.target.value)}>
             <NativeSelectOption value="GET">Look up (GET)</NativeSelectOption>
@@ -169,6 +183,7 @@ function ActionForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: b
           )}
         </div>
       </Field>
+      {(runFrom.length > 0 || data.widget_done !== undefined || data.widget_failed !== undefined) && <CardLines str={str} set={set} canEdit={canEdit} runFrom={runFrom} />}
       <Advanced title="More options" defaultOpen={Boolean(data.headers || data.query || data.pages || data.widget)}>
         <Field label="Headers" hint={<>Sent with the request. For a key, write <code>{"{secrets.NAME}"}</code>; your developer adds it as the Worker secret <code>JUN_SECRET_NAME</code>, so it's never stored here.</>}>
           <Pairs value={isRecord(data.headers) ? data.headers : {}} path={["headers"]} edit={edit} canEdit={canEdit} keyPlaceholder="Authorization" valuePlaceholder="Bearer {secrets.API_KEY}" />
@@ -185,10 +200,33 @@ function ActionForm({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: b
             {widgets.map((w) => <NativeSelectOption key={w} value={w}>{humanize(w)}</NativeSelectOption>)}
           </NativeSelect>
         </Field>
+        {!(runFrom.length > 0 || data.widget_done !== undefined || data.widget_failed !== undefined) && <CardLines str={str} set={set} canEdit={canEdit} runFrom={runFrom} />}
       </Advanced>
       {codeOnly.length > 0 && <p className="muted small">This action also has settings only shown in Code ({codeOnly.join(", ")}). They stay as they are.</p>}
       <Problems issues={cfg.issuesFor(path)} />
-    </section>
+    </div>
+  );
+}
+
+/**
+ * W-27: what a widget's card says after its button ran this action (`widget_done` / `widget_failed`):
+ * one line each, `{{ name }}` for what the customer entered (and, when it worked, the result's fields).
+ */
+function CardLines({ str, set, canEdit, runFrom }: { str: (key: string) => string; set: (key: string, value: unknown) => void; canEdit: boolean; runFrom: string[] }) {
+  const from = runFrom.length ? `Buttons in ${runFrom.map(humanize).join(", ")} run this action.` : "For when a widget's button runs this action.";
+  return (
+    <>
+      <Field
+        label="When a widget's button runs it, the card says"
+        hint={<>{from} The card folds to this line and the AI doesn't need to answer. <code>{"{{ name }}"}</code> puts in what the customer typed in the field called name. Leave empty to let the AI answer.</>}
+        htmlFor="act-done"
+      >
+        <Input id="act-done" value={str("widget_done")} readOnly={!canEdit} maxLength={200} placeholder="e.g. Thanks {{ name }}, we'll call you today." onChange={(e) => set("widget_done", e.target.value)} />
+      </Field>
+      <Field label="If it fails, the card says" hint="The card stays open with this line, so they can fix a field and try again. Leave empty to let the AI explain." htmlFor="act-failed">
+        <Input id="act-failed" value={str("widget_failed")} readOnly={!canEdit} maxLength={200} placeholder="e.g. That didn't go through. Please try again." onChange={(e) => set("widget_failed", e.target.value)} />
+      </Field>
+    </>
   );
 }
 

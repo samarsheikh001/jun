@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ExpandIcon } from "../components/icons.tsx";
 import { CodeEditor, EVAL, Field, FilePicker, Problems, SKILL, TextList, TOOL, Unreadable, WIDGET, go, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { MentionText, useMentionActions } from "./MentionText.tsx";
 
 // /agent: AGENTS.md as a page to write on (the body: how the AI talks) beside a panel with when it
 // hands over (the frontmatter's maxReplies and handoffTopics) and which model answers. In Code:
@@ -49,6 +50,7 @@ function InstructionsForm({ cfg, canEdit, workspaceId }: { cfg: AgentConfig; can
   const topics = Array.isArray(data?.handoffTopics) ? (data.handoffTopics as unknown[]).map(String) : [];
   const [expanded, setExpanded] = useState(false);
   const writeBody = (value: string) => set(setBody(text, value));
+  const actions = useMentionActions(cfg);
 
   return (
     <div className="agent-doc">
@@ -58,14 +60,16 @@ function InstructionsForm({ cfg, canEdit, workspaceId }: { cfg: AgentConfig; can
           <p>Its tone, and anything it should always or never do. Write it like you'd brief a new teammate. Steps for one situation (like refunds) go in Procedures.</p>
         </div>
         <div className="agent-doc-editor">
-          <textarea
-            className="agent-doc-text"
-            aria-label="How the AI talks"
+          {/* W-26: @ names an action. */}
+          <MentionText
+            className="mention-plain"
+            id="agent-instructions"
+            ariaLabel="How the AI talks"
             placeholder={PLACEHOLDER}
-            spellCheck
             value={body}
-            onChange={(e) => writeBody(e.target.value)}
+            onChange={writeBody}
             readOnly={!canEdit}
+            actions={actions}
           />
           <Button variant="ghost" size="icon-sm" type="button" className="agent-doc-expand" aria-label="Expand" title="Write in a larger window" onClick={() => setExpanded(true)}>
             <ExpandIcon />
@@ -117,15 +121,16 @@ function InstructionsForm({ cfg, canEdit, workspaceId }: { cfg: AgentConfig; can
             <DialogTitle>How the AI talks</DialogTitle>
             <DialogDescription>Changes go in your draft; customers see them once you save.</DialogDescription>
           </DialogHeader>
-          <textarea
-            className="agent-doc-text agent-doc-text-large"
-            aria-label="How the AI talks"
+          <MentionText
+            className="mention-plain mention-large"
+            id="agent-instructions-large"
+            ariaLabel="How the AI talks"
             placeholder={PLACEHOLDER}
-            spellCheck
             autoFocus
             value={body}
-            onChange={(e) => writeBody(e.target.value)}
+            onChange={writeBody}
             readOnly={!canEdit}
+            actions={actions}
           />
         </DialogContent>
       </Dialog>

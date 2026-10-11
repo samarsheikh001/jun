@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { actionUrl, checkWidget, isClientAction, itemIds, markWidgetUsed, matchWidgetAction, matchWidgetChange, nodeText, parseWidgetFile, renderSummary, renderWidget, summaryFor, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
+import { compileTemplate } from "./jinja.ts";
+import { actionUrl, checkWidget, renderActionLine, toolButtonInputs, isClientAction, itemIds, markWidgetUsed, matchWidgetAction, matchWidgetChange, nodeText, parseWidgetFile, renderSummary, renderWidget, summaryFor, TOOL_ACTION, toolActionInput, widgetActionLine, widgetActionUsed, widgetData, WidgetError, widgetSummary } from "./widgets.ts";
 
 // A widget exported from ChatKit Studio's Download (2026-10-10), with the Studio's own render of its
 // default state as `outputJsonPreview`: our interpreter must produce the same tree.
@@ -202,4 +203,53 @@ test("widgets: Studio's example images (\"/kpop.png\") point at ChatKit Studio; 
   // An admin's own sample is used as written.
   const own = parseWidgetFile("playlist", JSON.stringify({ version: "1.0", template: '{"type":"Card","children":[]}', sample: { banner: "/kpop.png" }, encodedWidget }));
   assert.deepEqual(own.sample, { banner: "/kpop.png" });
+});
+
+test("W-27: each button that runs an action, the inputs a press fills, and a required one nothing fills", () => {
+  const root = checkWidget({
+    type: "Card",
+    children: [
+      { type: "Input", name: "name" },
+      { type: "Input", name: "e_mail" },
+      { type: "Select", name: "size", options: [], onChangeAction: { type: "tool:quote" } },
+      { type: "Button", label: "Submit", submit: true, onClickAction: { type: "tool:book_demo", payload: { source: "card" } } },
+      { type: "Button", label: "Close", onClickAction: { type: "dismiss" } },
+      { type: "Button", label: "Gone", onClickAction: { type: "tool:nope" } },
+    ],
+  });
+  const inputs: Record<string, Record<string, { required: boolean }>> = {
+    book_demo: { name: { required: true }, email: { required: true }, phone: { required: false }, source: { required: true } },
+    quote: { size: { required: true } },
+  };
+  assert.deepEqual(toolButtonInputs(root, (t) => inputs[t] ?? null), [
+    { label: "Submit", tool: "book_demo", sends: ["name", "source"], missing: [{ name: "email", like: "e_mail" }] },
+    { label: "size", tool: "quote", sends: ["size"], missing: [], field: true },
+  ]);
+});
+
+test("W-27: a list's rows repeat one button: reported once", () => {
+  const row = (id: string) => ({ type: "ListViewItem", children: [{ type: "Button", label: "Add", onClickAction: { type: "tool:add", payload: { id } } }] });
+  const root = checkWidget({ type: "ListView", children: [row("a"), row("b")] });
+  assert.deepEqual(toolButtonInputs(root, () => ({ id: { required: true } })), [{ label: "Add", tool: "add", sends: ["id"], missing: [] }]);
+});
+
+test("W-27: an action's card line: what was entered and the result, one plain line, empty when it fails", () => {
+  const t = compileTemplate("Thanks {{ name }},\n  we'll call {{ phone | default('you') }} about {{ ticket }}.");
+  assert.equal(renderActionLine(t, { name: "Sam" }, { ticket: "T-9" }), "Thanks Sam, we'll call you about T-9.");
+  // The result's fields win over what was typed.
+  assert.equal(renderActionLine(compileTemplate("{{ name }}"), { name: "typed" }, { name: "Saved" }), "Saved");
+  assert.equal(renderActionLine(compileTemplate("Sorry {{ name }}, that failed ."), {}, null), "Sorry, that failed.");
+  assert.equal(renderActionLine(compileTemplate("{{ x.y.z }}"), {}, null), "");
+  assert.equal(renderActionLine(compileTemplate(" · "), {}, null), "");
+  assert.equal(renderActionLine(compileTemplate("a{{ long }}"), { long: "b".repeat(300) }, undefined).length, 140);
+});
+
+test("W-27: dismiss folds the card on the visitor's side and is never accepted by the server", () => {
+  const root = checkWidget({ type: "Card", children: [{ type: "Button", label: "Done", onClickAction: { type: "dismiss" } }] });
+  assert.equal(matchWidgetAction(root, { type: "dismiss" }, {}), null);
+});
+
+test("W-29: aiFill is a switch in the file (true only)", () => {
+  assert.equal(parseWidgetFile("p", JSON.stringify({ version: "1.0", template: "{}", aiFill: true })).aiFill, true);
+  assert.equal(parseWidgetFile("p", JSON.stringify({ version: "1.0", template: "{}", aiFill: "yes" })).aiFill, undefined);
 });

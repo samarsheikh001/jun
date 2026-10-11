@@ -1,22 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { readYaml } from "../lib/agentFiles.ts";
 import { useThemePref } from "../lib/theme.ts";
-import { previewSummary, previewWidget, starterWidget, type WidgetNode } from "../../shared/widgets.ts";
+import { parseWidgetFile, previewSummary, previewWidget, renderWidget, starterWidget, widgetSchema, type WidgetNode } from "../../shared/widgets.ts";
+import { schemaFromSample, schemaParams, withDescription, withRequired, type JsonSchema } from "../../shared/widget-schema.ts";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
+import { Switch } from "@/components/ui/switch.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
-import { ChevronLeftIcon, CodeIcon, ExternalLinkIcon, InfoIcon, MoonIcon, PlusIcon, SearchIcon, SparkleIcon, SunIcon, TrashIcon, UploadIcon } from "../components/icons.tsx";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
+import { Field as UiField, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field.tsx";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
+import type { WidgetTemplate } from "./widget-templates.ts";
+import { ExternalLinkIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon, UploadIcon } from "../components/icons.tsx";
 import { formatTemplate } from "../../shared/widget-ai.ts";
 import { CodeArea } from "./CodeArea.tsx";
-import { WidgetChat } from "./WidgetChat.tsx";
-import { AddDialog, CodeEditor, Problems, TOOL, WIDGET, changeOf, go, humanize, slug, useCodeView } from "./parts.tsx";
+import { WidgetChat } from "./AiChat.tsx";
+import { Studio } from "./Studio.tsx";
+import { Connections } from "./Connections.tsx";
+import { AddDialog, CodeEditor, Problems, TOOL, WIDGET, changeOf, go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
-// /agent/widgets[/<name>]: widgets/<name>.widget (W-09). Widgets are designed in ChatKit Studio, so
-// this page shows them rather than building them (after Chatbase's Widgets page): /agent/widgets is a
-// gallery of live previews; a widget's page is its details (or, in Code, its file) beside a large
-// preview canvas with a light / dark switch, which follows what you type.
+// /agent/widgets[/<name>]: widgets/<name>.widget (W-09). /agent/widgets is a gallery of live previews
+// (after Chatbase's Widgets page), with ChatKit Studio's own gallery as Templates to start from (W-23).
+// A widget's page (W-22, after ChatKit Studio's editor) is AI / Code / Details beside a large preview
+// canvas with a light / dark switch, which follows every change.
 
 type Theme = "light" | "dark";
 
@@ -40,11 +49,22 @@ function usedBy(cfg: AgentConfig, name: string): string[] {
     .map((p) => TOOL.exec(p)![1]!);
 }
 
-function render(name: string, text: string): { root: WidgetNode | null; problem: string | null } {
+function render(name: string, text: string, state?: string): { root: WidgetNode | null; problem: string | null } {
   try {
-    return { root: previewWidget(name, text), problem: null };
+    // W-30: a named state draws with its own data.
+    const named = state ? parseWidgetFile(name, text).states?.find((s) => s.name === state) : undefined;
+    return { root: named ? renderWidget(parseWidgetFile(name, text), named.data) : previewWidget(name, text), problem: null };
   } catch (error) {
     return { root: null, problem: (error as Error).message };
+  }
+}
+
+/** W-30: the names of a widget file's states (Studio's or ours), [] when it has none or doesn't parse. */
+function stateNames(name: string, text: string): string[] {
+  try {
+    return (parseWidgetFile(name, text).states ?? []).map((s) => s.name);
+  } catch {
+    return [];
   }
 }
 
@@ -68,9 +88,18 @@ export function WidgetsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
   return <WidgetGallery cfg={cfg} canEdit={canEdit} items={items} />;
 }
 
+type GalleryTab = "mine" | "templates";
+// The tab, for this visit (coming back from a widget keeps it).
+let lastTab: GalleryTab | null = null;
+
 function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boolean; items: WidgetItem[] }) {
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
+  const [tab, setTabState] = useState<GalleryTab>(() => lastTab ?? (items.length === 0 && canEdit ? "templates" : "mine"));
+  const setTab = (next: GalleryTab) => {
+    lastTab = next;
+    setTabState(next);
+  };
   const upload = useRef<HTMLInputElement>(null);
   useThemePref(); // the tiles follow the dashboard's light / dark
   const q = query.trim().toLowerCase();
@@ -78,10 +107,22 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
 
   return (
     <div className="agent-gallery">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as GalleryTab)}>
+        <TabsList className="kb-tabs agent-gallery-tabs" aria-label="Widgets">
+          <TabsTrigger value="mine">My widgets</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
+        </TabsList>
+      </Tabs>
       <div className="agent-gallery-bar">
         <div className="agent-gallery-search">
           <SearchIcon />
-          <Input type="search" placeholder="Search widgets…" aria-label="Search widgets" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input
+            type="search"
+            placeholder={tab === "templates" ? "Search templates…" : "Search widgets…"}
+            aria-label={tab === "templates" ? "Search templates" : "Search widgets"}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
         <span className="spacer" />
         {canEdit && (
@@ -110,14 +151,19 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
         )}
       </div>
 
-      {items.length === 0 ? (
+      {tab === "templates" ? (
+        <TemplateGallery cfg={cfg} canEdit={canEdit} query={q} />
+      ) : items.length === 0 ? (
         <div className="agent-gallery-empty">
           <h2>Show results as widgets</h2>
           <p>A widget shows an action's result to the customer as a neat card, like an order's status or their plan, instead of text.</p>
           {canEdit && (
-            <Button onClick={() => setAdding(true)}>
-              <PlusIcon /> New widget
-            </Button>
+            <div className="row agent-gallery-empty-actions">
+              <Button onClick={() => setTab("templates")}>Start from a template</Button>
+              <Button variant="outline" onClick={() => setAdding(true)}>
+                <PlusIcon /> New widget
+              </Button>
+            </div>
           )}
         </div>
       ) : shown.length === 0 ? (
@@ -134,13 +180,9 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
         open={adding}
         onClose={() => setAdding(false)}
         title="New widget"
-        description="Starts from a simple widget. Design your own in ChatKit Studio and upload the file it downloads."
+        description="Starts from a simple widget. Or start from a template, or upload a file from ChatKit Studio."
         placeholder="e.g. Order status"
-        exists={(raw) => {
-          const name = slug(raw, "_");
-          if (!name) return "Start with a letter.";
-          return `widgets/${name}.widget` in cfg.draft ? "There's already a widget with this name." : null;
-        }}
+        exists={(raw) => nameProblem(cfg, raw)}
         onAdd={(raw) => {
           const name = slug(raw, "_");
           cfg.setFile(`widgets/${name}.widget`, starterWidget(humanize(name)));
@@ -149,6 +191,131 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
         }}
       />
     </div>
+  );
+}
+
+/** Why a typed name can't be used for a new widget, or null. */
+function nameProblem(cfg: AgentConfig, raw: string): string | null {
+  const name = slug(raw, "_");
+  if (!name) return "Start with a letter.";
+  return `widgets/${name}.widget` in cfg.draft ? "There's already a widget with this name." : null;
+}
+
+/** Templates: ChatKit Studio's gallery, loaded when the tab opens; one opens in a dialog to use it. */
+function TemplateGallery({ cfg, canEdit, query }: { cfg: AgentConfig; canEdit: boolean; query: string }) {
+  const [templates, setTemplates] = useState<WidgetTemplate[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [picked, setPicked] = useState<WidgetTemplate | null>(null);
+  useEffect(() => {
+    let live = true;
+    import("./widget-templates.ts")
+      .then((m) => live && setTemplates(m.WIDGET_TEMPLATES))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (failed) return <p className="error small">The templates didn't load. Reload the page to try again.</p>;
+  if (!templates) return <p className="muted small agent-gallery-none">Loading templates…</p>;
+  const shown = query ? templates.filter((t) => `${t.name} ${t.description}`.toLowerCase().includes(query)) : templates;
+  return (
+    <>
+      <p className="muted small agent-gallery-note">
+        From ChatKit Studio's gallery. Pick one to start from, then change it with the AI or in Code, and show it from an action.
+      </p>
+      {shown.length === 0 ? (
+        <p className="muted small agent-gallery-none">No template matches "{query}".</p>
+      ) : (
+        <ul className="agent-gallery-grid">
+          {shown.map((t) => (
+            <TemplateTile key={t.id} template={t} onOpen={() => setPicked(t)} />
+          ))}
+        </ul>
+      )}
+      <TemplateDialog cfg={cfg} canEdit={canEdit} template={picked} onClose={() => setPicked(null)} />
+    </>
+  );
+}
+
+function TemplatePreview({ template, theme }: { template: WidgetTemplate; theme: Theme }) {
+  const { root, problem } = render(template.id, template.file);
+  return root ? <WidgetCard widget={{ id: `template-${template.id}`, name: template.id, root }} interactive={false} theme={theme} /> : <p className="error small">{problem}</p>;
+}
+
+function TemplateTile({ template, onOpen }: { template: WidgetTemplate; onOpen: () => void }) {
+  return (
+    <li className="agent-tile">
+      <div className="agent-stage agent-tile-stage" aria-hidden="true" inert>
+        <div className="agent-stage-card">
+          <TemplatePreview template={template} theme={pageTheme()} />
+        </div>
+      </div>
+      <div className="agent-tile-text">
+        <button type="button" className="agent-tile-link" onClick={onOpen}>
+          {template.name}
+        </button>
+        <span className="agent-tile-sub">{template.description}</span>
+      </div>
+    </li>
+  );
+}
+
+/** A template up close: a large preview, what it's for, and a name to add it under. */
+function TemplateDialog({ cfg, canEdit, template, onClose }: { cfg: AgentConfig; canEdit: boolean; template: WidgetTemplate | null; onClose: () => void }) {
+  const [name, setName] = useState("");
+  useEffect(() => {
+    if (template) setName(freeName(cfg, template.id));
+    // Only when another template opens: the draft changing doesn't reset what's typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template]);
+  const problem = name.trim() ? nameProblem(cfg, name) : null;
+  const use = () => {
+    if (!template || !name.trim() || problem) return;
+    const id = slug(name, "_");
+    cfg.setFile(`widgets/${id}.widget`, template.file);
+    onClose();
+    go(`/agent/widgets/${id}`);
+  };
+  return (
+    <Dialog open={template !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="agent-template-dialog">
+        {template && (
+          <>
+            <div className="agent-stage agent-template-stage">
+              <div className="agent-stage-card">
+                <TemplatePreview template={template} theme={pageTheme()} />
+              </div>
+            </div>
+            <form
+              className="agent-template-side"
+              onSubmit={(e) => {
+                e.preventDefault();
+                use();
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>{template.name}</DialogTitle>
+                <DialogDescription>{template.description}</DialogDescription>
+              </DialogHeader>
+              {canEdit ? (
+                <>
+                  <UiField data-invalid={problem ? true : undefined}>
+                    <FieldLabel htmlFor="agent-template-name">Name</FieldLabel>
+                    <Input id="agent-template-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-invalid={problem ? true : undefined} />
+                    {problem ? <FieldError>{problem}</FieldError> : <FieldDescription>Actions show it by this name. Nothing changes for customers until you save.</FieldDescription>}
+                  </UiField>
+                  <Button type="submit" disabled={!name.trim() || problem !== null}>
+                    Use this template
+                  </Button>
+                </>
+              ) : (
+                <p className="muted small">Only admins can add widgets.</p>
+              )}
+            </form>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -180,10 +347,6 @@ function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
 
 const pageTheme = (): Theme => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
-type Pane = "ai" | "code" | "details";
-// The left column's tab, for this visit (the same tab as you move between widgets).
-let lastPane: Pane | null = null;
-
 /** The .widget file as an object, or null when it isn't a JSON object. */
 function readFile(text: string): Record<string, unknown> | null {
   try {
@@ -204,72 +367,54 @@ function withKey(text: string, key: string, value: unknown): string {
 
 function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string }) {
   const text = cfg.draft[path] ?? "";
-  const code = useCodeView();
-  const [pane, setPaneState] = useState<Pane>(() => lastPane ?? (code ? "code" : canEdit ? "ai" : "details"));
-  const setPane = (next: Pane) => {
-    lastPane = next;
-    setPaneState(next);
-  };
   const [theme, setTheme] = useState<Theme>(pageTheme);
-  const { root, problem } = render(name, text);
-  const change = changeOf(cfg, path);
-  const panes: { id: Pane; label: string }[] = [
-    ...(canEdit ? [{ id: "ai" as const, label: "AI" }] : []),
-    { id: "code", label: "Code" },
-    { id: "details", label: "Details" },
-  ];
-  const shown = panes.some((p) => p.id === pane) ? pane : "details";
+  // W-30: which example the preview draws: the default ("") or a named state.
+  const states = stateNames(name, text);
+  const [state, setState] = useState("");
+  const shown = states.includes(state) ? state : "";
+  const { root, problem } = render(name, text, shown || undefined);
 
   return (
-    <div className="agent-wed agent-wed-studio">
-      <section className="agent-wed-side">
-        <div className="agent-wed-head">
-          <Button variant="ghost" size="icon-sm" aria-label="All widgets" title="All widgets" onClick={() => go("/agent/widgets")}>
-            <ChevronLeftIcon />
-          </Button>
-          <h2>{humanize(name)}</h2>
-          {change && <Badge variant="secondary">{change}</Badge>}
-          <span className="spacer" />
-          {canEdit && (
-            <Button variant="ghost" size="icon-sm" aria-label="Remove widget" title="Removed when you save" onClick={() => { cfg.setFile(path, undefined); go("/agent/widgets"); }}>
-              <TrashIcon />
+    <Studio
+      cfg={cfg}
+      canEdit={canEdit}
+      path={path}
+      title={humanize(name)}
+      back={{ path: "/agent/widgets", label: "All widgets" }}
+      onRemove={() => {
+        cfg.setFile(path, undefined);
+        go("/agent/widgets");
+      }}
+      panes={[
+        ...(canEdit ? [{ id: "ai" as const, label: "AI", content: <WidgetChat cfg={cfg} path={path} name={name} /> }] : []),
+        { id: "code" as const, label: "Code", content: <WidgetCode cfg={cfg} path={path} canEdit={canEdit} /> },
+        { id: "details" as const, label: "Details", content: <WidgetDetails cfg={cfg} path={path} name={name} canEdit={canEdit} /> },
+      ]}
+      right={
+        <section className="agent-stage agent-wed-canvas" data-preview={theme} aria-label="Preview">
+          {states.length > 0 && (
+            <div className="agent-canvas-state">
+              <NativeSelect size="sm" aria-label="Example to preview" value={shown} onChange={(e) => setState(e.target.value)}>
+                <NativeSelectOption value="">Default</NativeSelectOption>
+                {states.map((s) => <NativeSelectOption key={s} value={s}>{s}</NativeSelectOption>)}
+              </NativeSelect>
+            </div>
+          )}
+          <div className="agent-canvas-tools" role="group" aria-label="Preview theme">
+            <Button variant="ghost" size="icon-sm" aria-label="Light" aria-pressed={theme === "light"} onClick={() => setTheme("light")}>
+              <SunIcon />
             </Button>
-          )}
-        </div>
-        <div className="agent-wed-tabs" role="tablist" aria-label="Edit with">
-          {panes.map((p) => (
-            <button key={p.id} type="button" role="tab" aria-selected={shown === p.id} className="agent-wed-tab" onClick={() => setPane(p.id)}>
-              {p.id === "ai" ? <SparkleIcon /> : p.id === "code" ? <CodeIcon /> : <InfoIcon />}
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="agent-wed-pane" role="tabpanel">
-          {shown === "ai" ? (
-            <WidgetChat cfg={cfg} path={path} name={name} />
-          ) : shown === "code" ? (
-            <WidgetCode cfg={cfg} path={path} canEdit={canEdit} />
-          ) : (
-            <WidgetDetails cfg={cfg} path={path} name={name} canEdit={canEdit} />
-          )}
-        </div>
-      </section>
-
-      <section className="agent-stage agent-wed-canvas" data-preview={theme} aria-label="Preview">
-        <div className="agent-canvas-tools" role="group" aria-label="Preview theme">
-          <Button variant="ghost" size="icon-sm" aria-label="Light" aria-pressed={theme === "light"} onClick={() => setTheme("light")}>
-            <SunIcon />
-          </Button>
-          <Button variant="ghost" size="icon-sm" aria-label="Dark" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>
-            <MoonIcon />
-          </Button>
-        </div>
-        <div className="agent-stage-card">
-          {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} theme={theme} /> : <p className="agent-canvas-error">{problem}</p>}
-        </div>
-        <p className="agent-canvas-caption">With example data, as a customer sees it</p>
-      </section>
-    </div>
+            <Button variant="ghost" size="icon-sm" aria-label="Dark" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>
+              <MoonIcon />
+            </Button>
+          </div>
+          <div className="agent-stage-card">
+            {root ? <WidgetCard widget={{ id: "preview", name, root }} interactive={false} theme={theme} /> : <p className="agent-canvas-error">{problem}</p>}
+          </div>
+          <p className="agent-canvas-caption">{shown ? `State "${shown}", as a customer sees it` : "With example data, as a customer sees it"}</p>
+        </section>
+      }
+    />
   );
 }
 
@@ -280,7 +425,7 @@ function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; ca
   const template = typeof file?.template === "string" ? file.template : "";
   const sampleJson = file?.sample === undefined ? "{\n}" : JSON.stringify(file.sample, null, 2);
   const summary = typeof file?.summary === "string" ? file.summary : "";
-  const [bottom, setBottom] = useState<"sample" | "summary" | "file">("sample");
+  const [bottom, setBottom] = useState<"sample" | "schema" | "states" | "summary" | "file">("sample");
 
   // What the fields show: kept while you type, replaced when the file changes elsewhere (the AI, Undo, Discard).
   const [tpl, setTpl] = useState(() => formatTemplate(template));
@@ -328,6 +473,8 @@ function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; ca
       <div className="wcode-bottom">
         <div className="wcode-tabs" role="tablist" aria-label="Data">
           <button type="button" role="tab" aria-selected={bottom === "sample"} onClick={() => setBottom("sample")}>Example data</button>
+          <button type="button" role="tab" aria-selected={bottom === "schema"} onClick={() => setBottom("schema")}>Schema</button>
+          <button type="button" role="tab" aria-selected={bottom === "states"} onClick={() => setBottom("states")}>States</button>
           <button type="button" role="tab" aria-selected={bottom === "summary"} onClick={() => setBottom("summary")}>Summary</button>
           <button type="button" role="tab" aria-selected={bottom === "file"} onClick={() => setBottom("file")}>Whole file</button>
         </div>
@@ -352,6 +499,8 @@ function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; ca
             />
             <p className={sampleError ? "wcode-hint error" : "wcode-hint"}>{sampleError ?? "Data shaped like your action's response; the preview uses it."}</p>
           </>
+        ) : bottom === "schema" || bottom === "states" ? (
+          <JsonKey key={bottom} cfg={cfg} path={path} canEdit={canEdit} file={file} which={bottom} />
         ) : bottom === "summary" ? (
           <div className="wcode-summary">
             <Input
@@ -374,28 +523,146 @@ function WidgetCode({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; ca
   );
 }
 
-/** Details: which actions show it, its folded line, ChatKit Studio and uploading a file. */
+/**
+ * W-30: Code's Schema and States tabs: the file's `jsonSchema` (shown worked out from the example
+ * data when it has none; editing it makes it the widget's own) or `states` (`[{ name, data }]`), as
+ * JSON, written to the file once it parses.
+ */
+function JsonKey({ cfg, path, canEdit, file, which }: { cfg: AgentConfig; path: string; canEdit: boolean; file: Record<string, unknown>; which: "schema" | "states" }) {
+  const text = cfg.draft[path] ?? "";
+  const key = which === "schema" ? "jsonSchema" : "states";
+  const own = file[key] !== undefined && !(which === "schema" && typeof file.jsonSchema === "object" && file.jsonSchema !== null && Object.keys(file.jsonSchema).length === 0);
+  const studioStates = which === "states" && !own ? stateNames("w", text) : [];
+  const current =
+    which === "schema"
+      ? JSON.stringify(own ? file.jsonSchema : schemaFromSample(file.sample ?? {}), null, 2)
+      : JSON.stringify(own ? file.states : studioStates.length ? (parseWidgetFile("w", text).states ?? []) : [], null, 2);
+  const [value, setValue] = useState(current);
+  const wrote = useRef(current);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (current !== wrote.current) {
+      wrote.current = current;
+      setValue(current);
+      setError(null);
+    }
+  }, [current]);
+  const hint =
+    which === "schema"
+      ? own
+        ? "The widget's parameters as JSON Schema (ChatKit Studio's Schema tab). Actions and the AI fill the card in this shape."
+        : "Worked out from the example data. Edit it to make it the widget's own, with descriptions and optional fields."
+      : 'More examples to preview and check, like Studio\'s states: [{ "name": "Delayed", "data": { … } }].';
+  return (
+    <>
+      <CodeArea
+        label={which === "schema" ? "Schema" : "States"}
+        value={value}
+        readOnly={!canEdit}
+        onChange={(next) => {
+          setValue(next);
+          try {
+            const parsed = JSON.parse(next) as unknown;
+            if (which === "schema" && (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))) throw new Error("The schema is a JSON object: { \"type\": \"object\", … }.");
+            if (which === "states" && !Array.isArray(parsed)) throw new Error('States are a list: [{ "name": …, "data": { … } }].');
+            setError(null);
+            wrote.current = JSON.stringify(parsed, null, 2);
+            cfg.setFile(path, withKey(text, key, parsed));
+          } catch (e) {
+            setError(e instanceof SyntaxError ? "Not valid JSON yet." : (e as Error).message);
+          }
+        }}
+      />
+      <p className={error ? "wcode-hint error" : "wcode-hint"}>{error ?? hint}</p>
+    </>
+  );
+}
+
+/**
+ * W-30: the widget's parameters (its schema, else worked out from the example data): each field's
+ * path, type and whether it's needed, with a description to type (what the AI reads when it fills
+ * the card). Typing one makes the schema the widget's own (`jsonSchema` in the file).
+ */
+function Parameters({ cfg, path, name, canEdit, file }: { cfg: AgentConfig; path: string; name: string; canEdit: boolean; file: Record<string, unknown> }) {
+  const text = cfg.draft[path] ?? "";
+  let schema: JsonSchema | null = null;
+  try {
+    schema = widgetSchema(parseWidgetFile(name, text));
+  } catch {
+    schema = null;
+  }
+  const params = schema ? schemaParams(schema) : [];
+  if (!schema || !params.length) {
+    return (
+      <div className="agent-wed-group">
+        <h3>Parameters</h3>
+        <p>Add example data in Code: the card's parameters come from it.</p>
+      </div>
+    );
+  }
+  const own = typeof file.jsonSchema === "object" && file.jsonSchema !== null && Object.keys(file.jsonSchema).length > 0;
+  return (
+    <div className="agent-wed-group">
+      <h3>Parameters</h3>
+      <p>{own ? "The data this card draws, from its schema." : "The data this card draws, worked out from its example data."} Describe a field when its name doesn't say enough: the AI reads it when it fills the card.</p>
+      <ul className="agent-params-list">
+        {params.map((p) => (
+          <li key={p.path} style={{ paddingLeft: `${(p.path.split(".").length - 1) * 14}px` }}>
+            <div className="agent-param-head">
+              <code>{p.path.split(".").at(-1)}</code>
+              <span className="agent-param-type">{p.type}</span>
+              {/* W-30: needed or not; the AI may leave an optional one out. */}
+              <button
+                type="button"
+                className="agent-param-optional"
+                data-on={p.required ? undefined : ""}
+                disabled={!canEdit}
+                title={p.required ? "Needed: click to make it optional" : "Optional: click to make it needed"}
+                onClick={() => cfg.setFile(path, withKey(text, "jsonSchema", withRequired(schema!, p.path, !p.required)))}
+              >
+                {p.required ? "needed" : "optional"}
+              </button>
+            </div>
+            <Input
+              aria-label={`Description of ${p.path}`}
+              value={p.description ?? ""}
+              readOnly={!canEdit}
+              placeholder="What it is, if the name doesn't say"
+              onChange={(e) => cfg.setFile(path, withKey(text, "jsonSchema", withDescription(schema!, p.path, e.target.value)))}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Details: what it's connected to (W-25), its folded line, ChatKit Studio and uploading a file. */
 function WidgetDetails({ cfg, path, name, canEdit }: { cfg: AgentConfig; path: string; name: string; canEdit: boolean }) {
   const text = cfg.draft[path] ?? "";
   const upload = useRef<HTMLInputElement>(null);
   const summary = previewSummary(name, text);
-  const tools = usedBy(cfg, name);
+  const file = readFile(text);
+  const aiFill = file?.aiFill === true;
   return (
     <div className="agent-wed-details">
-      <div className="agent-wed-group">
-        <h3>Shown by</h3>
-        {tools.length ? (
-          <ul className="agent-wed-links">
-            {tools.map((tool) => (
-              <li key={tool}>
-                <a href={`/agent/actions/${tool}`} onClick={(e) => { e.preventDefault(); go(`/agent/actions/${tool}`); }}>{humanize(tool)}</a>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>Not used yet. Pick it under "Show the result as a widget" on an action.</p>
-        )}
-      </div>
+      <Connections cfg={cfg} kind="widget" name={name} canEdit={canEdit} />
+      {/* W-29: the AI may show this card with data it fills in itself (show_widget). */}
+      {file && (
+        <div className="agent-wed-group">
+          <div className="agent-wed-switch">
+            <h3 id="wd-aifill">The AI can fill this card itself</h3>
+            <Switch checked={aiFill} disabled={!canEdit} aria-labelledby="wd-aifill" onCheckedChange={(on) => cfg.setFile(path, withKey(text, "aiFill", on ? true : undefined))} />
+          </div>
+          <p>
+            {aiFill
+              ? "The AI may show it whenever it fits, filled with what it knows from the chat, your docs and actions, in the shape of the example data. No action is needed."
+              : "Off: the card only shows an action's result. Turn it on for cards the AI can rightly fill in, like a summary, a comparison or a contact card. Leave it off for account data such as invoices or plans."}
+          </p>
+          {aiFill && file.sample === undefined && <p className="agent-wed-warn">Add example data in Code: the AI fills the card in its shape.</p>}
+        </div>
+      )}
+      {file && <Parameters cfg={cfg} path={path} name={name} canEdit={canEdit} file={file} />}
       {summary && (
         <div className="agent-wed-group">
           <h3>Folded</h3>

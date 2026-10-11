@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "../settings/layout.tsx";
 
 type ProviderId = "openai" | "workers-ai" | "chatgpt";
-type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups" | "widgets";
+type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups" | "editor";
 
 interface AiState {
   settings: { enabled: boolean; provider: ProviderId; model: string | null; models: Partial<Record<AiJob, string>>; instructions: string; monthlyReplyCap: number };
@@ -38,7 +38,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
   { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Widget page)." },
-  { job: "widgets", label: "Widget editing", hint: "Changes a widget when you ask in its chat (Agent → Widgets)." },
+  { job: "editor", label: "Agent page editing", hint: "Changes a widget, action or procedure when you ask in its AI chat." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";
@@ -157,7 +157,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           <summary className="small">Advanced: model per task{overrides > 0 ? ` (${overrides} set)` : ""}</summary>
           <div className="job-models-body">
             <p className="small muted">
-              Each task uses the model above unless you name another model from the same provider (widget editing uses the large model by default, shown in its field). Fast jobs (nudge, topics, brief) do well on a small model. If the provider
+              Each task uses the model above unless you name another model from the same provider (editing on the Agent page uses the large model by default, shown in its field). Fast jobs (nudge, topics, brief) do well on a small model. If the provider
               doesn't recognise a model here, that task falls back to the model above.
             </p>
             {canEdit && provider === "chatgpt" && (

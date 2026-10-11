@@ -1,6 +1,7 @@
 import { jsonSchema, tool, type ToolSet } from "ai";
 import type { AiStep } from "../../shared/protocol.ts";
-import { renderWidget, summaryFor, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
+import { renderWidget, SHOW_WIDGET_TOOL, summaryFor, widgetSchema, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
+import { checkData } from "../../shared/widget-schema.ts";
 import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
 // HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
@@ -129,6 +130,12 @@ async function callTool(spec: ToolSpec, input: Record<string, unknown>, options:
     const mock = typeof spec.mock === "string" ? spec.mock : JSON.stringify(spec.mock);
     return action("ok", shapeOutput(mock, spec.pick), null, mock);
   }
+  // W-28: no address: the action only shows its widget, from the widget's example data and the AI's inputs.
+  if (!spec.url) {
+    const sample = options.widgets?.find((w) => w.name === spec.widget)?.sample ?? {};
+    const raw = JSON.stringify({ ...sample, ...input });
+    return action("ok", shapeOutput(raw, spec.pick), null, raw);
+  }
   let request: Request;
   try {
     request = buildRequest(spec, input, options.secrets, options.user ?? null);
@@ -177,15 +184,85 @@ function showWidget(spec: ToolSpec, call: ToolCall, options: ToolRunOptions, id:
  * W-17: runs a tool for a card's `tool:<name>` button, outside the model's loop (the press is the
  * visitor's confirmation). Same request, secrets, identity, audit and widget as a model call.
  */
-export async function runTool(spec: ToolSpec, input: Record<string, unknown>, options: ToolRunOptions, widgetId: string): Promise<{ action: ToolAction; widget: MessageWidget | null }> {
+export async function runTool(spec: ToolSpec, input: Record<string, unknown>, options: ToolRunOptions, widgetId: string): Promise<{ action: ToolAction; widget: MessageWidget | null; result?: unknown }> {
   const missing = Object.entries(spec.input).filter(([name, i]) => i.required && input[name] === undefined).map(([name]) => name);
   if (missing.length) {
     return { action: { tool: spec.name, input, output: `Missing input: ${missing.join(", ")}.`, status: "error", httpStatus: null, durationMs: 0 }, widget: null };
   }
   const call = await callTool(spec, input, options);
   const widget = showWidget(spec, call, options, widgetId);
-  const { raw: _raw, ...action } = call;
-  return { action, widget: widget ? { ...widget, id: widgetId } : null };
+  const { raw, ...action } = call;
+  // W-27: the whole JSON response, for an action's widget_done / widget_failed line.
+  let result: unknown;
+  try {
+    result = raw === undefined ? undefined : JSON.parse(raw);
+  } catch {
+    result = undefined;
+  }
+  return { action, widget: widget ? { ...widget, id: widgetId } : null, ...(result !== undefined ? { result } : {}) };
+}
+
+/** W-29: what the visitor sees while the AI puts a card together. */
+export const SHOW_WIDGET_STATUS = "Putting that together";
+/** How much of a widget's schema and example data the tool's description shows the model, each. */
+const MAX_EXAMPLE = 1500;
+const cut = (text: string) => (text.length > MAX_EXAMPLE ? `${text.slice(0, MAX_EXAMPLE)}…` : text);
+
+/**
+ * W-29: `show_widget`, the AI's own tool for the widgets marked `aiFill`: it fills a card with data it
+ * has from the chat, the knowledge or tool results. Nothing is called; the data must draw the card
+ * (else the model gets the error and can try again). Shown and recorded like a tool's card.
+ */
+export function showWidgetTool(widgets: WidgetSpec[], options: Pick<ToolRunOptions, "onAction" | "onStep" | "onWidget">) {
+  // W-30: each card's parameters (its JSON Schema, with the admin's descriptions) and an example.
+  const cards = widgets.map((w) => `- ${w.name} (${w.title}): data schema ${cut(JSON.stringify(widgetSchema(w) ?? {}))}; example: ${cut(JSON.stringify(w.sample ?? {}))}`).join("\n");
+  let calls = 0;
+  return tool({
+    description: `Show the customer a card you fill in yourself, when a card shows something better than text. Fill it only with what you know from this conversation, the knowledge sources and tool results: never make up account details (amounts, dates, order, payment or plan status). The cards:\n${cards}`,
+    inputSchema: jsonSchema<{ widget: string; data: string }>({
+      type: "object",
+      properties: {
+        widget: { type: "string", enum: widgets.map((w) => w.name), description: "Which card." },
+        data: { type: "string", description: "The card's data as a JSON object, in that card's shape." },
+      },
+      required: ["widget", "data"],
+      additionalProperties: false,
+    }),
+    execute: async ({ widget: name, data: text }) => {
+      const id = `sv${++calls}`;
+      const started = Date.now();
+      options.onStep?.({ id, label: SHOW_WIDGET_STATUS, state: "running" });
+      const spec = widgets.find((w) => w.name === name);
+      let card: MessageWidget | null = null;
+      let data: unknown;
+      let error = "";
+      try {
+        if (!spec) throw new Error(`there's no card called ${String(name)}`);
+        data = typeof text === "string" ? (JSON.parse(text) as unknown) : text;
+        if (typeof data !== "object" || data === null || Array.isArray(data)) throw new Error("data must be a JSON object");
+        const schema = widgetSchema(spec);
+        const problems = schema ? checkData(schema, data) : [];
+        if (problems.length) throw new Error(`it doesn't fit the card's schema: ${problems.join("; ")}`);
+        card = { id: `wv${calls}`, name: spec.name, root: renderWidget(spec, data), ...summaryFor(spec, data) };
+      } catch (e) {
+        error = (e as Error).message;
+      } finally {
+        options.onStep?.({ id, label: SHOW_WIDGET_STATUS, state: "done", ...(card ? { widget: card } : {}) });
+      }
+      options.onAction?.({
+        tool: SHOW_WIDGET_TOOL,
+        input: { widget: name, ...(data !== undefined ? { data } : {}) },
+        output: card ? "shown" : error,
+        status: card ? "ok" : "error",
+        httpStatus: null,
+        durationMs: Date.now() - started,
+        widget: card ? { name: card.name } : { name: String(name), error },
+      });
+      if (!card) return `ERROR: the card didn't draw with that data (${error}). Fix the data to the card's shape and call again, or answer in text.`;
+      options.onWidget?.(card);
+      return WIDGET_SHOWN_NOTE;
+    },
+  });
 }
 
 /** AI SDK tools for a config's HTTP tools. Failed calls return an error the model can explain. */

@@ -1,11 +1,12 @@
 import { parse as parseYaml } from "yaml";
+import { compileTemplate } from "../../shared/jinja.ts";
 import { INTENT_NAME, MAX_INTENT_EXIT, MAX_INTENT_OPENING, MAX_INTENT_REPLIES, MAX_INTENT_REPLY, type IntentSpec } from "../../shared/intents.ts";
 import { DONE_TOOL } from "../../shared/actions.ts";
-import { parseWidgetFile, renderSummary, renderWidget, TOOL_ACTION, widgetActions, type WidgetSpec } from "../../shared/widgets.ts";
+import { checkExamples, parseWidgetFile, renderSummary, renderWidget, SHOW_WIDGET_TOOL, TOOL_ACTION, widgetActions, type WidgetSpec } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL } from "./agent.ts";
 
 /** The agent's own tools: a tools/<name>.yaml can't take their names. */
-const BUILT_IN_TOOLS = new Set([HANDOFF_TOOL, FLAG_TOOL, DONE_TOOL, "activate_skill"]);
+const BUILT_IN_TOOLS = new Set([HANDOFF_TOOL, FLAG_TOOL, DONE_TOOL, SHOW_WIDGET_TOOL, "activate_skill"]);
 
 // Support agent as code (AI-18). A config is a set of text files, the same in git and in the desk:
 //   AGENTS.md                 persona, tone, rules; optional frontmatter guardrails
@@ -39,6 +40,7 @@ export interface ToolSpec {
   name: string;
   description: string;
   method: "GET" | "POST";
+  /** "" (W-28): the action only shows its widget, with the widget's example data and the AI's inputs; nothing is called. */
   url: string;
   headers: Record<string, string>;
   query: Record<string, string>;
@@ -54,6 +56,14 @@ export interface ToolSpec {
   pages?: string[];
   /** W-09: show a successful result to the customer as this widget (`widgets/<name>.widget`). */
   widget?: string;
+  /**
+   * W-27: when a widget's button ran this action, the line the card shows (Jinja over what was
+   * entered and the result): `widgetDone` on success (the card folds to it, and the AI doesn't
+   * answer the press unless the action shows a widget), `widgetFailed` on an error (the card stays
+   * open with it, nothing is sent). Never used when the AI calls the action itself.
+   */
+  widgetDone?: string;
+  widgetFailed?: string;
 }
 
 /** `action`: AI-21, the reply proposed a page action (the card), with or without text. */
@@ -272,6 +282,18 @@ const INPUT_TYPES = ["string", "number", "integer", "boolean"] as const;
 /** The visitor's label for a tool call without its own `status:`. */
 export const DEFAULT_TOOL_STATUS = "Looking that up";
 export const MAX_TOOL_STATUS = 60;
+/** W-27: a `widget_done` / `widget_failed` template's length. */
+export const MAX_TOOL_LINE = 200;
+
+/** An address with a site in it once its {placeholders} are filled ("https://" alone isn't). */
+function wholeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.replace(PLACEHOLDER, "x"));
+    return parsed.hostname.length > 0 && !parsed.hostname.startsWith(".");
+  } catch {
+    return false;
+  }
+}
 
 function parseTool(path: string, name: string, text: string, issues: ConfigIssue[]): ToolSpec | null {
   const data = yaml(path, text, issues);
@@ -281,7 +303,7 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     return null;
   }
   const before = issues.length;
-  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status", "pages", "widget"], issues);
+  unknownKeys(path, data, ["description", "method", "url", "headers", "query", "body", "input", "pick", "mock", "status", "pages", "widget", "widget_done", "widget_failed"], issues);
   const pages = Array.isArray(data.pages) && data.pages.length > 0 && data.pages.every((p) => typeof p === "string" && p.startsWith("/")) ? (data.pages as string[]) : undefined;
   if (data.pages !== undefined && !pages) issues.push({ path, message: 'pages must be a list of paths like "/pricing" or "/plans/*".' });
   const widget = typeof data.widget === "string" ? data.widget.trim() : undefined;
@@ -294,7 +316,14 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
   if (method !== "GET" && method !== "POST") issues.push({ path, message: "method must be GET or POST." });
 
   const url = typeof data.url === "string" ? data.url.trim() : "";
-  if (!/^https?:\/\//.test(url)) issues.push({ path, message: "url must start with https:// (or http://)." });
+  // W-28: an action that only shows its widget needs no address; any other needs a whole one.
+  if (!url) {
+    if (!widget) issues.push({ path, message: "url is required: the address to call, like https://api.acme.com/orders/{order_id}. (Only an action that just shows a widget can leave it out.)" });
+  } else if (!/^https?:\/\//.test(url)) {
+    issues.push({ path, message: "url must start with https:// (or http://)." });
+  } else if (!wholeUrl(url)) {
+    issues.push({ path, message: `url "${url}" isn't a whole address yet: add the site and path, like https://api.acme.com/orders/{order_id}.` });
+  }
 
   const input: Record<string, ToolInput> = {};
   if (data.input !== undefined && !isRecord(data.input)) issues.push({ path, message: "input must be a map of parameter names." });
@@ -341,6 +370,23 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     else status = value;
   }
 
+  // W-27: the card's line after a widget's button ran this action: one short Jinja template each.
+  const lines: { widgetDone?: string; widgetFailed?: string } = {};
+  for (const [key, field] of [["widget_done", "widgetDone"], ["widget_failed", "widgetFailed"]] as const) {
+    if (data[key] === undefined) continue;
+    const value = typeof data[key] === "string" ? data[key].trim() : "";
+    if (!value || value.length > MAX_TOOL_LINE) {
+      issues.push({ path, message: `${key} must be one short line for the customer (at most ${MAX_TOOL_LINE} characters), like "Thanks {{ name }}, we'll be in touch."` });
+      continue;
+    }
+    try {
+      compileTemplate(value);
+      lines[field] = value;
+    } catch (error) {
+      issues.push({ path, message: `${key}: ${(error as Error).message}` });
+    }
+  }
+
   // Every {placeholder} must be an input or a secret.
   const templated = [url, ...Object.values(headers), ...Object.values(query), JSON.stringify(data.body ?? null)];
   for (const source of templated) {
@@ -374,6 +420,7 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     ...(pick ? { pick } : {}),
     ...(data.mock !== undefined ? { mock: data.mock } : {}),
     ...(status ? { status } : {}),
+    ...lines,
   };
 }
 
@@ -381,10 +428,14 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
 function parseWidget(path: string, name: string, text: string, issues: ConfigIssue[]): WidgetSpec | null {
   try {
     const spec = parseWidgetFile(name, text);
+    // W-29: the AI fills the card in the shape of its example data, so it needs some.
+    if (spec.aiFill && !spec.sample) throw new Error('aiFill needs example data ("sample"): the AI fills the card in its shape.');
     if (spec.sample) {
       renderWidget(spec, spec.sample);
       renderSummary(spec, spec.sample);
     }
+    // W-30: the example data and every named state must fit the schema (when the file has one) and draw.
+    checkExamples(spec);
     return spec;
   } catch (error) {
     issues.push({ path, message: (error as Error).message });

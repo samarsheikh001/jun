@@ -5,6 +5,7 @@
 // applying the change to the file. The Worker side is worker/ai/widget-edit.ts.
 
 import { jinjaNames } from "./jinja.ts";
+import { checkData, keepDescriptions, schemaFromSample, type JsonSchema } from "./widget-schema.ts";
 
 /** Turns of the chat sent back with each request (the latest last). */
 export const MAX_EDIT_HISTORY = 12;
@@ -23,6 +24,8 @@ export interface WidgetEdit {
   sample?: Record<string, unknown>;
   /** A new summary line template ("" removes it), when the change asks for it. */
   summary?: string;
+  /** W-30: a new JSON Schema of the data (the widget's parameters), when the change asks for it. */
+  schema?: JsonSchema;
 }
 
 /**
@@ -47,7 +50,8 @@ ${guide}
 
 You don't write JSX, and you don't write a zod schema. The widget file holds:
 - a template: a Jinja template that renders the component tree as JSON;
-- sample: example data in the shape of the action's JSON response (instead of the guide's schema), used for the preview;
+- sample: example data in the shape of the action's JSON response, used for the preview;
+- optionally jsonSchema: the guide's schema as JSON Schema (its zod schema, converted): the widget's parameters, with a "description" for each field that isn't obvious. The AI and actions fill the card in this shape;
 - optionally summary: a one-line plain-text Jinja template from the same data.
 
 Write each JSX element as a JSON object with "type" and its props; child elements go in "children" (a list). Everything else carries over: the same component names ("Table.Row", "ListViewItem"…), props, values and defaults. For example:
@@ -65,7 +69,7 @@ The template engine is a small Jinja, not full Jinja. It has: {{ … }}; {% if %
 
 # Actions in this desk
 
-An action is {"type": …, "payload": {…}}. "tool:<action name>" (e.g. "tool:add_seats") runs one of the desk's actions with the card's field values; "open_url" with payload {"url": "https://…"} opens a link; any other type is sent to the support AI as the customer's choice; add "handler": "client" to send it to the website instead. Keep the actions and field names a widget already has unless the admin asks to change them: the desk's actions depend on them.
+An action is {"type": …, "payload": {…}}. "tool:<action name>" (e.g. "tool:add_seats") runs one of the desk's actions (listed with their inputs in the request) with the card's field values and the payload: each input is filled from the field (or payload key) with exactly its name, so name the fields after the inputs, and give every required input a field or a payload value; "open_url" with payload {"url": "https://…"} opens a link; "dismiss" folds the card on the customer's side (a "Done" or "Close" button; nothing is sent); any other type is sent to the support AI as the customer's choice; add "handler": "client" to send it to the website instead. Keep the actions and field names a widget already has unless the admin asks to change them: the desk's actions depend on them.
 
 # Images
 
@@ -74,7 +78,7 @@ You have no web search here. Use an image only if its https URL is already in th
 # Your change
 
 - Make exactly the change asked for and keep everything else as it is.
-- If the change needs data the sample doesn't have, add it to the sample with realistic values.
+- If the change needs data the sample doesn't have, add just that to the sample with realistic values; keep the sample's other values exactly as they are.
 - If the request isn't about this widget or can't be done with these components, leave the template unchanged and say why in the reply.
 
 Answer in exactly this shape, nothing before or after:
@@ -85,7 +89,10 @@ the whole new template
 <sample>
 the whole sample data as JSON (only if you changed it; else leave this tag out)
 </sample>
-<summary>a new one-line summary template (only if asked; else leave this tag out)</summary>`;
+<summary>a new one-line summary template (only if asked; else leave this tag out)</summary>
+<schema>
+the whole JSON Schema of the data (only if the widget has one and you changed the data's shape, or the admin asks about its parameters; keep the existing descriptions; else leave this tag out)
+</schema>`;
 }
 
 /** The user message: the current widget, the chat so far, the request, and a failed attempt's error. */
@@ -94,6 +101,10 @@ export function widgetEditInput(input: {
   template: string;
   sample: unknown;
   summary: string | null;
+  /** W-30: the widget's own JSON Schema, when it has one. */
+  schema?: JsonSchema;
+  /** W-27: the desk's actions, described (`describeActions`), for `tool:<name>` buttons. */
+  actions?: string;
   history: WidgetEditTurn[];
   message: string;
   error?: { template: string; message: string };
@@ -103,6 +114,9 @@ export function widgetEditInput(input: {
     `Current template:\n<template>\n${input.template}\n</template>`,
     `Current sample data:\n<sample>\n${input.sample === undefined ? "{}" : JSON.stringify(input.sample, null, 2)}\n</sample>`,
     input.summary ? `Current summary line template: ${input.summary}` : "",
+    input.schema ? `Current data schema (the widget's parameters):\n<schema>\n${JSON.stringify(input.schema, null, 2)}\n</schema>` : "",
+    input.actions ? `The desk's actions:
+${input.actions}` : "",
   ];
   const history = input.history.slice(-MAX_EDIT_HISTORY);
   if (history.length) parts.push(`Earlier in this chat:\n${history.map((t) => `${t.role === "user" ? "Admin" : "You"}: ${t.text}`).join("\n")}`);
@@ -134,14 +148,25 @@ export function parseWidgetEdit(text: string): WidgetEdit | null {
   }
   const summary = tag(body, "summary");
   if (summary !== null) out.summary = summary.replace(/\s+/g, " ").trim();
+  const schema = tag(body, "schema");
+  if (schema?.trim()) {
+    const parsed = JSON.parse(schema.replace(/^```[a-z]*\n|\n```$/g, "")) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("schema must be a JSON Schema object.");
+    out.schema = parsed as JsonSchema;
+  }
   return out;
 }
 
 /** The widget file with the edit applied: its other keys (version, name, ChatKit Studio's) kept, in order. */
-export function applyWidgetEdit(fileText: string, edit: Pick<WidgetEdit, "template" | "sample" | "summary">): string {
+export function applyWidgetEdit(fileText: string, edit: Pick<WidgetEdit, "template" | "sample" | "summary" | "schema">): string {
   const file = JSON.parse(fileText) as Record<string, unknown>;
   file.template = edit.template;
   if (edit.sample) file.sample = edit.sample;
+  // W-30: a schema the model wrote wins; new example data that no longer fits the file's schema
+  // gets one worked out from it, keeping the descriptions of parameters that are still there.
+  const old = typeof file.jsonSchema === "object" && file.jsonSchema !== null && !Array.isArray(file.jsonSchema) ? (file.jsonSchema as JsonSchema) : null;
+  if (edit.schema) file.jsonSchema = edit.schema;
+  else if (edit.sample && old && old.properties && checkData(old, edit.sample).length) file.jsonSchema = keepDescriptions(schemaFromSample(edit.sample), old);
   if (edit.summary !== undefined) {
     if (edit.summary) file.summary = edit.summary;
     else delete file.summary;

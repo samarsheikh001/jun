@@ -28,7 +28,8 @@ import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } f
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
-import { markWidgetUsed, matchWidgetAction, matchWidgetChange, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
+import { compileTemplate } from "../shared/jinja.ts";
+import { markWidgetUsed, matchWidgetAction, matchWidgetChange, renderActionLine, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
@@ -79,6 +80,16 @@ export const FORWARD_HEADERS = {
 const PAGE_ACTIONS_KEY = "pageActions";
 /** W-17: a card tool's output for the AI (by visitor message id), and a card it returned to show with the next answer (by seq). */
 const TOOL_OUTPUT_KEY = "widgetToolOutput:";
+
+/** W-27: a card (or its list row) open again after its action failed. */
+function unmarkWidget(widget: MessageWidget, item: string | undefined): MessageWidget {
+  if (item) {
+    const { [item]: _used, ...items } = widget.items ?? {};
+    return { ...widget, items };
+  }
+  const { used: _used, ...rest } = widget;
+  return rest;
+}
 const PENDING_WIDGETS_KEY = "pendingWidgets:";
 /** D-51: how many field changes may run a tool in one conversation (each can call the customer's API). */
 const WIDGET_CHANGES_KEY = "widgetChanges";
@@ -316,7 +327,19 @@ export class Conversation extends DurableObject<Env> {
     const used = participant.role === "visitor" && input.widgetAction ? await this.#useWidget(ref, input.clientMsgId, input.widgetAction) : null;
     // W-17: a `tool:<name>` button runs the tool now; the AI's turn then says what happened.
     const toolRun = used?.meta ? await this.#runWidgetTool(ref, used.meta) : null;
-    if (toolRun && used?.meta) used.meta.tool = { name: toolRun.action.tool, status: toolRun.action.status };
+    if (toolRun && used?.meta && used.card) {
+      const { meta, card } = used;
+      // W-27: the action's widget_failed line: the card opens again with it and nothing is sent
+      // (the visitor can fix a field and press again); the run is still in the audit log.
+      if (toolRun.failed) {
+        await this.#recordAction(ref, card.seq, toolRun.configVersion, toolRun.action);
+        await this.#setCard(ref, card.messageId, meta.widgetId, (w) => unmarkWidget(w, meta.item));
+        throw new SendError("action_failed", toolRun.failed);
+      }
+      // Its widget_done line: the card folds to it, and it answers the press unless a card comes next.
+      meta.tool = { name: toolRun.action.tool, status: toolRun.action.status, ...(toolRun.done && !toolRun.widget ? { done: toolRun.done } : {}) };
+      if (toolRun.done) await this.#setCard(ref, card.messageId, meta.widgetId, (w) => markWidgetUsed(unmarkWidget(w, meta.item), toolRun.done, meta.item, Date.now()));
+    }
     const body = used ? used.label : typeof input.body === "string" ? input.body.trim() : "";
     const attachments = await this.#checkAttachments(ref, participant, input.attachments ?? []);
     if (!body && attachments.length === 0) throw new SendError("empty", "Message is empty.");
@@ -370,7 +393,7 @@ export class Conversation extends DurableObject<Env> {
 
     // The AI answers visitor messages in AI-handled conversations, from an alarm so the
     // sender isn't kept waiting (and so it's retried if the object restarts).
-    if (participant.role === "visitor") await this.ctx.storage.setAlarm(Date.now());
+    if (participant.role === "visitor" && !used?.meta?.tool?.done) await this.ctx.storage.setAlarm(Date.now());
     return message;
   }
 
@@ -379,7 +402,11 @@ export class Conversation extends DurableObject<Env> {
    * (everyone's copy updates in place). A retry of a message already stored passes (no meta: the
    * stored message is returned as is). Throws SendError for a card that's gone, used or forged.
    */
-  async #useWidget(ref: ConversationRef, clientMsgId: string, sent: NonNullable<SendInput["widgetAction"]>): Promise<{ label: string; meta: WidgetActionMeta | null }> {
+  async #useWidget(
+    ref: ConversationRef,
+    clientMsgId: string,
+    sent: NonNullable<SendInput["widgetAction"]>,
+  ): Promise<{ label: string; meta: WidgetActionMeta | null; card?: { messageId: string; seq: number } }> {
     const retry = await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.client_msg_id = ?`).bind(ref.conversationId, String(clientMsgId)).first<MessageRow>();
     if (retry) return { label: toMessage(retry).body, meta: null };
     const messageId = typeof sent.messageId === "string" ? sent.messageId : "";
@@ -399,6 +426,7 @@ export class Conversation extends DurableObject<Env> {
     this.#broadcast({ type: "message", message: { ...message, meta } });
     return {
       label: match.label,
+      card: { messageId: message.id, seq: message.seq },
       meta: {
         widgetId: widget.id,
         widget: widget.name,
@@ -414,17 +442,35 @@ export class Conversation extends DurableObject<Env> {
    * W-17: runs the tool a card's `tool:<name>` button names, with the button's payload and what was
    * entered (only the tool's own inputs), as the verified customer. Null for other actions.
    */
-  async #runWidgetTool(ref: ConversationRef, meta: WidgetActionMeta): Promise<{ action: ToolAction; widget: MessageWidget | null; label: string; configVersion: number | null } | null> {
+  async #runWidgetTool(
+    ref: ConversationRef,
+    meta: WidgetActionMeta,
+  ): Promise<{ action: ToolAction; widget: MessageWidget | null; label: string; configVersion: number | null; done: string; failed: string } | null> {
     const name = TOOL_ACTION.exec(meta.type)?.[1];
     if (!name) return null;
     const [config, user] = await Promise.all([loadAgentConfig(this.env, ref.workspaceId), this.#verifiedCustomer(ref)]);
     const spec = config.tools.find((t) => t.name === name);
     if (!spec) {
-      return { action: { tool: name, input: {}, output: `There's no tool called ${name}.`, status: "error", httpStatus: null, durationMs: 0 }, widget: null, label: DEFAULT_TOOL_STATUS, configVersion: config.version };
+      return { action: { tool: name, input: {}, output: `There's no tool called ${name}.`, status: "error", httpStatus: null, durationMs: 0 }, widget: null, label: DEFAULT_TOOL_STATUS, configVersion: config.version, done: "", failed: "" };
     }
     const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, spec.input);
-    const { action, widget } = await runTool(spec, input, { secrets: secretsFromEnv(this.env), user, widgets: config.widgets }, `wb${Date.now().toString(36)}`);
-    return { action, widget, label: spec.status ?? DEFAULT_TOOL_STATUS, configVersion: config.version };
+    const { action, widget, result } = await runTool(spec, input, { secrets: secretsFromEnv(this.env), user, widgets: config.widgets }, `wb${Date.now().toString(36)}`);
+    // W-27: the action's own line for the card (the error's body never reaches the visitor).
+    const values = meta.values ?? {};
+    const ok = action.status === "ok";
+    const done = ok && spec.widgetDone ? renderActionLine(compileTemplate(spec.widgetDone), values, result) : "";
+    const failed = !ok && spec.widgetFailed ? renderActionLine(compileTemplate(spec.widgetFailed), values, undefined) : "";
+    return { action, widget, label: spec.status ?? DEFAULT_TOOL_STATUS, configVersion: config.version, done, failed };
+  }
+
+  /** W-27: one card of an AI message changed in place (its latest copy), for everyone. */
+  async #setCard(ref: ConversationRef, messageId: string, widgetId: string, next: (widget: MessageWidget) => MessageWidget): Promise<void> {
+    const row = await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.id = ?`).bind(ref.conversationId, messageId).first<MessageRow>();
+    if (!row) return;
+    const message = toMessage(row);
+    const meta = { ...message.meta, widgets: (message.meta.widgets ?? []).map((w) => (w.id === widgetId ? next(w) : w)) };
+    await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), message.id).run();
+    this.#broadcast({ type: "message", message: { ...message, meta } });
   }
 
   /** W-17: the AI's history gets each card tool's result back (kept out of the visitor's copy of the message). */
@@ -669,6 +715,8 @@ export class Conversation extends DurableObject<Env> {
     while (visitorAt >= 0 && history[visitorAt]!.authorType !== "visitor") visitorAt--;
     const visitor = history[visitorAt];
     if (!visitor) return false;
+    // W-27: a card's press its action's widget_done line already answered.
+    if (visitor.meta.widgetAction?.tool?.done) return false;
     const replyKey = `ai:${visitor.seq}`;
     const chain = history.slice(visitorAt + 1).filter((m) => m.authorType === "ai" && (m.clientMsgId === replyKey || m.clientMsgId.startsWith(`${replyKey}.`))).length;
     // AI-21: after a page action ran (or failed), the AI gets one follow-up turn: the next step of

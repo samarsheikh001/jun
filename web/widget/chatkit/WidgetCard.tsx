@@ -1,5 +1,5 @@
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { actionUrl, isClientAction, itemIds, OPEN_URL, TOOL_ACTION, widgetSummary, type MessageWidget, type WidgetActionConfig, type WidgetNode } from "../../../shared/widgets.ts";
+import { actionUrl, DISMISS, isClientAction, itemIds, OPEN_URL, TOOL_ACTION, widgetSummary, type MessageWidget, type WidgetActionConfig, type WidgetNode } from "../../../shared/widgets.ts";
 import { WidgetChart } from "./chart.tsx";
 import { hasIcon, iconSize, WidgetIcon } from "./icons.tsx";
 import { background, block, box, color, imageSrc, insets, length, onTone, SEMANTIC, space, text, type Theme } from "./style.ts";
@@ -19,6 +19,9 @@ import "./chatkit.css";
 // to the server; `loadingBehavior` picks what shows busy while it's sent (auto: the pressed control,
 // a card's confirm: the card); a field's `onChangeAction` (`tool:<name>` only) runs quietly through
 // `onChange` and the card the tool returns replaces this one.
+//
+// W-27: a `dismiss` action (ours, like `open_url`) folds the card here and sends nothing; a card that
+// isn't a Card (a list, a Basic root) goes away instead. Only for this view: a reload shows it again.
 
 export interface WidgetActionEvent {
   action: WidgetActionConfig;
@@ -26,6 +29,12 @@ export interface WidgetActionEvent {
   values: Record<string, string | boolean>;
   /** W-17: the list item it was pressed in. */
   item?: string;
+}
+
+/** W-27: how a press went; `ok: false` with a message when the action's widget_failed line answered it. */
+export interface WidgetActionOutcome {
+  ok: boolean;
+  message?: string;
 }
 
 /** D-51: an action with ChatKit's `handler: "client"`, for the host page. */
@@ -58,6 +67,8 @@ interface Ctx {
   /** The root's one-line summary and, once used, what was chosen (a used root Card folds to them). */
   summary: string;
   usedLabel: string | null;
+  /** W-27: a `dismiss` button folded the card. */
+  dismissed: boolean;
   /** W-17: list item ids, and which items are used or being sent. */
   items: Map<WidgetNode, string>;
   /** The element id of the card's field with this name (a Label's `fieldName` points at it). */
@@ -74,6 +85,7 @@ const WidgetCtx = createContext<Ctx>({
   busy: () => false,
   summary: "",
   usedLabel: null,
+  dismissed: false,
   items: new Map(),
   itemState: () => ({ used: null, busy: false }),
   fieldId: () => undefined,
@@ -825,15 +837,16 @@ function Status({ status }: { status: unknown }) {
  * its own background or a theme of its own: then it's a tile (`tile`: background and radius only).
  */
 function Card({ node, nested = false, look = "frame" }: { node: WidgetNode; nested?: boolean; look?: "frame" | "bare" | "tile" }) {
-  const { theme, fire, disabled, busy, summary, usedLabel } = useContext(WidgetCtx);
+  const { theme, fire, disabled, busy, summary, usedLabel, dismissed } = useContext(WidgetCtx);
   const confirmKey = useKey();
   const cancelKey = useKey();
   // ChatKit's `collapsed`: the body folds to one row that opens it. A used root card folds the same way.
   const usedHere = nested ? null : usedLabel;
-  const folds = node.collapsed === true || Boolean(usedHere);
+  const folds = node.collapsed === true || Boolean(usedHere) || (!nested && dismissed);
   const [open, setOpen] = useState(!folds);
+  // Folding closes it; unfolding (W-27: a press whose action failed opens the card again) opens it.
   useEffect(() => {
-    if (folds) setOpen(false);
+    setOpen(!folds);
   }, [folds]);
   const line = (nested ? widgetSummary(node) : summary) || "Details";
   const flat = look === "bare";
@@ -878,8 +891,10 @@ function Card({ node, nested = false, look = "frame" }: { node: WidgetNode; nest
             <svg className={`ck-fold-chev${open ? " ck-open" : ""}`} width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>
         )}
-        {open && (node.children ?? []).map((c, i) => <Node key={str(c.key) || i} node={c} />)}
-        {open && (confirm || cancel) && (
+        {/* Folded, the body stays mounted (hidden): what was typed survives a fold that opens again (W-27). */}
+        <div className="ck-card-body" hidden={!open}>
+        {(node.children ?? []).map((c, i) => <Node key={str(c.key) || i} node={c} />)}
+        {(confirm || cancel) && (
           <div className="ck-card-actions">
             {confirm && asAction(confirm.action) && (
               <button
@@ -908,6 +923,7 @@ function Card({ node, nested = false, look = "frame" }: { node: WidgetNode; nest
             )}
           </div>
         )}
+        </div>
       </div>
     </>
   );
@@ -948,7 +964,8 @@ export function WidgetCard({
 }: {
   widget: MessageWidget;
   interactive: boolean;
-  onAction?: (event: WidgetActionEvent) => void;
+  /** May resolve with why it didn't go through (W-27: the action's widget_failed line); the card shows it. */
+  onAction?: (event: WidgetActionEvent) => void | Promise<WidgetActionOutcome>;
   /** D-51: an action with `handler: "client"` (for the host page; never sent to the server). */
   onClientAction?: (event: WidgetClientEvent) => void;
   /** D-51: a field's `tool:<name>` `onChangeAction`; resolves when done (the new card arrives separately). */
@@ -979,6 +996,7 @@ export function WidgetCard({
   const queued = useRef<(() => void) | null>(null);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [changeError, setChangeError] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
   const used = widget.used ?? null;
   const readOnly = !interactive || !onAction;
   const disabled = readOnly || Boolean(used) || sending === "card" || changing === "card";
@@ -1020,12 +1038,18 @@ export function WidgetCard({
     readOnly,
     summary,
     usedLabel: used?.label ?? null,
+    dismissed,
     items: ids,
     itemState: (id) => ({ used: widget.items?.[id] ?? null, busy: false }),
     busy: (key) => sending === key || changing === key,
     fire: (action, label, check, item, self) => {
       const a = asAction(action);
       if (!a || !form.current) return;
+      // W-27: dismiss folds the card here; nothing is sent and nothing is used.
+      if (a.type === DISMISS) {
+        setDismissed(true);
+        return;
+      }
       // W-17: a link opens here; nothing is sent and nothing is used.
       if (a.type === OPEN_URL) {
         const url = actionUrl(a);
@@ -1042,7 +1066,13 @@ export function WidgetCard({
       // ChatKit's loadingBehavior; "auto" is the pressed control, or the card for the card's own actions.
       const lb = a.loadingBehavior ?? "auto";
       setSending(lb === "none" ? "quiet" : lb === "container" || !self ? "card" : self);
-      onAction?.({ action: { type: a.type, ...(a.payload !== undefined ? { payload: a.payload } : {}) }, label, values: collect(form.current), ...(item ? { item } : {}) });
+      setChangeError(null);
+      const sent = onAction?.({ action: { type: a.type, ...(a.payload !== undefined ? { payload: a.payload } : {}) }, label, values: collect(form.current), ...(item ? { item } : {}) });
+      void sent?.then((r) => {
+        if (r.ok) return;
+        setSending(null);
+        if (r.message) setChangeError(r.message);
+      });
     },
     change: (node, key) => {
       const a = asAction(node.onChangeAction);
@@ -1058,6 +1088,7 @@ export function WidgetCard({
   useEffect(() => () => timers.current.forEach((t) => clearTimeout(t)), []);
   const root = widget.root;
   const tile = Boolean(background(root.background, theme)) || ((root.theme === "dark" || root.theme === "light") && root.theme !== theme);
+  if (dismissed && root.type !== "Card") return null;
   return (
     <WidgetCtx.Provider value={ctx}>
       <form ref={form} className={`ck${desk ? " ck-desk" : ""}${theme === "dark" ? " ck-dark" : ""}${bare ? " ck-bare" : ""}${used ? " ck-used" : ""}`} onSubmit={(e) => e.preventDefault()} noValidate={false} aria-label={widget.name}>

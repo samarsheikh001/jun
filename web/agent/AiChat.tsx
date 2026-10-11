@@ -14,9 +14,27 @@ import {
 } from "@/components/ui/message-scroller.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
-// W-22: change a widget by asking. Each request sends the widget's file, the request and the chat
-// so far; the answer's file goes into the draft at once (the preview beside it updates), with Undo
-// on that message. The chat lives for this visit (per widget), not on the server.
+// W-22 / W-24: change a widget, an action or a procedure by asking. Each request sends the file (or the
+// draft), the request and the chat so far; the answer's file goes into the draft at once (the preview
+// or form beside it updates), with Undo on that message. The chat lives for this visit (per file), not
+// on the server.
+
+export interface AiEditResult {
+  reply: string;
+  file: string;
+  changed: boolean;
+}
+
+export interface AiChatProps {
+  cfg: AgentConfig;
+  path: string;
+  /** "widget", "action", "procedure": in the chat's wording. */
+  noun: string;
+  /** What the empty chat says under its title. */
+  intro: string;
+  ideas: string[];
+  request: (message: string, history: WidgetEditTurn[], file: string) => Promise<AiEditResult>;
+}
 
 interface Turn {
   id: number;
@@ -40,9 +58,23 @@ function useChat(path: string): Turn[] {
   return useSyncExternalStore((cb) => (listeners.add(cb), () => listeners.delete(cb)), () => chats.get(path) ?? EMPTY);
 }
 
-const IDEAS = ["Make it more compact", "Add a status badge in the corner", "Use a dark theme", "Add a button that opens the invoice"];
+const WIDGET_IDEAS = ["Make it more compact", "Add a status badge in the corner", "Use a dark theme", "Add a button that opens the invoice"];
 
+/** A widget's chat (W-22): its own endpoint, which checks the result renders. */
 export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string; name: string }) {
+  return (
+    <AiChat
+      cfg={cfg}
+      path={path}
+      noun="widget"
+      intro="Describe it in your words. The AI edits this widget and the preview updates; nothing goes live until you save."
+      ideas={WIDGET_IDEAS}
+      request={(message, history, file) => api<AiEditResult>(`${cfg.base}/widget-edit`, { body: { name, file, message, history, files: cfg.draft } })}
+    />
+  );
+}
+
+export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) {
   const turns = useChat(path);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,7 +91,7 @@ export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string
     setMessage("");
     setBusy(true);
     try {
-      const result = await api<{ reply: string; file: string; changed: boolean }>(`${cfg.base}/widget-edit`, { body: { name, file, message: ask, history } });
+      const result = await request(ask, history, file);
       // Applied to the draft as it is now (the request carried the file it was made from).
       if (result.changed) cfg.setFile(path, result.file);
       setChat(path, [...withAsk, { id: nextId++, role: "assistant", text: result.reply, ...(result.changed ? { before: file, after: result.file } : {}) }]);
@@ -90,14 +122,14 @@ export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string
           reopened chat opens at its last request. */}
       <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor" scrollPreviousItemPeek={64}>
         <MessageScroller className="wchat-scroller">
-          <MessageScrollerViewport aria-label="Chat about this widget">
+          <MessageScrollerViewport aria-label={`Chat about this ${noun}`}>
             <MessageScrollerContent className="wchat-rows" aria-busy={busy}>
               {turns.length === 0 && !busy && (
                 <MessageScrollerItem className="wchat-empty">
                   <p className="wchat-empty-title">What should change?</p>
-                  <p className="wchat-empty-text">Describe it in your words. The AI edits this widget and the preview updates; nothing goes live until you save.</p>
+                  <p className="wchat-empty-text">{intro}</p>
                   <div className="wchat-ideas">
-                    {IDEAS.map((idea) => (
+                    {ideas.map((idea) => (
                       <button key={idea} type="button" className="wchat-idea" onClick={() => void send(idea)}>
                         {idea}
                       </button>
@@ -132,7 +164,7 @@ export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string
                         </>
                       ) : (
                         <>
-                          <span>Changed the widget</span>
+                          <span>Changed the {noun}</span>
                           <button type="button" className="link-button" onClick={() => undo(turn)}>Undo</button>
                         </>
                       )}
@@ -142,7 +174,7 @@ export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string
               )}
               {busy && (
                 <MessageScrollerItem messageId="pending" className="wchat-ai wchat-pending" role="status">
-                  <PixelLoader label="Editing the widget" />
+                  <PixelLoader label={`Editing the ${noun}`} />
                 </MessageScrollerItem>
               )}
             </MessageScrollerContent>

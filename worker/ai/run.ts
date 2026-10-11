@@ -7,7 +7,8 @@ import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge, type SearchHit } from "./search.ts";
-import { httpTools, secretsFromEnv, type ToolAction } from "./tools.ts";
+import { httpTools, secretsFromEnv, showWidgetTool, type ToolAction } from "./tools.ts";
+import { SHOW_WIDGET_TOOL } from "../../shared/widgets.ts";
 
 // One AI reply, from conversation history to a parsed outcome. Shared by the live
 // Conversation DO and the eval runner (AI-19), so evals test exactly what visitors get.
@@ -107,6 +108,11 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
     widgets: config.widgets,
     onWidget: (widget) => widgets.push(widget),
   });
+  // W-29: cards the AI may fill in itself.
+  const fillable = config.widgets.filter((w) => w.aiFill);
+  if (fillable.length) {
+    tools[SHOW_WIDGET_TOOL] = showWidgetTool(fillable, { onAction, ...(input.onStep ? { onStep: input.onStep } : {}), onWidget: (widget) => widgets.push(widget) });
+  }
   const skillChars = config.skills.reduce((n, s) => n + s.instructions.length + s.description.length, 0);
   const skillCatalog = skillChars > INLINE_SKILLS_MAX_CHARS;
   if (skillCatalog) {

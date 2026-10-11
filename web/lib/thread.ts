@@ -47,6 +47,8 @@ export function useThread(options: {
   const onAiAction = useRef(options.onAiAction);
   /** D-51: field changes sent, waiting for `widget_change_done`. */
   const changes = useRef(new Map<string, (result: { ok: boolean; message?: string }) => void>());
+  /** W-27: card presses sent, by clientMsgId, until saved or refused. */
+  const presses = useRef(new Map<string, (result: { ok: boolean; message?: string }) => void>());
   onAiAction.current = options.onAiAction;
 
   const merge = useCallback((incoming: Message[]) => {
@@ -60,6 +62,10 @@ export function useThread(options: {
     });
     const ids = new Set(incoming.map((m) => m.clientMsgId));
     setPending((p) => p.filter((m) => !ids.has(m.clientMsgId)));
+    for (const id of ids) {
+      presses.current.get(id)?.({ ok: true });
+      presses.current.delete(id);
+    }
   }, []);
 
   // New initial messages replace the list in the same render (an effect would paint one empty frame first).
@@ -124,6 +130,15 @@ export function useThread(options: {
           changes.current.delete(event.requestId);
         } else if (event.type === "error" && event.clientMsgId) {
           const { clientMsgId, message } = event;
+          const press = presses.current.get(clientMsgId);
+          presses.current.delete(clientMsgId);
+          // W-27: the action's widget_failed line belongs on the card, not on a failed bubble.
+          if (press && event.code === "action_failed") {
+            setPending((p) => p.filter((m) => m.clientMsgId !== clientMsgId));
+            press({ ok: false, message });
+            return;
+          }
+          press?.({ ok: false });
           setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: message } : m)));
         }
       },
@@ -150,15 +165,23 @@ export function useThread(options: {
     [sendEvent],
   );
 
-  /** W-09: a card's button, sent as the visitor's message (its label) with which card and what they entered. */
+  /**
+   * W-09: a card's button, sent as the visitor's message (its label) with which card and what they
+   * entered. Resolves once it's saved, or refused (W-27: `message` is the action's widget_failed line).
+   */
   const sendWidgetAction = useCallback(
-    (label: string, widgetAction: { messageId: string; widgetId: string; action: unknown; values: Record<string, string | boolean>; item?: string }, context?: unknown, actions?: unknown) => {
-      const clientMsgId = crypto.randomUUID();
-      setPending((p) => [...p, { clientMsgId, body: label, attachments: [] }]);
-      const sent = sendEvent({ type: "send", clientMsgId, body: label, attachments: [], widgetAction, ...(context !== undefined ? { context } : {}), ...(actions !== undefined ? { actions } : {}) });
-      if (!sent) setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: "Not connected. Retry when back online." } : m)));
-      return sent;
-    },
+    (label: string, widgetAction: { messageId: string; widgetId: string; action: unknown; values: Record<string, string | boolean>; item?: string }, context?: unknown, actions?: unknown) =>
+      new Promise<{ ok: boolean; message?: string }>((resolve) => {
+        const clientMsgId = crypto.randomUUID();
+        setPending((p) => [...p, { clientMsgId, body: label, attachments: [] }]);
+        presses.current.set(clientMsgId, resolve);
+        const sent = sendEvent({ type: "send", clientMsgId, body: label, attachments: [], widgetAction, ...(context !== undefined ? { context } : {}), ...(actions !== undefined ? { actions } : {}) });
+        if (!sent) {
+          presses.current.delete(clientMsgId);
+          setPending((p) => p.map((m) => (m.clientMsgId === clientMsgId ? { ...m, failed: "Not connected. Retry when back online." } : m)));
+          resolve({ ok: false });
+        }
+      }),
     [sendEvent],
   );
 
