@@ -20,8 +20,21 @@ test("a valid HS256 identity token verifies, with attributes cleaned", async () 
     email: "ada@acme.test",
     name: "Ada",
     attributes: { plan: "pro", seats: 5, trial: false },
+    secrets: {},
     expiresAt: exp * 1000,
   });
+});
+
+test("AI-24: a token's secrets claim carries the user's own keys, kept apart from attributes", async () => {
+  const token = await signIdentityToken({ sub: "42", exp, attributes: { plan: "pro" }, secrets: { API_TOKEN: "usr_tok_abcdef" } }, SECRET);
+  const identity = await verifyIdentityToken(token, SECRET, now);
+  assert.deepEqual(identity.secrets, { API_TOKEN: "usr_tok_abcdef" });
+  assert.deepEqual(identity.attributes, { plan: "pro" }, "never among the attributes (shown to agents and the AI)");
+  const reject = async (secrets: unknown, pattern: RegExp) =>
+    assert.rejects(verifyIdentityToken(await signIdentityToken({ sub: "1", exp, secrets }, SECRET), SECRET, now), (e: Error) => e instanceof IdentityError && pattern.test(e.message));
+  await reject({ api_token: "x" }, /UPPER_SNAKE_CASE/);
+  await reject({ API_TOKEN: 5 }, /non-empty string/);
+  await reject(["x"], /object/);
 });
 
 test("identity tokens are rejected when forged, expired, unsigned or incomplete", async () => {

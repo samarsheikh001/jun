@@ -147,6 +147,8 @@ class WidgetApi {
 
   /** The host app's user signed out: forget this browser's chat identity. */
   forget(): void {
+    // AI-24: the server drops their own keys for actions too (best effort; they expire anyway).
+    if (this.token) void this.call("/logout", { body: {}, keepalive: true }).catch(() => undefined);
     writeToken(this.key, null);
     this.token = null;
   }

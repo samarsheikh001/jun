@@ -160,6 +160,41 @@ export class WorkspaceHub extends DurableObject<Env> {
   }
 
   /**
+   * RPC (AI-24): the keys actions use ({secrets.NAME}) that an admin pasted on the Agent page, by
+   * name. Kept here like the tracker secrets: never D1, never returned by the API.
+   */
+  async actionSecrets(): Promise<Record<string, string>> {
+    const stored = await this.ctx.storage.list<string>({ prefix: "action-secret:" });
+    return Object.fromEntries([...stored].map(([key, value]) => [key.slice("action-secret:".length), value]));
+  }
+
+  /** RPC (AI-24): save or (null) remove an action key. */
+  async setActionSecret(name: string, value: string | null): Promise<void> {
+    if (value) await this.ctx.storage.put(`action-secret:${name}`, value);
+    else await this.ctx.storage.delete(`action-secret:${name}`);
+  }
+
+  /**
+   * RPC (AI-24): a signed-in customer's own keys ({user.secrets.NAME}), from the `secrets` claim of
+   * their identity token, until that token expires. Never D1, never shown to agents or the AI.
+   */
+  async userSecrets(contactId: string): Promise<Record<string, string> | null> {
+    const stored = await this.ctx.storage.get<{ values: Record<string, string>; expiresAt: number }>(`user-secrets:${contactId}`);
+    if (!stored) return null;
+    if (stored.expiresAt <= Date.now()) {
+      await this.ctx.storage.delete(`user-secrets:${contactId}`);
+      return null;
+    }
+    return stored.values;
+  }
+
+  /** RPC (AI-24): the customer's latest identity token decides: its keys, or none (also on sign-out). */
+  async setUserSecrets(contactId: string, values: Record<string, string> | null, expiresAt = 0): Promise<void> {
+    if (values && Object.keys(values).length && expiresAt > Date.now()) await this.ctx.storage.put(`user-secrets:${contactId}`, { values, expiresAt });
+    else await this.ctx.storage.delete(`user-secrets:${contactId}`);
+  }
+
+  /**
    * I-14: this workspace's VAPID key pair (RFC 8292), created on first use. The private key never
    * leaves this object's storage (not D1, not the API), like the tracker secrets above.
    */
@@ -366,6 +401,7 @@ export class WorkspaceHub extends DurableObject<Env> {
     try {
       const identity = await verifyIdentityToken(token, inbox.identity_secret);
       const id = await upsertIdentified(this.env.DB, inbox.workspace_id, identity);
+      await this.setUserSecrets(id, identity.secrets, identity.expiresAt);
       return { ok: true, contact: { id, name: identity.name, email: identity.email } };
     } catch (error) {
       if (error instanceof IdentityError) return { ok: false, error: error.message };

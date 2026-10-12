@@ -393,6 +393,9 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
     for (const [, ref] of source.matchAll(PLACEHOLDER)) {
       if (ref!.startsWith("secrets.")) {
         if (!/^secrets\.[A-Z][A-Z0-9_]*$/.test(ref!)) issues.push({ path, message: `{${ref}}: secret names are UPPER_SNAKE_CASE.` });
+      } else if (ref!.startsWith("user.secrets.")) {
+        // AI-24: the customer's own key, from their identity token's `secrets` claim.
+        if (!/^user\.secrets\.[A-Z][A-Z0-9_]*$/.test(ref!)) issues.push({ path, message: `{${ref}}: the customer's key names are UPPER_SNAKE_CASE, like {user.secrets.API_TOKEN}.` });
       } else if (ref!.startsWith("user.")) {
         // The signed-in customer, verified by the host app's identity token (V-03).
         if (!/^user\.[a-zA-Z_][a-zA-Z0-9_]*$/.test(ref!)) issues.push({ path, message: `{${ref}}: use {user.id}, {user.email}, {user.name} or {user.<attribute>}.` });
@@ -403,6 +406,9 @@ function parseTool(path: string, name: string, text: string, issues: ConfigIssue
   }
   for (const source of [url, ...Object.values(query)]) {
     if (/\{secrets\./.test(source)) issues.push({ path, message: "Put secrets in headers, not the URL or query (URLs end up in logs)." });
+  }
+  for (const source of [url, ...Object.values(query), JSON.stringify(data.body ?? null)]) {
+    if (/\{user\.secrets\./.test(source)) issues.push({ path, message: "Put the customer's keys ({user.secrets.…}) in headers only." });
   }
 
   if (issues.length > before) return null;
@@ -626,6 +632,8 @@ export interface ToolUser {
   email: string | null;
   name: string | null;
   attributes: Record<string, string | number | boolean>;
+  /** AI-24: their own keys ({user.secrets.NAME}, headers only), from their identity token while it's valid. */
+  secrets?: Record<string, string>;
 }
 
 export class NotSignedInError extends Error {
@@ -643,6 +651,14 @@ export function fillTemplate(
   user: ToolUser | null = null,
 ): string {
   return template.replace(PLACEHOLDER, (_, ref: string) => {
+    if (ref.startsWith("user.secrets.")) {
+      if (!user) throw new NotSignedInError();
+      const name = ref.slice("user.secrets.".length);
+      const value = user.secrets?.[name];
+      // Never the workspace's key instead: this request acts as the customer.
+      if (value === undefined) throw new Error(`The customer's ${name} isn't available (their sign-in has expired or doesn't include it). Ask them to reload the page or sign in again.`);
+      return value;
+    }
     if (ref.startsWith("user.")) {
       if (!user) throw new NotSignedInError();
       const field = ref.slice("user.".length);
@@ -652,7 +668,7 @@ export function fillTemplate(
     }
     if (ref.startsWith("secrets.")) {
       const value = secrets(ref.slice("secrets.".length));
-      if (value === undefined) throw new Error(`Secret ${ref.slice(8)} isn't set (Worker secret JUN_SECRET_${ref.slice(8)}).`);
+      if (value === undefined) throw new Error(`The key ${ref.slice(8)} isn't added (on the action's page, or as the Worker secret JUN_SECRET_${ref.slice(8)}).`);
       return value;
     }
     const value = input[ref];

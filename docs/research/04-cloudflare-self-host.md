@@ -41,3 +41,17 @@ Source: [D1 limits](https://developers.cloudflare.com/d1/platform/limits/)
 
 - Cloudflare Agents SDK `AIChatAgent` — per-conversation agent on a DO, SQLite up to 10 GB per agent, scheduler, MCP client/server ([docs](https://developers.cloudflare.com/agents/concepts/agent-class/)).
 - To research next: whether Durable Objects (SQLite-backed) are usable on the Workers **Free** plan, i.e. can someone self-host at $0? *(unverified)*
+
+## CPU time: the AI needs Workers Paid
+
+*As of 2026-10-12.* Sources: [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/).
+
+| | Workers Free | Workers Paid |
+|---|---|---|
+| CPU time per HTTP request | 10 ms | 30 s by default, up to 5 min |
+| Price | $0 | from $5/month per account |
+| Queues | 10,000 operations/day | 1M operations/month included |
+
+Over the limit, Cloudflare answers with its own error page, **error 1102 "Worker exceeded resource limits"** (we saw it as HTTP 503), not the Worker's JSON.
+
+**Measured on the owner's live desk (2026-10-11, `wrangler tail`):** one widget edit through the Agent page's AI chat (ChatGPT, streamed) used 772–950 ms of CPU when it finished; two of four runs were stopped at 285 ms and at 12 ms (`exceededCpu`). Our own work in that request takes about 1 ms (timed on the same files); the rest is reading the model's streamed answer (the AI SDK handles every streamed event). Free lets some overruns through, which is why it fails only now and then. Any AI reply streams the same way, so on Free the AI is unreliable; the inbox, widget and visitor features fit. Decision: D-61.

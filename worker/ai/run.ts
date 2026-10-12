@@ -7,7 +7,9 @@ import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge, type SearchHit } from "./search.ts";
-import { httpTools, secretsFromEnv, showWidgetTool, type ToolAction } from "./tools.ts";
+import { httpTools, showWidgetTool, type ToolAction } from "./tools.ts";
+import { loadToolSecrets } from "../lib/tool-secrets.ts";
+import { actionSetupProblems } from "../../shared/action-setup.ts";
 import { SHOW_WIDGET_TOOL } from "../../shared/widgets.ts";
 
 // One AI reply, from conversation history to a parsed outcome. Shared by the live
@@ -97,10 +99,15 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   };
 
   // Tools scoped to pages (AI-21) are offered only on a matching page; without a known page, only unscoped ones.
-  const toolSpecs = config.tools.filter((t) => !t.pages || matchesPage(t.pages, input.pagePath));
+  const secrets = await loadToolSecrets(input.env, input.workspaceId);
+  // AI-24: an action that isn't set up (a key not added, an example address, the starter text) could
+  // only fail or be misused, so the AI doesn't get it. Tests on canned responses still do.
+  const toolSpecs = config.tools
+    .filter((t) => !t.pages || matchesPage(t.pages, input.pagePath))
+    .filter((t) => input.mockTools || !actionSetupProblems(t, (name) => secrets(name) !== undefined).length);
   const widgets: MessageWidget[] = [];
   const tools: ToolSet = httpTools(toolSpecs, {
-    secrets: secretsFromEnv(input.env),
+    secrets,
     mock: Boolean(input.mockTools),
     onAction,
     ...(input.onStep ? { onStep: input.onStep } : {}),

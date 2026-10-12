@@ -268,9 +268,20 @@ widget.post("/widget/:key/identify", async (c) => {
     throw error;
   }
   const result = await identify(c.env.DB, inbox.workspaceId, identity, c.req.header("x-visitor-token") ?? null);
+  // AI-24: the user's own keys for actions, until this token expires (none in it: none kept).
+  await c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).setUserSecrets(result.contactId, identity.secrets, identity.expiresAt);
   // Merged conversations now belong to the user: refresh them in agents' inboxes.
   c.executionCtx.waitUntil(Promise.all(result.movedConversations.map((id) => notifyConversationChanged(c.env, { conversationId: id, workspaceId: inbox.workspaceId }))));
   return c.json({ token: result.token, contactId: result.contactId });
+});
+
+// AI-24: the host app's user signed out (JunDesk.logout()): forget their own keys for actions now,
+// not only when their identity token expires.
+widget.post("/widget/:key/logout", async (c) => {
+  const inbox = await widgetInbox(c);
+  const { contactId } = await visitor(c, inbox);
+  await c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).setUserSecrets(contactId, null);
+  return c.json({ ok: true });
 });
 
 // V-01: the loader's live connection (page views, identity) to the workspace hub. Unlike the

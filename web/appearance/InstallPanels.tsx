@@ -95,7 +95,9 @@ export function IdentityPanel({ workspaceId }: { workspaceId: string }) {
   if (secret === undefined) return null;
   const example = `// On your server, for the signed-in user (any JWT library; HS256):
 const userToken = jwt.sign(
-  { sub: user.id, email: user.email, name: user.name, attributes: { plan: user.plan } },
+  { sub: user.id, email: user.email, name: user.name, attributes: { plan: user.plan },
+    // Optional: the user's own key for your API, for actions that act as them ({user.secrets.API_TOKEN}).
+    secrets: { API_TOKEN: user.apiToken } },
   process.env.JUN_IDENTITY_SECRET,
   { algorithm: "HS256", expiresIn: "1h" },
 );

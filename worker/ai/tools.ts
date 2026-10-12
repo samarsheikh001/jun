@@ -2,6 +2,7 @@ import { jsonSchema, tool, type ToolSet } from "ai";
 import type { AiStep } from "../../shared/protocol.ts";
 import { renderWidget, SHOW_WIDGET_TOOL, summaryFor, widgetSchema, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
 import { checkData } from "../../shared/widget-schema.ts";
+import { scrubValues } from "../lib/scrub.ts";
 import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
 // HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
@@ -136,15 +137,22 @@ async function callTool(spec: ToolSpec, input: Record<string, unknown>, options:
     const raw = JSON.stringify({ ...sample, ...input });
     return action("ok", shapeOutput(raw, spec.pick), null, raw);
   }
+  // AI-24: every key this request carries, so an API that echoes one back never gets it shown or kept.
+  const used = new Set<string>(Object.values(options.user?.secrets ?? {}));
+  const secrets = (name: string) => {
+    const value = options.secrets(name);
+    if (value) used.add(value);
+    return value;
+  };
   let request: Request;
   try {
-    request = buildRequest(spec, input, options.secrets, options.user ?? null);
+    request = buildRequest(spec, input, secrets, options.user ?? null);
   } catch (error) {
     return action("error", (error as Error).message, null);
   }
   try {
     const response = await (options.fetch ?? fetch)(request, { signal: AbortSignal.timeout(TOOL_TIMEOUT_MS) });
-    const text = await response.text();
+    const text = scrubValues(await response.text(), used);
     const output = shapeOutput(text || `(empty response, HTTP ${response.status})`, response.ok ? spec.pick : undefined);
     return action(response.ok ? "ok" : "error", output, response.status, response.ok ? text : undefined);
   } catch (error) {

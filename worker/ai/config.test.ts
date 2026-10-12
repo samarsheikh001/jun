@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { systemPrompt } from "./agent.ts";
-import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, parseConfig, splitFrontmatter } from "./config.ts";
+import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, NotSignedInError, parseConfig, splitFrontmatter } from "./config.ts";
 import { TEMPLATE } from "../../packages/cli/src/template.ts";
 import { buildRequest, httpTools, runTool, shapeOutput, showWidgetTool, WIDGET_SHOWN_NOTE, type ToolAction } from "./tools.ts";
 import { starterWidget } from "../../shared/widgets.ts";
@@ -96,6 +96,31 @@ test("tool requests fill inputs (encoded in URLs) and secrets (headers only)", a
   assert.equal(request.headers.get("authorization"), "Bearer s3cret");
   assert.throws(() => buildRequest(spec, { orderNumber: "1" }, () => undefined), /JUN_SECRET_ACME_KEY/);
   assert.equal(fillTemplate("{a}-{b}", { a: 1 }, () => undefined), "1-");
+});
+
+test("AI-24: the customer's own key ({user.secrets.NAME}) goes in headers only, never replaced by the workspace's", async () => {
+  const tool = "description: d\nurl: https://api.acme.test/me\nheaders:\n  Authorization: Bearer {user.secrets.API_TOKEN}\n";
+  const spec = parseConfig({ "AGENTS.md": "x", "tools/me.yaml": tool }).config.tools[0]!;
+  const ada = { id: "42", email: null, name: null, attributes: {} };
+  const request = buildRequest(spec, {}, () => "workspace-key", { ...ada, secrets: { API_TOKEN: "usr_tok_abcdef" } });
+  assert.equal(request.headers.get("authorization"), "Bearer usr_tok_abcdef");
+  assert.throws(() => buildRequest(spec, {}, () => "workspace-key", ada), /sign in again/);
+  assert.throws(() => buildRequest(spec, {}, () => "workspace-key", null), NotSignedInError);
+  const misplaced = parseConfig({ "AGENTS.md": "x", "tools/me.yaml": "description: d\nurl: https://api.acme.test/me?t={user.secrets.API_TOKEN}\n" });
+  assert.match(misplaced.issues.map((i) => i.message).join(" "), /headers only/);
+  assert.match(parseConfig({ "AGENTS.md": "x", "tools/me.yaml": "description: d\nurl: https://a.test\nheaders:\n  X: '{user.secrets.token}'\n" }).issues[0]!.message, /UPPER_SNAKE_CASE/);
+});
+
+test("AI-24: a key an API echoes back is masked before the AI, the log or a card sees it", async () => {
+  const spec = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
+  const actions: ToolAction[] = [];
+  const tools = httpTools([spec], {
+    secrets: () => "sk_live_123456",
+    fetch: (async (r: Request) => new Response(JSON.stringify({ status: "ok", echo: r.headers.get("authorization") }))) as typeof fetch,
+    onAction: (a) => actions.push(a),
+  });
+  const out = await tools.lookup_order!.execute!({ orderNumber: "A-1" }, { toolCallId: "1", messages: [] } as never);
+  assert.ok(!String(out).includes("sk_live_123456") && !actions[0]!.output.includes("sk_live_123456"));
 });
 
 test("POST tools send typed JSON bodies", async () => {

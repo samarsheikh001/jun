@@ -1,3 +1,4 @@
+import { MAX_SECRET_VALUE, SECRET_NAME } from "../../shared/action-setup.ts";
 import { base64UrlDecode, base64UrlEncode } from "./crypto.ts";
 
 // V-03: the host app proves who its signed-in user is with a short-lived JWT signed with
@@ -11,6 +12,12 @@ export interface VerifiedIdentity {
   name: string | null;
   /** Custom attributes (`attributes` claim): plan, company, MRR… Strings, numbers, booleans. */
   attributes: Record<string, string | number | boolean>;
+  /**
+   * AI-24: the user's own keys for the host app's API (`secrets` claim: { "API_TOKEN": "…" }), for
+   * actions' {user.secrets.NAME} headers. Kept apart from attributes: never stored on the contact,
+   * shown to agents or put in the AI's prompt.
+   */
+  secrets: Record<string, string>;
   expiresAt: number;
 }
 
@@ -18,6 +25,7 @@ export class IdentityError extends Error {}
 
 const CLOCK_SKEW_S = 60;
 const MAX_ATTRIBUTES = 50;
+const MAX_USER_SECRETS = 10;
 
 function hmacKey(secret: string, usage: "sign" | "verify") {
   return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [usage]);
@@ -43,6 +51,19 @@ function cleanAttributes(raw: unknown): VerifiedIdentity["attributes"] {
     else if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
     else if (typeof value === "boolean") out[key] = value;
   }
+  return out;
+}
+
+function cleanSecrets(raw: unknown): VerifiedIdentity["secrets"] {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new IdentityError("secrets must be an object of NAME → string.");
+  const out: VerifiedIdentity["secrets"] = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!SECRET_NAME.test(key)) throw new IdentityError(`secrets: ${key} isn't a valid name (UPPER_SNAKE_CASE, like API_TOKEN).`);
+    if (typeof value !== "string" || !value || value.length > MAX_SECRET_VALUE) throw new IdentityError(`secrets: ${key} must be a non-empty string of at most ${MAX_SECRET_VALUE} characters.`);
+    out[key] = value;
+  }
+  if (Object.keys(out).length > MAX_USER_SECRETS) throw new IdentityError(`secrets: at most ${MAX_USER_SECRETS} keys.`);
   return out;
 }
 
@@ -75,6 +96,7 @@ export async function verifyIdentityToken(token: string, secret: string, now = D
     email: optionalString(claims.email, 320),
     name: optionalString(claims.name, 200),
     attributes: cleanAttributes(claims.attributes),
+    secrets: cleanSecrets(claims.secrets),
     expiresAt: claims.exp * 1000,
   };
 }

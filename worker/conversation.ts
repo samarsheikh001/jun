@@ -22,7 +22,7 @@ import type { SearchHit } from "./ai/query.ts";
 import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import { DEFAULT_TOOL_STATUS } from "./ai/config.ts";
-import { runTool, secretsFromEnv, type ToolAction } from "./ai/tools.ts";
+import { runTool, type ToolAction } from "./ai/tools.ts";
 import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
@@ -33,7 +33,7 @@ import { markWidgetUsed, matchWidgetAction, matchWidgetChange, renderActionLine,
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
-import { secretScrubber } from "./lib/tool-secrets.ts";
+import { loadToolSecrets, secretScrubber } from "./lib/tool-secrets.ts";
 
 /** Who is on the other end of a socket or RPC call. The Worker authenticates before forwarding. */
 export type Participant =
@@ -454,7 +454,7 @@ export class Conversation extends DurableObject<Env> {
       return { action: { tool: name, input: {}, output: `There's no tool called ${name}.`, status: "error", httpStatus: null, durationMs: 0 }, widget: null, label: DEFAULT_TOOL_STATUS, configVersion: config.version, done: "", failed: "" };
     }
     const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, spec.input);
-    const { action, widget, result } = await runTool(spec, input, { secrets: secretsFromEnv(this.env), user, widgets: config.widgets }, `wb${Date.now().toString(36)}`);
+    const { action, widget, result } = await runTool(spec, input, { secrets: await loadToolSecrets(this.env, ref.workspaceId), user, widgets: config.widgets }, `wb${Date.now().toString(36)}`);
     // W-27: the action's own line for the card (the error's body never reaches the visitor).
     const values = meta.values ?? {};
     const ok = action.status === "ok";
@@ -937,12 +937,20 @@ export class Conversation extends DurableObject<Env> {
   /** The customer as the host app verified them (V-03), or null for anonymous visitors. */
   async #verifiedCustomer(ref: ConversationRef): Promise<ToolUser | null> {
     const row = await this.env.DB.prepare(
-      `SELECT ct.external_id, ct.name, ct.email, ct.attributes FROM conversations c JOIN contacts ct ON ct.id = c.contact_id
+      `SELECT ct.id, ct.external_id, ct.name, ct.email, ct.attributes FROM conversations c JOIN contacts ct ON ct.id = c.contact_id
        WHERE c.id = ? AND ct.external_id IS NOT NULL AND ct.verified_at IS NOT NULL`,
     )
       .bind(ref.conversationId)
-      .first<{ external_id: string; name: string | null; email: string | null; attributes: string }>();
-    return row ? { id: row.external_id, name: row.name, email: row.email, attributes: JSON.parse(row.attributes) as ToolUser["attributes"] } : null;
+      .first<{ id: string; external_id: string; name: string | null; email: string | null; attributes: string }>();
+    if (!row) return null;
+    // AI-24: their own keys for actions, from their latest identity token while it's valid.
+    let secrets: Record<string, string> | null = null;
+    try {
+      secrets = await this.env.WORKSPACE_HUB.getByName(ref.workspaceId).userSecrets(row.id);
+    } catch (error) {
+      console.error("the customer's keys couldn't be loaded:", error);
+    }
+    return { id: row.external_id, name: row.name, email: row.email, attributes: JSON.parse(row.attributes) as ToolUser["attributes"], ...(secrets ? { secrets } : {}) };
   }
 
   /** Hands an AI conversation to the team: tells the visitor, and leaves agents a brief (AI-04). */

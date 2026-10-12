@@ -4,14 +4,18 @@ import { parseConfig, type ConfigFiles } from "../ai/config.ts";
 import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "../ai/config-store.ts";
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
-import { editWidget, WidgetEditError } from "../ai/widget-edit.ts";
-import { AgentFileEditError, editAgentFile } from "../ai/agent-file-edit.ts";
+import { WIDGET_EDIT_MAX_TOKENS, WIDGET_EDIT_PROMPT, WidgetEditError, widgetEditMessage } from "../ai/widget-edit.ts";
+import { AGENT_FILE_EDIT_MAX_TOKENS, AgentFileEditError, agentFileEditMessages } from "../ai/agent-file-edit.ts";
+import { editorSettings, editStream } from "../ai/edit-stream.ts";
+import { recordUsage } from "../ai/topics.ts";
 import { agentFileKind } from "../../shared/agent-file-ai.ts";
 import { MAX_EDIT_HISTORY, MAX_EDIT_MESSAGE, type WidgetEditTurn } from "../../shared/widget-ai.ts";
 import { MAX_WIDGET_JSON } from "../../shared/widgets.ts";
 import { getSessionUser, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { readJson, text } from "../lib/validate.ts";
+import { workerSecretNames } from "../lib/tool-secrets.ts";
+import { MAX_DESK_SECRETS, MAX_SECRET_VALUE, SECRET_NAME } from "../../shared/action-setup.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 
 // Agent config as code (AI-18) and `jun eval` (AI-19). The `jun` CLI calls these with a
@@ -85,6 +89,9 @@ agent.use("/workspaces/:id/agent", requireUserOrToken);
 agent.use("/workspaces/:id/agent/*", requireUserOrToken);
 agent.use("/cli/whoami", requireUserOrToken);
 agent.use("/workspaces/:id/tokens", requireUser);
+// AI-24: keys for actions. Signed-in people only (an API token can't read or change them).
+agent.use("/workspaces/:id/action-secrets", requireUser);
+agent.use("/workspaces/:id/action-secrets/*", requireUser);
 agent.use("/workspaces/:id/tokens/*", requireUser);
 
 /** `jun login` checks its token here. */
@@ -93,6 +100,45 @@ agent.get("/cli/whoami", async (c) => {
   if (!workspaceId) throw new HttpError(400, "token_required", "Use an API token.");
   const ws = await c.env.DB.prepare("SELECT id, name FROM workspaces WHERE id = ?").bind(workspaceId).first<{ id: string; name: string }>();
   return c.json({ user: c.get("user"), workspace: ws, role: await memberRole(c, workspaceId) });
+});
+
+/**
+ * AI-24: the keys actions can use ({secrets.NAME}), by name only: a Worker secret JUN_SECRET_<NAME>
+ * (set by a developer, wins) or one pasted here (kept in the workspace hub, never D1). Values are
+ * never returned; a pasted one shows its last 4 characters.
+ */
+agent.get("/workspaces/:id/action-secrets", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  const desk = await c.env.WORKSPACE_HUB.getByName(workspaceId).actionSecrets();
+  const worker = new Set(workerSecretNames(c.env));
+  const names = [...new Set([...worker, ...Object.keys(desk)])].sort();
+  return c.json({
+    secrets: names.map((name) => (worker.has(name) ? { name, source: "worker" } : { name, source: "desk", last4: desk[name]!.slice(-4) })),
+  });
+});
+
+agent.put("/workspaces/:id/action-secrets/:name", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const name = c.req.param("name");
+  if (!SECRET_NAME.test(name)) throw new HttpError(400, "invalid_field", "Key names are UPPER_SNAKE_CASE, like API_KEY.");
+  const body = await readJson(c.req);
+  const value = typeof body.value === "string" ? body.value.trim() : "";
+  if (!value) throw new HttpError(400, "invalid_field", "Paste the key.");
+  if (value.length > MAX_SECRET_VALUE) throw new HttpError(400, "invalid_field", `A key is at most ${MAX_SECRET_VALUE} characters.`);
+  const hub = c.env.WORKSPACE_HUB.getByName(workspaceId);
+  const desk = await hub.actionSecrets();
+  if (!(name in desk) && Object.keys(desk).length >= MAX_DESK_SECRETS) throw new HttpError(400, "too_many", `At most ${MAX_DESK_SECRETS} keys. Remove one you no longer use.`);
+  await hub.setActionSecret(name, value);
+  return c.json({ name, source: workerSecretNames(c.env).includes(name) ? "worker" : "desk", last4: value.slice(-4) });
+});
+
+agent.delete("/workspaces/:id/action-secrets/:name", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  await c.env.WORKSPACE_HUB.getByName(workspaceId).setActionSecret(c.req.param("name"), null);
+  return c.json({ ok: true });
 });
 
 agent.get("/workspaces/:id/agent", async (c) => {
@@ -138,8 +184,24 @@ const WIDGET_EDIT_SKIPS = {
   cap_reached: "The monthly AI limit is reached, so the AI can't make changes here until next month.",
 } as const;
 
-// W-22: one change to a widget, asked for in plain words. Body: { name, file, message, history? }.
-// Returns { reply, file }; nothing is saved (the file goes into the admin's draft).
+function readHistory(body: Record<string, unknown>): WidgetEditTurn[] {
+  return (Array.isArray(body.history) ? body.history : [])
+    .filter((t): t is WidgetEditTurn => typeof t === "object" && t !== null && (t.role === "user" || t.role === "assistant") && typeof t.text === "string")
+    .slice(-MAX_EDIT_HISTORY)
+    .map((t) => ({ role: t.role, text: t.text.slice(0, MAX_EDIT_MESSAGE) }));
+}
+
+/** The AI is on and under the month's cap, else the reason as a 400. */
+async function editorReady(c: AppContext, workspaceId: string) {
+  const settings = await editorSettings(c.env, workspaceId);
+  if ("skipped" in settings) throw new HttpError(400, settings.skipped, WIDGET_EDIT_SKIPS[settings.skipped]);
+  return settings;
+}
+
+// W-22: one change to a widget, asked for in plain words. Body: { name, file, message, history?,
+// files?, error? } (error: { template, message }, the last answer's problem, for the one retry).
+// D-62: returns the model's answer as its raw event stream (header x-jun-format); the browser
+// applies and checks it. Nothing is saved (the file goes into the admin's draft).
 agent.post("/workspaces/:id/agent/widget-edit", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
@@ -148,28 +210,25 @@ agent.post("/workspaces/:id/agent/widget-edit", async (c) => {
   if (!/^[a-z][a-z0-9_-]*$/.test(name)) throw new HttpError(400, "invalid_field", "name is a widget's file name.");
   const message = text(body, "message", { max: MAX_EDIT_MESSAGE });
   if (typeof body.file !== "string" || !body.file.trim() || body.file.length > MAX_WIDGET_JSON * 2) throw new HttpError(400, "invalid_field", "file is the widget file's text.");
-  const history: WidgetEditTurn[] = (Array.isArray(body.history) ? body.history : [])
-    .filter((t): t is WidgetEditTurn => typeof t === "object" && t !== null && (t.role === "user" || t.role === "assistant") && typeof t.text === "string")
-    .slice(-MAX_EDIT_HISTORY)
-    .map((t) => ({ role: t.role, text: t.text.slice(0, MAX_EDIT_MESSAGE) }));
-  let result: Awaited<ReturnType<typeof editWidget>>;
+  const raw = body.error as { template?: unknown; message?: unknown } | undefined;
+  const error = raw && typeof raw.template === "string" && typeof raw.message === "string" ? { template: raw.template.slice(0, MAX_WIDGET_JSON * 2), message: raw.message.slice(0, 2000) } : undefined;
+  const settings = await editorReady(c, workspaceId);
+  let user: string;
   try {
     // W-27: the draft (optional), so the AI sees the actions the widget's buttons run.
     const files = body.files === undefined ? undefined : readFiles(body);
-    result = await editWidget(c.env, workspaceId, { name, file: body.file, message, history, ...(files ? { files } : {}) });
-  } catch (error) {
-    if (error instanceof WidgetEditError) throw new HttpError(502, "edit_failed", error.message);
-    if (error instanceof AiUnavailableError) throw new HttpError(400, "ai_unavailable", error.message);
-    console.warn("widget edit failed:", (error as Error).message);
-    throw new HttpError(502, "ai_failed", "The AI couldn't make the change just now (it failed or took too long). Try again in a minute.");
+    user = widgetEditMessage({ name, file: body.file, message, history: readHistory(body), ...(files ? { files } : {}), ...(error ? { error } : {}) });
+  } catch (e) {
+    if (e instanceof WidgetEditError) throw new HttpError(400, "edit_failed", e.message);
+    throw e;
   }
-  if ("skipped" in result) throw new HttpError(400, result.skipped, WIDGET_EDIT_SKIPS[result.skipped]);
-  return c.json(result);
+  return editStream(c.env, workspaceId, settings, WIDGET_EDIT_PROMPT, user, WIDGET_EDIT_MAX_TOKENS);
 });
 
 // W-24: one change to an action or a procedure, asked for in plain words. Body: { path, files, message,
-// history? } (files: the whole draft, so the change is checked like a save). Returns { reply, file,
-// changed }; nothing is saved.
+// history?, error? } (files: the whole draft; error: { file, problems }, for the one retry). D-62:
+// returns the model's answer as its raw event stream; the browser checks it like a save
+// (…/agent/validate). Nothing is saved.
 agent.post("/workspaces/:id/agent/file-edit", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
@@ -178,21 +237,31 @@ agent.post("/workspaces/:id/agent/file-edit", async (c) => {
   if (!agentFileKind(path)) throw new HttpError(400, "invalid_field", "path must be an action (tools/<name>.yaml) or a procedure (skills/<name>/SKILL.md).");
   const files = readFiles(body);
   const message = text(body, "message", { max: MAX_EDIT_MESSAGE });
-  const history: WidgetEditTurn[] = (Array.isArray(body.history) ? body.history : [])
-    .filter((t): t is WidgetEditTurn => typeof t === "object" && t !== null && (t.role === "user" || t.role === "assistant") && typeof t.text === "string")
-    .slice(-MAX_EDIT_HISTORY)
-    .map((t) => ({ role: t.role, text: t.text.slice(0, MAX_EDIT_MESSAGE) }));
-  let result: Awaited<ReturnType<typeof editAgentFile>>;
+  const raw = body.error as { file?: unknown; problems?: unknown } | undefined;
+  const error =
+    raw && typeof raw.file === "string" && Array.isArray(raw.problems)
+      ? { file: raw.file.slice(0, 100_000), problems: raw.problems.filter((p): p is string => typeof p === "string").slice(0, 20).map((p) => p.slice(0, 500)) }
+      : undefined;
+  const settings = await editorReady(c, workspaceId);
+  let prompt: { system: string; user: string };
   try {
-    result = await editAgentFile(c.env, workspaceId, { path, files, message, history });
-  } catch (error) {
-    if (error instanceof AgentFileEditError) throw new HttpError(502, "edit_failed", error.message);
-    if (error instanceof AiUnavailableError) throw new HttpError(400, "ai_unavailable", error.message);
-    console.warn("agent file edit failed:", (error as Error).message);
-    throw new HttpError(502, "ai_failed", "The AI couldn't make the change just now (it failed or took too long). Try again in a minute.");
+    prompt = agentFileEditMessages({ path, files, message, history: readHistory(body), ...(error ? { error } : {}) });
+  } catch (e) {
+    if (e instanceof AgentFileEditError) throw new HttpError(400, "edit_failed", e.message);
+    throw e;
   }
-  if ("skipped" in result) throw new HttpError(400, result.skipped, WIDGET_EDIT_SKIPS[result.skipped]);
-  return c.json(result);
+  return editStream(c.env, workspaceId, settings, prompt.system, prompt.user, AGENT_FILE_EDIT_MAX_TOKENS);
+});
+
+// D-62: the tokens an editor answer used, reported by the browser once the stream ends (the Worker
+// no longer reads the stream), for the month's usage. Body: { inputTokens, outputTokens }.
+agent.post("/workspaces/:id/agent/usage", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const body = await readJson(c.req);
+  const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.min(Math.max(Math.round(v), 0), 1_000_000) : 0);
+  await recordUsage(c.env, workspaceId, { inputTokens: count(body.inputTokens), outputTokens: count(body.outputTokens) });
+  return c.json({ ok: true });
 });
 
 // AI-19: streams NDJSON EvalEvents. Body: { files, sample?, mockTools?, cases?, replay? }.

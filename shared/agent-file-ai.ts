@@ -27,7 +27,7 @@ Keys (no others are allowed):
 - status: what the customer sees while it runs, one short line of plain text without {placeholders}, like "Checking your order" (at most 60 characters).
 - method: GET (default) or POST.
 - url: https://… The path and query may use {placeholders}. Required, unless the action only shows a widget: then leave url out and nothing is called (the widget shows with its example data and the inputs the AI fills in).
-- headers, query: maps of text. Secrets go only in headers, as {secrets.NAME} (UPPER_SNAKE_CASE; the Worker secret JUN_SECRET_NAME holds the value), never in the url or query.
+- headers, query: maps of text. Keys go only in headers, never in the url or query: the business's own as {secrets.NAME} (UPPER_SNAKE_CASE; an admin pastes it on the action's page, or a developer sets the Worker secret JUN_SECRET_NAME), or, to act as the signed-in customer with their own key, {user.secrets.NAME} (from the secrets claim of their identity token). Never ask anyone to paste a key into a file.
 - input: the details the AI asks the customer for, each { type: string | number | integer | boolean, description, required (default true), enum: [allowed values] }. Every {name} placeholder must be an input, {user.id} / {user.email} / {user.name} / {user.<attribute>} (the signed-in customer, verified by the website; never asked for), or {secrets.NAME}.
 - body: with POST only, a map sent as JSON; values may be "{placeholders}".
 - pick: a list of top-level response fields the AI sees (less noise).

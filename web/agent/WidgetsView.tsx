@@ -323,6 +323,12 @@ function TemplateDialog({ cfg, canEdit, template, onClose }: { cfg: AgentConfig;
 }
 
 /** One widget in the gallery: its live preview (not clickable itself) and a link over the whole tile. */
+/** What shows this widget, for its tile: its actions and (W-29) the AI filling it in itself. */
+function shownBy(tools: string[], aiFill: boolean): string {
+  const who = [...(aiFill ? ["the AI"] : []), ...tools.map(humanize)];
+  return who.length ? `Shown by ${who.join(", ")}` : "Nothing shows it yet";
+}
+
 function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
   const { root, problem } = render(item.name, cfg.draft[item.path] ?? "");
   const tools = usedBy(cfg, item.name);
@@ -342,7 +348,7 @@ function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
         </a>
         {problems > 0 && <Badge variant="destructive">{problems === 1 ? "1 problem" : `${problems} problems`}</Badge>}
         {change && <Badge variant="secondary">{change}</Badge>}
-        <span className="agent-tile-sub">{tools.length ? `Shown by ${tools.map(humanize).join(", ")}` : "Not used by an action yet"}</span>
+        <span className="agent-tile-sub">{shownBy(tools, /"aiFill"\s*:\s*true/.test(cfg.draft[item.path] ?? ""))}</span>
       </div>
     </li>
   );

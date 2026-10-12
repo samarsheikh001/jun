@@ -1,14 +1,17 @@
 import type { ReactNode } from "react";
 import { api } from "../api.ts";
 import { agentFileKind, type AgentFileKind } from "../../shared/agent-file-ai.ts";
-import { AiChat, type AiEditResult } from "./AiChat.tsx";
+import { EDIT_ATTEMPTS, liveReply, readAgentFileEdit, withMissingNote } from "../../shared/edit-finish.ts";
+import { AiChat } from "./AiChat.tsx";
+import { streamAnswer } from "./editStream.ts";
 import { CodeEditor, go } from "./parts.tsx";
 import { Connections } from "./Connections.tsx";
 import { Studio } from "./Studio.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
 // An action's or a procedure's page (W-24), laid out like a widget's (Studio.tsx): AI and Code on the
-// left, the form on the right. The AI chat sends the whole draft, so its change is checked like a save.
+// left, the form on the right. The AI chat sends the whole draft, so its change is checked like a save
+// (D-62: here, with the server's config checker, once the streamed answer is in).
 
 const IDEAS: Record<AgentFileKind, string[]> = {
   action: ["Make the description clearer for the AI", "Also ask for the customer's email", "Only offer it on the billing pages", "Show the result as a widget"],
@@ -53,7 +56,28 @@ export function FileStudio({ cfg, canEdit, path, title, kind, back, form }: {
                   noun={kind}
                   intro={INTRO[kind]}
                   ideas={IDEAS[kind]}
-                  request={(message, history) => api<AiEditResult>(`${cfg.base}/file-edit`, { body: { path, files: cfg.draft, message, history } })}
+                  request={async (message, history, file, onReply) => {
+                    let error: { file: string; problems: string[] } | undefined;
+                    for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt++) {
+                      const { text } = await streamAnswer(cfg.base, "/file-edit", { path, files: cfg.draft, message, history, ...(error ? { error } : {}) }, (t) => onReply(liveReply(t)));
+                      const done = readAgentFileEdit(file, text);
+                      if ("result" in done) return done.result;
+                      if ("failed" in done) {
+                        error = done.failed;
+                        continue;
+                      }
+                      // Checked like a save: the whole draft with this file, problems for this file only.
+                      const next = { ...cfg.draft, [path]: done.check.file };
+                      const { issues } = await api<{ issues: { path: string; message: string }[] }>(`${cfg.base}/validate`, { body: { files: next } });
+                      const problems = issues.filter((i) => i.path === path).map((i) => i.message);
+                      if (!problems.length) {
+                        const reply = kind === "procedure" ? withMissingNote(next, agentFileKind(path)?.name ?? "", done.check.reply) : done.check.reply;
+                        return { reply, file: done.check.file, changed: true };
+                      }
+                      error = { file: done.check.file, problems };
+                    }
+                    throw new Error(`The AI's change didn't pass the checks (${error?.problems.join(" ") ?? "no answer"}). Try asking another way.`);
+                  }}
                 />
               ),
             }]

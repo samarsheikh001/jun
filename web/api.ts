@@ -25,7 +25,17 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     body: init.body === undefined ? null : JSON.stringify(init.body),
     credentials: "same-origin",
   });
-  const json = (await response.json().catch(() => ({}))) as { error?: { code: string; message: string } };
+  const body = await response.text();
+  let json: { error?: { code: string; message: string } } = {};
+  try {
+    json = JSON.parse(body) as typeof json;
+  } catch {
+    // Not ours: Cloudflare's own error page (below), or an empty body.
+  }
+  if (!response.ok && !json.error && response.status === 503 && /\b1102\b|exceeded/i.test(body)) {
+    // Cloudflare's error 1102: the Worker ran over its plan's CPU time (the Workers Free plan allows 10 ms).
+    throw new ApiError("cpu_limit", "Cloudflare stopped this request: your desk ran over its plan's CPU time limit. Try again; if it keeps happening, the Cloudflare account needs the Workers Paid plan.", 503);
+  }
   if (!response.ok) throw new ApiError(json.error?.code ?? "http_error", json.error?.message ?? `Request failed (${response.status})`, response.status, json.error ?? {});
   return json as T;
 }

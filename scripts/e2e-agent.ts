@@ -211,4 +211,36 @@ await step("the jun CLI: login, init, push, pull and eval", async () => {
   assert.match(evalRun.out, /Cases: \d+ passed, \d+ failed/, evalRun.out);
 });
 
+await step("AI-24: an action that isn't set up (a key not added) is never offered to the AI; adding the key fixes it", async () => {
+  const live = (await agent.call(`/workspaces/${workspaceId}/agent`)).json;
+  const tool = `description: Tracks a parcel by its tracking number and returns where it is. Use it whenever someone asks where their parcel is.
+url: ${ECHO_URL}/parcels/{tracking}
+headers:
+  Authorization: Bearer {secrets.PARCEL_KEY}
+input:
+  tracking: { type: string, description: "The tracking number, like ZX-99" }
+`;
+  const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...live.files, "tools/track_parcel.yaml": tool }, base: live.version, message: "track_parcel" } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.json));
+  const ask = async () => {
+    const visitor = new Client();
+    const vtoken = (await visitor.call(`/widget/${widgetKey}/visitor`, { body: {} })).json.token as string;
+    const res = await visitor.call(`/widget/${widgetKey}/conversations`, { body: { clientMsgId: crypto.randomUUID(), body: "Where is my parcel ZX-99?" }, headers: { "X-Visitor-Token": vtoken } });
+    const conversationId = res.json.conversation.id as string;
+    const socket = new TestSocket(`/api/widget/${widgetKey}/conversations/${conversationId}/ws?since=1`, { protocols: [vtoken] });
+    await socket.opened;
+    await socket.next((e) => (e.type === "message" && ["ai", "system"].includes(e.message.authorType)) || (e.type === "messages" && e.messages.some((m: { authorType: string }) => ["ai", "system"].includes(m.authorType))), AI_TIMEOUT);
+    socket.close();
+    return (await agent.call(`/conversations/${conversationId}/actions`)).json.actions as { tool: string; status: string }[];
+  };
+  const before = await ask();
+  assert.ok(!before.some((a) => a.tool === "track_parcel"), JSON.stringify(before));
+  assert.equal((await agent.call(`/workspaces/${workspaceId}/action-secrets/PARCEL_KEY`, { method: "PUT", body: { value: "parcel_key_123456" } })).status, 200);
+  const after = await ask();
+  assert.equal(after.find((a) => a.tool === "track_parcel")?.status, "ok", JSON.stringify(after));
+  await agent.call(`/workspaces/${workspaceId}/action-secrets/PARCEL_KEY`, { method: "DELETE" });
+  // API tokens (the CLI) can't read or change keys.
+  assert.equal((await fetch(`${BASE}/api/workspaces/${workspaceId}/action-secrets`, { headers: bearer() })).status, 401);
+});
+
 summary();

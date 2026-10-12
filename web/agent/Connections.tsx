@@ -45,7 +45,7 @@ const NEW_ACTION = "description: \nstatus: Looking that up\nmethod: GET\nurl: ht
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** An action's inputs in the draft (required unless it says not), or null when there's no such action. */
-function inputsOf(draft: Record<string, string>, tool: string): Record<string, { required: boolean }> | null {
+export function inputsOf(draft: Record<string, string>, tool: string): Record<string, { required: boolean }> | null {
   const text = draft[`tools/${tool}.yaml`] ?? draft[`tools/${tool}.yml`];
   if (text === undefined) return null;
   let data: unknown;
@@ -177,13 +177,22 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
       ...(buttons.length ? buttons.map((b, i) => <ButtonRow key={`b${i}`} b={b} />) : [<Row key="r" label="Its buttons run" kind="action" names={links.widgetRuns[name]?.filter((a) => links.actions.includes(a)) ?? []} />]),
     ];
     if (!aiFill && !links.widgetShownBy[name]?.length && !links.widgetRuns[name]?.length) rows = [];
-    empty = "No action shows this widget yet. Pick it under \"Show the result as a widget\" on an action, or let the AI fill it in itself (below).";
+    empty = "No action shows it: pick it under \"Show the result as a widget\" on an action, or let the AI fill it in itself (below).";
   }
 
   return (
     <section className="agent-links" aria-label="Connected to">
       <h3>Connected</h3>
-      {rows.length ? rows : !missing.length && !short.length && !misfit && <p className="agent-links-empty">{empty}</p>}
+      {rows.length ? (
+        rows
+      ) : kind === "widget" ? (
+        // AI-24: a widget nothing can show never reaches a customer; asking for it, the AI guessed.
+        <div className="agent-links-warn" role="note">
+          <span>The AI can't show this widget yet. {empty}</span>
+        </div>
+      ) : (
+        !missing.length && !short.length && !misfit && <p className="agent-links-empty">{empty}</p>
+      )}
       {misfit && (
         <div className="agent-links-warn" role="note">
           <span>

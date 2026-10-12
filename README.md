@@ -26,6 +26,8 @@ The button copies this repo into your GitHub account, creates the Worker, a D1 d
 
 Then open the Worker's URL, enter the token and create a passkey (fingerprint, face or device PIN). A **Get started** page walks you through the rest: add your docs, turn on the AI, brand the widget, paste the snippet on your site and invite your team. Each step ticks itself off as you go. Nothing else needs signing up for; there's no email service, auth provider or database server to run.
 
+> **Use the Workers Paid plan ($5/month) for the AI.** Cloudflare's Free plan gives a Worker 10 ms of CPU per request; reading an AI model's streamed answer takes far more (we measured 0.3–1 s for one widget edit), so on Free, AI replies and the Agent page's AI chats fail now and then with Cloudflare's error 1102. Paid allows 30 s by default. Everything else (inbox, widget, visitors) runs on Free. See [Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
+
 Prefer the command line? Clone the repo, then `npm install`, `npx wrangler secret put SETUP_TOKEN` and `npm run build && npm run deploy`.
 
 > Passkeys belong to the hostname you create them on. If you move the desk to a custom domain later, sign in on the old URL and add a passkey on the new one, or use `/recover` with the setup token.
@@ -91,7 +93,7 @@ In React, `useJunAction({ … }, [product.id])` from `@jun/widget-react` (in `pa
 
 Agents see every run in the conversation's AI actions; `evals/*.yaml` cases take an `actions:` list, a `page:` path, and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
 
-**Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. Without a valid token, visitors stay anonymous.
+**Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. If your API only accepts the user's own key, add a `secrets` claim (`{ API_TOKEN: "…" }`) and write `{user.secrets.API_TOKEN}` in an action's headers: it's kept only until the token expires (or `JunDesk.logout()`), never shown to agents or the AI. Without a valid token, visitors stay anonymous.
 
 ## The AI
 

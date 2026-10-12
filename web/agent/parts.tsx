@@ -81,6 +81,8 @@ export interface ListItem {
   label: string;
   sub?: string;
   path: string;
+  /** AI-24: "Not set up", for an action that can't work yet. */
+  badge?: string;
 }
 
 /**
@@ -140,9 +142,10 @@ export function ItemIndex({ cfg, items, base, onAdd, addLabel, canEdit, empty, n
                   {item.label}
                 </a>
                 <p className="agent-index-sub">{item.sub || <span className="muted">No description yet</span>}</p>
-                {(problems > 0 || change) && (
+                {(problems > 0 || change || item.badge) && (
                   <div className="agent-index-badges">
                     {problems > 0 && <Badge variant="destructive">{problems === 1 ? "1 problem" : `${problems} problems`}</Badge>}
+                    {item.badge && <Badge variant="outline">{item.badge}</Badge>}
                     {change && <Badge variant="secondary">{change}</Badge>}
                   </div>
                 )}

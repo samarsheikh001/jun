@@ -971,6 +971,15 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .agent-links-empty { margin: 0; font-size: 13px; line-height: 19px; color: var(--muted-foreground); }
 .agent-links-warn { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; background: color-mix(in oklab, oklch(0.78 0.15 75) 16%, var(--card)); font-size: 13px; line-height: 19px; }
 .agent-links-warn > span { flex: 1 1 240px; }
+.agent-setup-warn { padding: 10px 12px; border-radius: 10px; background: color-mix(in oklab, oklch(0.78 0.15 75) 16%, var(--card)); font-size: 13px; line-height: 19px; }
+.agent-setup-warn ul { margin: 4px 0 0; padding-left: 18px; }
+.agent-keys { display: grid; gap: 6px; }
+.agent-key { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-height: 32px; font-size: 13px; }
+.agent-key > code:first-child { min-width: 96px; font-family: var(--font-mono); font-size: 12.5px; }
+.agent-key-state { color: var(--muted-foreground); }
+.agent-key-state.missing { color: oklch(0.6 0.15 60); }
+.agent-key-paste { display: flex; flex: 1 1 260px; gap: 6px; }
+.agent-key-error { flex-basis: 100%; color: var(--destructive); }
 .agent-links-wrap { max-width: 760px; margin: 0 auto; padding: 24px 32px 0; }
 .agent-links-wrap + .agent-form { padding-top: 20px; }
 /* W-26: @mentions of actions. The text is drawn twice: highlighted behind (.mention-back), and in a

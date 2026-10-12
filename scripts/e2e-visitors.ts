@@ -169,16 +169,26 @@ await step("when the visitor leaves, agents see them go", async () => {
   agentHub.close();
 });
 
-await step("the AI looks up the signed-in customer's own account with {user.id}", async () => {
+await step("the AI looks up the signed-in customer's own account with {user.id}, the desk's key and the customer's own key", async () => {
+  // AI-24: a key pasted on the Agent page (never returned, only its last 4) and the customer's own
+  // key from their identity token's `secrets` claim, both sent as headers and masked in what comes back.
+  const pasted = await agent.call(`/workspaces/${workspaceId}/action-secrets/DESK_KEY`, { method: "PUT", body: { value: "desk_key_0123456789" } });
+  assert.equal(pasted.status, 200, JSON.stringify(pasted.json));
+  const keys = (await agent.call(`/workspaces/${workspaceId}/action-secrets`)).json.secrets;
+  assert.deepEqual(keys.find((k: { name: string }) => k.name === "DESK_KEY"), { name: "DESK_KEY", source: "desk", last4: "6789" });
+  assert.ok(!JSON.stringify(keys).includes("desk_key_0123456789"));
   const live = (await agent.call(`/workspaces/${workspaceId}/agent`)).json;
   const files = {
     ...live.files,
     "tools/my_account.yaml": `description: The signed-in customer's own account (plan, seats). Use it for questions about their plan or account.
 url: ${ECHO_URL}/accounts/{user.id}
+headers:
+  X-Desk-Key: '{secrets.DESK_KEY}'
+  X-User-Token: 'Bearer {user.secrets.API_TOKEN}'
 query:
   plan: '{user.plan}'
   seats: '{user.seats}'
-pick: [args, url]
+pick: [args, url, headers]
 `,
   };
   const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files, base: live.version, message: "my_account tool" } });
@@ -186,7 +196,7 @@ pick: [args, url]
   await agent.call(`/workspaces/${workspaceId}/ai`, { method: "PUT", body: { enabled: true, provider: AI_PROVIDER, monthlyReplyCap: 1000 } });
 
   const { token } = await newVisitor();
-  await identify(token, await userToken(ADA, { name: "Ada Lovelace", email: "ada@acme.test", attributes: { plan: "pro", seats: 12 } }));
+  await identify(token, await userToken(ADA, { name: "Ada Lovelace", email: "ada@acme.test", attributes: { plan: "pro", seats: 12 }, secrets: { API_TOKEN: "usr_tok_0123456789" } }));
   // Plan and seats are also in the prompt (verified attributes), so ask for the account record
   // itself: only the tool has it.
   const conversation = await startConversation(token, "Can you pull up my account record and tell me which plan it shows?");
@@ -205,6 +215,11 @@ pick: [args, url]
   assert.ok(call, `expected a my_account call; got ${JSON.stringify(actions)} and reply: ${reply.body}`);
   assert.equal(call.status, "ok");
   assert.ok(call.output.includes(`accounts/${ADA}`), call.output);
+  // Both keys went out (the echo has the headers) and neither comes back in the clear.
+  assert.match(call.output, /X-Desk-Key/i, call.output);
+  assert.match(call.output, /"X-User-Token":\s*"Bearer ••••"/i, call.output);
+  assert.ok(!call.output.includes("0123456789"), call.output);
+  await agent.call(`/workspaces/${workspaceId}/action-secrets/DESK_KEY`, { method: "DELETE" });
 });
 
 await step("domain restriction: only allowed websites get the live list, nudges and the chat frame", async () => {

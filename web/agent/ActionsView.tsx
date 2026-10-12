@@ -10,6 +10,7 @@ import { PlusIcon, TrashIcon } from "../components/icons.tsx";
 import { AddDialog, Advanced, Field, ItemIndex, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { FileStudio } from "./FileStudio.tsx";
+import { KeysField, SetupNotice, setupProblems, useActionKeys, type ActionKeys } from "./ActionKeys.tsx";
 
 // /agent/actions[/<name>]: tools/<name>.yaml. An action is a request to the customer's own systems
 // the AI can make: look something up (GET) or change something (POST). /agent/actions lists them as
@@ -31,13 +32,16 @@ const isRecord = (v: unknown): v is Data => typeof v === "object" && v !== null 
 
 export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canEdit: boolean; selected: string | null }) {
   const [adding, setAdding] = useState(false);
+  const keys = useActionKeys(cfg);
   const items = Object.keys(cfg.draft)
     .map((path) => ({ path, name: TOOL.exec(path)?.[1] }))
     .filter((x): x is { path: string; name: string } => Boolean(x.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(({ path, name }) => {
       const data = readYaml(cfg.draft[path]!);
-      return { id: name, path, label: humanize(name), sub: isRecord(data) && typeof data.description === "string" ? data.description : "" };
+      // AI-24: one that can't work yet says so on its card.
+      const notReady = setupProblems(cfg.draft[path]!, keys).length > 0;
+      return { id: name, path, label: humanize(name), sub: isRecord(data) && typeof data.description === "string" ? data.description : "", ...(notReady ? { badge: "Not set up" } : {}) };
     });
   const current = selected === null ? null : (items.find((i) => i.id === selected) ?? null);
   const names = new Set(items.map((i) => i.id));
@@ -57,7 +61,7 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
         title={current.label}
         kind="action"
         back={{ path: "/agent/actions", label: "All actions" }}
-        form={<ActionForm cfg={cfg} canEdit={canEdit} path={current.path} />}
+        form={<ActionForm cfg={cfg} canEdit={canEdit} path={current.path} keys={keys} />}
       />
     );
   }
@@ -96,7 +100,7 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
   );
 }
 
-function ActionForm({ cfg, canEdit, path }: { cfg: AgentConfig; canEdit: boolean; path: string }) {
+function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: boolean; path: string; keys: ActionKeys }) {
   const text = cfg.draft[path] ?? "";
   const name = TOOL.exec(path)?.[1] ?? "";
   // W-27: a widget's button runs it, so the card's own lines matter (else they wait under More options).
@@ -131,6 +135,7 @@ function ActionForm({ cfg, canEdit, path }: { cfg: AgentConfig; canEdit: boolean
 
   return (
     <div className="agent-form">
+      <SetupNotice problems={setupProblems(text, keys)} />
       <Field label="What it does" hint="The AI reads this to decide when to use it. Say what it returns or changes." htmlFor="act-desc">
         <Textarea id="act-desc" rows={2} value={str("description")} readOnly={!canEdit} placeholder="e.g. Finds an order by its number and returns its status and delivery date." onChange={(e) => set("description", e.target.value)} />
       </Field>
@@ -150,6 +155,7 @@ function ActionForm({ cfg, canEdit, path }: { cfg: AgentConfig; canEdit: boolean
           <Input id="act-url" className="mono" value={str("url")} readOnly={!canEdit} placeholder="https://" spellCheck={false} onChange={(e) => set("url", e.target.value)} />
         </div>
       </Field>
+      <KeysField text={text} keys={keys} canEdit={canEdit} />
       <Field label="Details the AI asks for" hint="What the AI needs from the customer (or the chat) before it can run this, like an order number.">
         <div className="agent-params">
           {Object.entries(input).map(([key, raw], i) => {
@@ -185,7 +191,7 @@ function ActionForm({ cfg, canEdit, path }: { cfg: AgentConfig; canEdit: boolean
       </Field>
       {(runFrom.length > 0 || data.widget_done !== undefined || data.widget_failed !== undefined) && <CardLines str={str} set={set} canEdit={canEdit} runFrom={runFrom} />}
       <Advanced title="More options" defaultOpen={Boolean(data.headers || data.query || data.pages || data.widget)}>
-        <Field label="Headers" hint={<>Sent with the request. For a key, write <code>{"{secrets.NAME}"}</code>; your developer adds it as the Worker secret <code>JUN_SECRET_NAME</code>, so it's never stored here.</>}>
+        <Field label="Headers" hint={<>Sent with the request. For your key, write <code>{"{secrets.NAME}"}</code> and add it under Keys (or your developer sets the Worker secret <code>JUN_SECRET_NAME</code>). To act as the signed-in customer with their own key, write <code>{"{user.secrets.NAME}"}</code>: it comes from the <code>secrets</code> claim of their identity token.</>}>
           <Pairs value={isRecord(data.headers) ? data.headers : {}} path={["headers"]} edit={edit} canEdit={canEdit} keyPlaceholder="Authorization" valuePlaceholder="Bearer {secrets.API_KEY}" />
         </Field>
         <Field label="Query parameters" hint="Added to the address after the ?.">

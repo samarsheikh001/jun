@@ -1,6 +1,9 @@
 import { useRef, useState, useSyncExternalStore, type FormEvent } from "react";
-import { api, describeError } from "../api.ts";
+import { describeError } from "../api.ts";
 import type { WidgetEditTurn } from "../../shared/widget-ai.ts";
+import { EDIT_ATTEMPTS, finishWidgetEdit, liveReply, type EditResult } from "../../shared/edit-finish.ts";
+import { streamAnswer } from "./editStream.ts";
+import { inputsOf } from "./Connections.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { ArrowUpIcon, RefreshIcon } from "../components/icons.tsx";
 import { PixelLoader } from "../components/PixelLoader.tsx";
@@ -17,13 +20,10 @@ import type { AgentConfig } from "./useAgentConfig.ts";
 // W-22 / W-24: change a widget, an action or a procedure by asking. Each request sends the file (or the
 // draft), the request and the chat so far; the answer's file goes into the draft at once (the preview
 // or form beside it updates), with Undo on that message. The chat lives for this visit (per file), not
-// on the server.
+// on the server. D-62: the answer streams in (editStream.ts): its reply shows as it's written, then
+// the browser applies and checks the change, asking once more if it doesn't pass.
 
-export interface AiEditResult {
-  reply: string;
-  file: string;
-  changed: boolean;
-}
+export type AiEditResult = EditResult;
 
 export interface AiChatProps {
   cfg: AgentConfig;
@@ -33,7 +33,8 @@ export interface AiChatProps {
   /** What the empty chat says under its title. */
   intro: string;
   ideas: string[];
-  request: (message: string, history: WidgetEditTurn[], file: string) => Promise<AiEditResult>;
+  /** `onReply`: the reply so far, while the answer streams. */
+  request: (message: string, history: WidgetEditTurn[], file: string, onReply: (reply: string) => void) => Promise<AiEditResult>;
 }
 
 interface Turn {
@@ -69,7 +70,16 @@ export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string
       noun="widget"
       intro="Describe it in your words. The AI edits this widget and the preview updates; nothing goes live until you save."
       ideas={WIDGET_IDEAS}
-      request={(message, history, file) => api<AiEditResult>(`${cfg.base}/widget-edit`, { body: { name, file, message, history, files: cfg.draft } })}
+      request={async (message, history, file, onReply) => {
+        let error: { template: string; message: string } | undefined;
+        for (let attempt = 0; attempt < EDIT_ATTEMPTS; attempt++) {
+          const { text } = await streamAnswer(cfg.base, "/widget-edit", { name, file, message, history, files: cfg.draft, ...(error ? { error } : {}) }, (t) => onReply(liveReply(t)));
+          const done = finishWidgetEdit({ name, file }, text, (tool) => inputsOf(cfg.draft, tool));
+          if ("result" in done) return done.result;
+          error = done.failed;
+        }
+        throw new Error(`The AI's change didn't work (${error?.message ?? "no answer"}). Try asking another way.`);
+      }}
     />
   );
 }
@@ -78,6 +88,8 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
   const turns = useChat(path);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  // The reply as it streams in, shown in place of the loader.
+  const [streaming, setStreaming] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
 
   /** `base`: the turns to continue from (Try again drops the failed request and its error). */
@@ -90,8 +102,9 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
     setChat(path, withAsk);
     setMessage("");
     setBusy(true);
+    setStreaming("");
     try {
-      const result = await request(ask, history, file);
+      const result = await request(ask, history, file, setStreaming);
       // Applied to the draft as it is now (the request carried the file it was made from).
       if (result.changed) cfg.setFile(path, result.file);
       setChat(path, [...withAsk, { id: nextId++, role: "assistant", text: result.reply, ...(result.changed ? { before: file, after: result.file } : {}) }]);
@@ -99,6 +112,7 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
       setChat(path, [...withAsk, { id: nextId++, role: "error", text: describeError(error) }]);
     } finally {
       setBusy(false);
+      setStreaming("");
       input.current?.focus();
     }
   };
@@ -174,7 +188,8 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
               )}
               {busy && (
                 <MessageScrollerItem messageId="pending" className="wchat-ai wchat-pending" role="status">
-                  <PixelLoader label={`Editing the ${noun}`} />
+                  {streaming && <p>{streaming}</p>}
+                  <PixelLoader label={streaming ? `Writing the ${noun}` : `Editing the ${noun}`} />
                 </MessageScrollerItem>
               )}
             </MessageScrollerContent>
