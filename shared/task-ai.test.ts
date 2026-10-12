@@ -54,3 +54,22 @@ test("AI-27: the task input carries the actions it uses as files; the prompt all
   assert.match(text, /didn't pass the checks[\s\S]*tools\/x\.yaml: bad/);
   assert.match(TASK_EDIT_PROMPT, /create it: write its file as tools\//);
 });
+
+test("AI-30: new cards come as plain-words descriptions; only ones the desk lacks are made", () => {
+  const answer = `<reply>Added a theme picker.</reply>
+<file path="tools/show_themes.yaml">
+description: Shows the theme picker.
+widget: theme_picker
+</file>
+<card name="theme_picker">A list of themes (name, preview colour) with an Apply button each that runs page:set_theme with the theme's name.</card>
+<card name="Bad Name">ignored</card>
+<card name="existing">already there</card>`;
+  const edit = parseTaskEdit(answer, PROC)!;
+  assert.deepEqual(edit.cards.map((c) => c.name), ["theme_picker", "existing"]);
+  const read = readTaskEdit(PROC, { "widgets/existing.widget": "{}" }, answer);
+  assert.ok("check" in read);
+  assert.deepEqual(read.check.cards.map((c) => c.name), ["theme_picker"]);
+  // A card alone is still a change.
+  const onlyCard = readTaskEdit(PROC, {}, `<reply>x</reply>\n<card name="a_card">Shows a.</card>`);
+  assert.ok("check" in onlyCard && onlyCard.check.cards.length === 1);
+});

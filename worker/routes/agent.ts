@@ -17,7 +17,7 @@ import { readJson, text } from "../lib/validate.ts";
 import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
 import { runTool } from "../ai/tools.ts";
 import { runTestChat } from "../ai/test-chat.ts";
-import { MAX_TEST_MESSAGE, MAX_TEST_TURNS, type TestChatEvent, type TestReply, type TestTurn } from "../../shared/test-chat.ts";
+import { MAX_TEST_MESSAGE, MAX_TEST_TURNS, type TestChatEvent, type TestPress, type TestReply, type TestTurn } from "../../shared/test-chat.ts";
 import type { SeenPageAction } from "../../shared/actions.ts";
 import type { ToolUser } from "../ai/config.ts";
 import { MAX_DESK_SECRETS, MAX_SECRET_VALUE, SECRET_NAME } from "../../shared/action-setup.ts";
@@ -173,7 +173,24 @@ function readTestTurns(value: unknown): TestTurn[] {
   if (!Array.isArray(value) || !value.length) throw new HttpError(400, "invalid_field", "turns is the test chat so far.");
   if (JSON.stringify(value).length > MAX_TEST_BODY) throw new HttpError(400, "too_long", "This test chat is too long. Reset it and start again.");
   const turns = value.slice(-MAX_TEST_TURNS).map((t): TestTurn => {
-    if (isObject(t) && t.role === "customer" && typeof t.text === "string") return { role: "customer", text: t.text.slice(0, MAX_TEST_MESSAGE) };
+    if (isObject(t) && t.role === "customer" && typeof t.text === "string") {
+      // AI-30: a card's button press: which card, the action, what was entered (checked against the card in runTestChat).
+      const p = isObject(t.press) ? t.press : null;
+      const press: TestPress | null =
+        p && typeof p.turn === "number" && typeof p.widgetId === "string" && isObject(p.action) && typeof p.action.type === "string"
+          ? {
+              turn: p.turn,
+              widgetId: p.widgetId,
+              action: { type: p.action.type, ...(p.action.payload !== undefined ? { payload: p.action.payload } : {}) },
+              values: isObject(p.values) ? (Object.fromEntries(Object.entries(p.values).filter(([, v]) => typeof v === "string" || typeof v === "boolean")) as Record<string, string | boolean>) : {},
+              ...(typeof p.item === "string" ? { item: p.item } : {}),
+              ...(isObject(p.tool) && typeof p.tool.name === "string" && (p.tool.status === "ok" || p.tool.status === "error")
+                ? { tool: { name: p.tool.name, status: p.tool.status, output: typeof p.tool.output === "string" ? p.tool.output.slice(0, 4000) : "", ...(typeof p.tool.done === "string" ? { done: p.tool.done } : {}) } }
+                : {}),
+            }
+          : null;
+      return { role: "customer", text: t.text.slice(0, MAX_TEST_MESSAGE), ...(press ? { press } : {}) };
+    }
     if (isObject(t) && t.role === "ai" && isObject(t.reply)) {
       const r = t.reply;
       return {

@@ -10,6 +10,8 @@ import type { WidgetEditTurn } from "./widget-ai.ts";
 
 /** An action file a task's answer may write. */
 export const TASK_ACTION_FILE = /^tools\/([a-z][a-z0-9_]*)\.yaml$/;
+/** AI-30: a new card's name, as in widgets/<name>.widget (lowercase, a letter first). */
+const CARD_NAME = /^[a-z][a-z0-9_-]{0,59}$/;
 
 export const TASK_EDIT_PROMPT = `You set up a task for a customer support desk's AI agent. A task is one job the AI does for customers, like a refund or a plan change: a procedure (when it applies, and the steps) plus the actions its steps use. The admin asks for one change at a time. You may change the procedure, change the actions it uses, and create new actions.
 
@@ -27,6 +29,7 @@ Rules:
 - If a step needs an action the desk doesn't have, create it: write its file as tools/<snake_case_name>.yaml and name it in the step as @snake_case_name. Never invent API addresses, keys or response fields the business didn't give: use a clear placeholder address (https://api.example.com/…) and say in the reply that it needs the real one.
 ${ACTION_RULES}
 - Other tasks may use the same actions: change an existing action only when the request needs it.
+- Cards (AI-30): when the customer should see something as a card (an order's details, a list, a choice to make with buttons), the action that shows it names the card with widget: <snake_case_name>: one of the desk's widgets if one fits, else a new one. For a new card, don't write its file: add a <card name="snake_case_name"> block describing it in plain words: what it shows (which fields of the action's result, with an example of that data) and each button and what it runs: one of the desk's actions as tool:<name> (its fields named after that action's inputs), an action on the customer's website as page:<name>, a link as open_url. The desk builds the card from your description. A card that only shows something, with nothing to call, is an action with no url and widget: <name>.
 - Write only the files you change or create. If the request can't be done, write no file and say why in the reply.
 
 Answer in exactly this shape, nothing before or after:
@@ -37,7 +40,8 @@ the whole new file
 <file path="tools/NAME.yaml">
 the whole new file
 </file>
-(one <file> block per file you change or create)`;
+<card name="NAME">what the new card shows and what its buttons do (only for a new card)</card>
+(one <file> block per file you change or create, one <card> block per new card)`;
 
 /** The user message: the task's files, what else the desk has, the chat so far, the request, a failed try. */
 export function taskEditInput(input: {
@@ -73,7 +77,7 @@ export function taskEditInput(input: {
  * The model's answer: its reply and the files it wrote, only the task's own procedure and action
  * files (anything else is dropped and named in `ignored`). Null when it has no reply and no file.
  */
-export function parseTaskEdit(text: string, procedurePath: string): { reply: string; files: Record<string, string>; ignored: string[] } | null {
+export function parseTaskEdit(text: string, procedurePath: string): { reply: string; files: Record<string, string>; cards: { name: string; brief: string }[]; ignored: string[] } | null {
   const body = text.replace(/^\s*```[a-z]*\n?|```\s*$/g, "");
   const files: Record<string, string> = {};
   const ignored: string[] = [];
@@ -86,10 +90,17 @@ export function parseTaskEdit(text: string, procedurePath: string): { reply: str
     }
     if (clean.trim()) files[path] = clean.endsWith("\n") ? clean : `${clean}\n`;
   }
+  // AI-30: new cards, described; the desk's widget editor builds them.
+  const cards: { name: string; brief: string }[] = [];
+  for (const m of body.matchAll(/<card name="([^"]+)">([\s\S]*?)<\/card>/g)) {
+    const name = m[1]!.trim();
+    const brief = m[2]!.trim();
+    if (CARD_NAME.test(name) && brief && !cards.some((c) => c.name === name)) cards.push({ name, brief: brief.slice(0, 1500) });
+  }
   const replyMatch = /<reply>([\s\S]*?)<\/reply>/.exec(body)?.[1];
-  if (replyMatch === undefined && !Object.keys(files).length) return null;
+  if (replyMatch === undefined && !Object.keys(files).length && !cards.length) return null;
   const reply = (replyMatch ?? "").replace(/\s+/g, " ").trim().slice(0, 400) || "Done.";
-  return { reply, files, ignored };
+  return { reply, files, cards, ignored };
 }
 
 /** A failed try's files, as the retry shows them to the model. */

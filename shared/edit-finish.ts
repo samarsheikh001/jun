@@ -97,10 +97,12 @@ export function withMissingNote(files: Record<string, string>, name: string, rep
  * AI-27: a task edit from the model's answer: the files that actually change (its procedure, its
  * actions, new actions). `check` still has to pass the config checker with the whole draft.
  */
-export function readTaskEdit(procedurePath: string, draft: Record<string, string>, answer: string): { result: EditResult } | { check: { reply: string; files: Record<string, string> } } | { failed: { file: string; problems: string[] } } {
+export function readTaskEdit(procedurePath: string, draft: Record<string, string>, answer: string): { result: EditResult } | { check: { reply: string; files: Record<string, string>; cards: { name: string; brief: string }[] } } | { failed: { file: string; problems: string[] } } {
   const edit = parseTaskEdit(answer, procedurePath);
   if (!edit) return { failed: { file: "(none)", problems: ["The answer had no <reply> and no <file path=\"…\">…</file>."] } };
   const files = Object.fromEntries(Object.entries(edit.files).filter(([p, t]) => (draft[p] ?? "").trim() !== t.trim()));
-  if (!Object.keys(files).length) return { result: { reply: edit.reply, file: draft[procedurePath] ?? "", changed: false } };
-  return { check: { reply: edit.reply, files } };
+  // AI-30: only cards the desk doesn't have yet are made.
+  const cards = edit.cards.filter((c) => draft[`widgets/${c.name}.widget`] === undefined);
+  if (!Object.keys(files).length && !cards.length) return { result: { reply: edit.reply, file: draft[procedurePath] ?? "", changed: false } };
+  return { check: { reply: edit.reply, files, cards } };
 }

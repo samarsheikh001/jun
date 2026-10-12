@@ -5,16 +5,30 @@
 // being made. Pure: the shapes both sides share, and turning a chat into a test case (evals/*.yaml).
 
 import type { AiStep } from "./protocol.ts";
-import type { MessageWidget } from "./widgets.ts";
+import type { MessageWidget, WidgetActionConfig } from "./widgets.ts";
 
 /** At most this many turns go to the server (customer and AI together). */
 export const MAX_TEST_TURNS = 40;
 /** A customer message in the test chat, at most. */
 export const MAX_TEST_MESSAGE = 2000;
 
+/**
+ * AI-30: a press of a card's button, sent as the customer's turn (`text` is the button's label): which
+ * card (the AI turn's index and the widget's id), the action and what was entered. `tool` comes back
+ * from the server once a `tool:` button ran, so later turns give the AI its result, as live chats do.
+ */
+export interface TestPress {
+  turn: number;
+  widgetId: string;
+  action: WidgetActionConfig;
+  values: Record<string, string | boolean>;
+  item?: string;
+  tool?: { name: string; status: "ok" | "error"; output: string; done?: string };
+}
+
 /** One turn of the test chat as the browser keeps it (and sends it back with the next message). */
 export type TestTurn =
-  | { role: "customer"; text: string }
+  | { role: "customer"; text: string; press?: TestPress }
   | { role: "ai"; reply: TestReply };
 
 /** An action the reply called (or, in the safe mode, answered without calling). */
@@ -40,6 +54,13 @@ export interface TestReply {
   pageAction?: { name: string; input: Record<string, unknown> };
   /** Knowledge it cited, by title. */
   sources?: { title: string; url: string | null }[];
+  /**
+   * AI-30: what a card's button did, when the customer's turn was a press: the `tool:` run (kept on
+   * that turn for the AI's history), and the action's own line when it answered the press: `done`
+   * (the card folds to it and the AI takes no turn) or `failed` (the card opens again with it, and
+   * in a real chat nothing is sent).
+   */
+  pressed?: { tool?: TestPress["tool"]; done?: string; failed?: string };
 }
 
 /** The streamed answer, one JSON object per line. */

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import type { AiStep } from "../../shared/protocol.ts";
-import { MAX_TEST_MESSAGE, testCaseFrom, type TestChatEvent, type TestReply, type TestTurn } from "../../shared/test-chat.ts";
+import { MAX_TEST_MESSAGE, testCaseFrom, type TestChatEvent, type TestPress, type TestReply, type TestTurn } from "../../shared/test-chat.ts";
+import { markWidgetUsed, type MessageWidget } from "../../shared/widgets.ts";
 import { customerRefs } from "../../shared/action-try.ts";
 import { editYaml, readYaml } from "../lib/agentFiles.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -8,7 +9,9 @@ import { Input } from "@/components/ui/input.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { ArrowUpIcon, RefreshIcon } from "../components/icons.tsx";
 import { PixelLoader } from "../components/PixelLoader.tsx";
-import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
+import { Markdown } from "../components/Markdown.tsx";
+import { parseMarkdown } from "../../shared/markdown.ts";
+import { WidgetCard, type WidgetActionEvent, type WidgetActionOutcome, type WidgetClientEvent } from "../widget/chatkit/WidgetCard.tsx";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -44,6 +47,11 @@ function useTestChat(key: string): ChatState {
   return useSyncExternalStore((cb) => (listeners.add(cb), () => listeners.delete(cb)), () => chats.get(key) ?? EMPTY);
 }
 
+/** The chat with one card changed (the one a press is on). */
+function withCard(turns: TestTurn[], press: TestPress, change: (w: MessageWidget) => MessageWidget): TestTurn[] {
+  return turns.map((t, i) => (i === press.turn && t.role === "ai" ? { ...t, reply: { ...t.reply, widgets: t.reply.widgets.map((w) => (w.id === press.widgetId ? change(w) : w)) } } : t));
+}
+
 const pageTheme = () => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 const NEW_TESTS_FILE = "evals/tests.yaml";
 
@@ -67,13 +75,29 @@ function Calls({ reply }: { reply: TestReply }) {
   );
 }
 
-function Reply({ reply }: { reply: TestReply }) {
+/** AI-30: a card in the test chat; its buttons work as in a real chat (`onPress`), or are shown only. */
+interface PressHandlers {
+  onPress?: (widget: MessageWidget, event: WidgetActionEvent) => Promise<WidgetActionOutcome>;
+  onClient?: (event: WidgetClientEvent) => void;
+}
+
+function Reply({ reply, handlers }: { reply: TestReply; handlers: PressHandlers }) {
   return (
     <>
       {reply.widgets.map((w) => (
-        <div key={w.id} className="tchat-card"><WidgetCard widget={w} interactive={false} theme={pageTheme()} /></div>
+        <div key={w.id} className="tchat-card">
+          <WidgetCard
+            widget={w}
+            interactive={Boolean(handlers.onPress)}
+            theme={pageTheme()}
+            {...(handlers.onPress ? { onAction: (event: WidgetActionEvent) => handlers.onPress!(w, event) } : {})}
+            {...(handlers.onClient ? { onClientAction: handlers.onClient } : {})}
+          />
+        </div>
       ))}
-      {reply.text && <p className="tchat-text">{reply.text}</p>}
+      {reply.pressed?.done && <p className="tchat-note">The card says: {reply.pressed.done}</p>}
+      {reply.pressed?.failed && <p className="tchat-note tchat-handoff">The card opens again and says: {reply.pressed.failed}</p>}
+      {reply.text && <div className="tchat-text"><Markdown blocks={parseMarkdown(reply.text)} cite={(n) => { const s = reply.sources?.[n - 1]; return s ? <sup className="cite" title={s.title}>{n}</sup> : `[${n}]`; }} /></div>}
       {reply.pageAction && (
         <p className="tchat-note">
           Asks to run <code>{reply.pageAction.name}</code> on your website{Object.keys(reply.pageAction.input).length ? <> with <code>{JSON.stringify(reply.pageAction.input)}</code></> : null}. A customer would confirm it; here the next message carries on as if it ran.
@@ -95,6 +119,7 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
   const [live, setLive] = useState<{ text: string; steps: AiStep[] }>({ text: "", steps: [] });
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const update = (patch: Partial<ChatState>) => setChat(key, { ...(chats.get(key) ?? EMPTY), ...patch });
 
@@ -102,11 +127,15 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
   const refs = useMemo(() => customerRefs(Object.entries(cfg.draft).filter(([p]) => p.startsWith("tools/")).map(([, t]) => t)), [cfg.draft]);
   const handedOff = state.turns.at(-1)?.role === "ai" && (state.turns.at(-1) as { reply: TestReply }).reply.handoff !== undefined;
 
-  /** `base`: the chat to continue (Try again drops the message that failed and sends it again). */
-  const send = async (text: string, base: TestTurn[] = state.turns) => {
+  /**
+   * `base`: the chat to continue (Try again drops the message that failed and sends it again).
+   * AI-30: `press`, a card's button: the turn reads as its label, the card shows as used meanwhile.
+   */
+  const send = async (text: string, base: TestTurn[] = state.turns, press?: TestPress): Promise<TestReply | null> => {
     const ask = text.trim();
-    if (!ask || busy) return;
-    const turns: TestTurn[] = [...base, { role: "customer", text: ask }];
+    if (!ask || busy) return null;
+    setNotice(null);
+    const turns: TestTurn[] = [...base, { role: "customer", text: ask, ...(press ? { press } : {}) }];
     update({ turns });
     setMessage("");
     setBusy(true);
@@ -152,10 +181,22 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
         }
       }
       if (!reply) throw new Error("The AI didn't answer.");
-      update({ turns: [...turns, { role: "ai", reply }] });
+      const got: TestReply = reply;
+      if (press && got.pressed?.failed) {
+        // Its widget_failed line: in a real chat nothing is sent and the card opens again with it.
+        update({ turns: base });
+        return got;
+      }
+      // A tool: button's run stays on the press, so later turns give the AI its result.
+      const sent = press && got.pressed?.tool ? turns.map((t, i) => (i === turns.length - 1 && t.role === "customer" && t.press ? { ...t, press: { ...t.press, tool: got.pressed!.tool! } } : t)) : turns;
+      // Its widget_done line: the card folds to it.
+      const folded = press && got.pressed?.done ? withCard(sent, press, (w) => markWidgetUsed(w, got.pressed!.done!, press.item, Date.now())) : sent;
+      update({ turns: [...folded, { role: "ai", reply: got }] });
+      return got;
     } catch (e) {
       // The message stays, so Try again sends the same chat.
       setError((e as Error).message);
+      return null;
     } finally {
       setBusy(false);
       setLive({ text: "", steps: [] });
@@ -166,8 +207,34 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
   const retry = () => {
     const last = state.turns.at(-1);
     if (last?.role !== "customer") return;
-    void send(last.text, state.turns.slice(0, -1));
+    void send(last.text, state.turns.slice(0, -1), last.press);
   };
+
+  /** AI-30: a card's button pressed in the test chat: sent like a real press; a failed line opens the card again. */
+  const press = async (turn: number, widget: MessageWidget, event: WidgetActionEvent): Promise<WidgetActionOutcome> => {
+    if (busy) return { ok: false, message: "Wait for the reply first." };
+    const p: TestPress = { turn, widgetId: widget.id, action: event.action, values: event.values, ...(event.item ? { item: event.item } : {}) };
+    const before = state.turns;
+    const marked = withCard(before, p, (w) => markWidgetUsed(w, event.label, event.item, Date.now()));
+    const reply = await send(event.label, marked, p);
+    if (!reply) {
+      update({ turns: before });
+      return { ok: false, message: "The test couldn't run this. Try again." };
+    }
+    if (reply.pressed?.failed) {
+      update({ turns: before });
+      return { ok: false, message: reply.pressed.failed };
+    }
+    return { ok: true };
+  };
+
+  const handlersFor = (turn: number): PressHandlers =>
+    handedOff
+      ? {}
+      : {
+          onPress: (widget, event) => press(turn, widget, event),
+          onClient: (event) => setNotice(`"${event.action.type}" went to your website's own code (JunDesk.onWidgetAction). The desk can't see what it does, so nothing more happens in a test.`),
+        };
 
   const saveAsTest = () => {
     const first = state.turns.find((t) => t.role === "customer") as { text: string } | undefined;
@@ -219,18 +286,18 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
                 <MessageScrollerItem className="wchat-empty">
                   <p className="wchat-empty-title">Try a conversation</p>
                   <p className="wchat-empty-text">
-                    Write as a customer would. The AI answers with your unsaved changes, as it would on your website. Nothing is saved and nobody sees it. Cards show here, but their buttons only work in a real chat.
+                    Write as a customer would. The AI answers with your unsaved changes, as it would on your website. Nothing is saved and nobody sees it. Buttons on cards work here too.
                   </p>
                 </MessageScrollerItem>
               )}
               {state.turns.map((t, i) =>
                 t.role === "customer" ? (
                   <MessageScrollerItem key={i} messageId={`t${i}`} scrollAnchor className="wchat-row-user">
-                    <div className="wchat-user">{t.text}</div>
+                    <div className="wchat-user">{t.press ? <>Pressed <strong>{t.text}</strong></> : t.text}</div>
                   </MessageScrollerItem>
                 ) : (
                   <MessageScrollerItem key={i} messageId={`t${i}`} className="wchat-ai tchat-ai">
-                    <Reply reply={t.reply} />
+                    <Reply reply={t.reply} handlers={handlersFor(i)} />
                   </MessageScrollerItem>
                 ),
               )}
@@ -242,13 +309,18 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
                   {live.steps.flatMap((s) => (s.widget ? [s.widget] : [])).map((w) => (
                     <div key={w.id} className="tchat-card"><WidgetCard widget={w} interactive={false} theme={pageTheme()} /></div>
                   ))}
-                  {live.text ? <p className="tchat-text">{live.text}</p> : <PixelLoader label="The AI is answering" />}
+                  {live.text ? <div className="tchat-text"><Markdown blocks={parseMarkdown(live.text, { streaming: true })} cite={(n) => `[${n}]`} /></div> : <PixelLoader label="The AI is answering" />}
                 </MessageScrollerItem>
               )}
               {error && (
                 <MessageScrollerItem messageId="error" className="wchat-ai wchat-error">
                   <p>{error}</p>
                   <Button variant="ghost" size="sm" onClick={retry}><RefreshIcon /> Try again</Button>
+                </MessageScrollerItem>
+              )}
+              {notice && (
+                <MessageScrollerItem messageId="notice" className="wchat-ai">
+                  <p className="tchat-note">{notice}</p>
                 </MessageScrollerItem>
               )}
               {saved && (
