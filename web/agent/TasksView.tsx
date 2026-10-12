@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { stringify } from "yaml";
-import { agentLinks } from "../../shared/agent-links.ts";
+import { agentLinks, widgetPageButtons } from "../../shared/agent-links.ts";
+import { cardControls, previewWidget } from "../../shared/widgets.ts";
+import type { SeenPageAction } from "../../shared/actions.ts";
 import { taskName } from "../../shared/action-try.ts";
 import { curlActionName } from "../../shared/curl.ts";
 import { describeError } from "../api.ts";
@@ -135,7 +137,77 @@ function stepFor(body: string, action: string): string {
   return line.replace(/^\s*(\d+[.)]|[-*])\s*/, "").replace(new RegExp(`(\\s+(with|using|via|use|call|run)(\\s+the)?)?\\s*\`?@?${action}\`?`, "g"), "").replace(/\s+/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
 }
 
-/** AI-27: what a task's steps use: its actions (set up? what they show? Try it), website actions, and names that aren't actions yet. */
+/** A link to a page on the desk. */
+function Go({ to, children }: { to: string; children: ReactNode }) {
+  return <a href={to} onClick={(e) => { e.preventDefault(); go(to); }}>{children}</a>;
+}
+
+/**
+ * AI-28: a card a task shows, and what each of its buttons does: runs an action of the desk's (linked;
+ * whether it's set up), runs an action on the customer's website (`page:`; whether the desk has seen
+ * their site offer it), goes to the website's own code (`handler: "client"`; the desk can't check
+ * it), opens a link, or tells the AI what was picked.
+ */
+function CardUse({ cfg, widget, keys, seen }: { cfg: AgentConfig; widget: string; keys: ActionKeys; seen: SeenPageAction[] | null }) {
+  const text = cfg.draft[`widgets/${widget}.widget`];
+  const controls = useMemo(() => {
+    if (text === undefined) return null;
+    try {
+      return cardControls(previewWidget(widget, text)).filter((c) => c.does.kind !== "dismiss");
+    } catch {
+      // No example data to draw it with: its website buttons, from the template.
+      return widgetPageButtons(text).map((name) => ({ label: "A button", does: { kind: "page" as const, name } }));
+    }
+  }, [text, widget]);
+  if (text === undefined) {
+    return <p className="agent-use-problem small">Shows <code>{widget}</code>, but there's no card with that name.</p>;
+  }
+  return (
+    <div className="agent-use-card">
+      <p className="agent-use-card-name">Card: <Go to={`/agent/widgets/${widget}`}>{humanize(widget)}</Go></p>
+      {controls && controls.length > 0 ? (
+        <ul className="agent-use-buttons">
+          {controls.map((c, i) => {
+            const d = c.does;
+            let what: ReactNode;
+            let state: { ok: boolean; text: string } | null = null;
+            if (d.kind === "tool") {
+              const actionText = cfg.draft[`tools/${d.name}.yaml`] ?? cfg.draft[`tools/${d.name}.yml`];
+              what = <>runs your action <Go to={`/agent/actions/${d.name}`}>{humanize(d.name)}</Go></>;
+              state = actionText === undefined ? { ok: false, text: "No such action" } : setupProblems(actionText, keys).length ? { ok: false, text: "Not set up" } : { ok: true, text: "Ready" };
+            } else if (d.kind === "page") {
+              what = <>runs <code>{d.name}</code> on your website</>;
+              if (seen) state = seen.some((a) => a.name === d.name) ? { ok: true, text: "Seen on your site" } : { ok: false, text: "Your site hasn't offered it yet" };
+            } else if (d.kind === "client") {
+              what = <>is handled by your website's own code (the desk can't check it)</>;
+            } else if (d.kind === "link") {
+              what = <>opens a link</>;
+            } else {
+              what = <>tells the AI what was picked</>;
+            }
+            return (
+              <li key={i}>
+                <span>
+                  <strong>{c.label}</strong> {what}
+                </span>
+                {state && <span className="agent-use-state" data-ready={state.ok || undefined}>{state.text}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="muted small">It has no buttons.</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * AI-27: what a task's steps use: its actions (set up? what they show? Try it), website actions, and
+ * names that aren't actions yet. AI-28: cards too: the card an action shows, the cards the AI fills in
+ * itself (@show_widget), each with what its buttons do; a card named in the steps as if it were an
+ * action says how the AI can show it.
+ */
 function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdit: boolean; name: string; body: string; keys: ActionKeys }) {
   const links = useMemo(() => agentLinks(cfg.draft), [cfg.draft]);
   const seen = useSeenPageActions(cfg);
@@ -145,11 +217,16 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
   const missing = links.procedureMissing[name] ?? [];
   // W-31: a name the customer's website registers is a website action, not a missing one.
   const site = missing.map((m) => seen?.find((a) => a.name === m)).filter((a): a is NonNullable<typeof a> => Boolean(a));
-  const absent = missing.filter((m) => !site.some((a) => a.name === m));
+  // AI-28: a card's name written like an action (@theme_picker) isn't something the AI can run.
+  const namedCards = missing.filter((m) => links.widgets.includes(m) && !site.some((a) => a.name === m));
+  const absent = missing.filter((m) => !site.some((a) => a.name === m) && !namedCards.includes(m));
   const actionNames = new Set(links.actions);
+  // W-29: the AI's own show_widget fills in the cards that allow it.
+  const fillsCards = /(^|[^\w])show_widget\b/.test(body);
+  const fillable = links.widgets.filter((w) => /"aiFill"\s*:\s*true/.test(cfg.draft[`widgets/${w}.widget`] ?? ""));
 
   return (
-    <Field label="What it uses" hint="The actions its steps name. Each one has to be set up before the AI can use it; try it to see what it returns.">
+    <Field label="What it uses" hint="The actions and cards its steps use. Each action has to be set up before the AI can use it; try it to see what it returns.">
       <div className="agent-uses">
         {uses.map((action) => {
           const path = cfg.draft[`tools/${action}.yaml`] !== undefined ? `tools/${action}.yaml` : `tools/${action}.yml`;
@@ -157,22 +234,52 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
           const data = readYaml(text);
           const method = isRecord(data) && typeof data.method === "string" ? data.method.toUpperCase() : "GET";
           const widget = isRecord(data) && typeof data.widget === "string" && data.widget ? data.widget : null;
+          // W-28: no address: nothing is called, it only shows its card.
+          const cardOnly = isRecord(data) && !(typeof data.url === "string" && data.url.trim()) && Boolean(widget);
           const problems = setupProblems(text, keys);
           const open = trying === action;
           return (
             <div key={action} className="agent-use">
               <div className="agent-use-head">
-                <a className="agent-use-name" href={`/agent/actions/${action}`} onClick={(e) => { e.preventDefault(); go(`/agent/actions/${action}`); }}>{humanize(action)}</a>
-                <span className="agent-use-kind">{method === "POST" ? "Makes a change" : "Looks up"}</span>
-                <span className="agent-use-shows">{widget ? <>Shows <a href={`/agent/widgets/${widget}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${widget}`); }}>{humanize(widget)}</a></> : "Answers in words"}</span>
+                <span className="agent-use-name"><Go to={`/agent/actions/${action}`}>{humanize(action)}</Go></span>
+                <span className="agent-use-kind">{cardOnly ? "Shows a card (calls nothing)" : method === "POST" ? "Makes a change" : "Looks up"}</span>
+                {!cardOnly && !widget && <span className="agent-use-shows">Answers in words</span>}
                 <span className="agent-use-state" data-ready={problems.length ? undefined : true}>{problems.length ? "Not set up" : "Ready"}</span>
                 <Button size="sm" variant="ghost" className="agent-use-try" aria-expanded={open} onClick={() => setTrying(open ? null : action)}>{open ? "Close" : "Try it"}</Button>
               </div>
-              {problems.length > 0 && <p className="agent-use-problem small">{problems[0]} <a href={`/agent/actions/${action}`} onClick={(e) => { e.preventDefault(); go(`/agent/actions/${action}`); }}>Set it up</a></p>}
+              {problems.length > 0 && <p className="agent-use-problem small">{problems[0]} <Go to={`/agent/actions/${action}`}>Set it up</Go></p>}
+              {widget && <CardUse cfg={cfg} widget={widget} keys={keys} seen={seen} />}
               {open && <TryAction cfg={cfg} canEdit={canEdit} path={path} name={action} compact />}
             </div>
           );
         })}
+        {fillsCards && (
+          <div className="agent-use">
+            <div className="agent-use-head">
+              <span className="agent-use-name">Cards the AI fills in</span>
+              <span className="agent-use-kind">Shows a card (calls nothing)</span>
+              <span className="agent-use-state" data-ready={fillable.length ? true : undefined}>{fillable.length ? "Ready" : "No card allows it"}</span>
+            </div>
+            {fillable.length ? (
+              fillable.map((w) => <CardUse key={w} cfg={cfg} widget={w} keys={keys} seen={seen} />)
+            ) : (
+              <p className="agent-use-problem small">The steps use show_widget, but no card has "The AI can fill this card itself" switched on. Turn it on in a card's Details on the <Go to="/agent/widgets">Widgets</Go> page.</p>
+            )}
+          </div>
+        )}
+        {namedCards.map((w) => (
+          <div key={w} className="agent-use">
+            <div className="agent-use-head">
+              <span className="agent-use-name">{humanize(w)}</span>
+              <span className="agent-use-kind">A card</span>
+              <span className="agent-use-state">Can't be shown like this</span>
+            </div>
+            <p className="agent-use-problem small">
+              The steps name this card like an action, but the AI shows a card through an action that shows it, or by filling it in itself: switch on "The AI can fill this card itself" in the card's Details and write @show_widget in the step.
+            </p>
+            <CardUse cfg={cfg} widget={w} keys={keys} seen={seen} />
+          </div>
+        ))}
         {site.map((a) => (
           <div key={a.name} className="agent-use">
             <div className="agent-use-head">
@@ -194,8 +301,8 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
             )}
           </div>
         ))}
-        {!uses.length && !site.length && !absent.length && (
-          <p className="muted small">Its steps don't use an action yet. Type @ in a step to pick one, or ask the AI to "add the action this needs".</p>
+        {!uses.length && !site.length && !absent.length && !namedCards.length && !fillsCards && (
+          <p className="muted small">Its steps don't use an action or a card yet. Type @ in a step to pick one, or ask the AI to "add the action this needs".</p>
         )}
       </div>
       <NewActionDialog open={creating !== null} onClose={() => setCreating(null)} cfg={cfg} keys={keys} names={actionNames} {...(creating ? { initial: creating } : {})} />

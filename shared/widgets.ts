@@ -586,6 +586,63 @@ export function widgetActions(root: WidgetNode): OfferedAction[] {
   return out;
 }
 
+/** AI-28: what one of a card's controls does when pressed (or changed). */
+export type CardControlDoes =
+  | { kind: "tool"; name: string }
+  | { kind: "page"; name: string }
+  | { kind: "client"; type: string }
+  | { kind: "link" }
+  | { kind: "dismiss" }
+  | { kind: "ai"; type: string };
+
+/**
+ * AI-28: every control on a card that does something, with its label and what it does: runs an
+ * action (`tool:`), runs a website action (`page:`), goes to the page's own code (`handler: "client"`),
+ * opens a link, folds the card, or goes to the AI (any other type; a field's change only for `tool:`).
+ * One entry per label and target.
+ */
+export function cardControls(root: WidgetNode): { label: string; does: CardControlDoes }[] {
+  const out: { label: string; does: CardControlDoes }[] = [];
+  const seen = new Set<string>();
+  const add = (label: string, raw: unknown, change = false) => {
+    const action = actionOf(raw);
+    if (!action) return;
+    const tool = TOOL_ACTION.exec(action.type)?.[1];
+    const page = PAGE_ACTION_BUTTON.exec(action.type)?.[1];
+    const does: CardControlDoes = isClientAction(raw)
+      ? { kind: "client", type: action.type }
+      : tool
+        ? { kind: "tool", name: tool }
+        : page
+          ? { kind: "page", name: page }
+          : action.type === OPEN_URL
+            ? { kind: "link" }
+            : action.type === DISMISS
+              ? { kind: "dismiss" }
+              : { kind: "ai", type: action.type };
+    // A field's onChangeAction runs only for tool:<name> (D-51); anything else does nothing.
+    if (change && does.kind !== "tool") return;
+    const key = `${label}\u0000${JSON.stringify(does)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ label, does });
+  };
+  for (const node of walk(root)) {
+    const label = typeof node.label === "string" && node.label ? node.label : nodeText(node) || String(node.name ?? node.type);
+    add(label, node.onClickAction);
+    add(label, node.onChangeAction, true);
+    if (node.onSubmitAction !== undefined) {
+      const button = [...walk(node)].find((n) => n.type === "Button" && n.submit === true && typeof n.label === "string");
+      add((button?.label as string | undefined) ?? "Submit", node.onSubmitAction);
+    }
+    for (const key of ["confirm", "cancel"] as const) {
+      const card = node[key];
+      if (isRecord(card)) add(typeof card.label === "string" ? card.label : key === "confirm" ? "Confirm" : "Cancel", card.action);
+    }
+  }
+  return out;
+}
+
 /** The names of the fields the visitor can fill in (sent with the action). */
 export function widgetFields(root: WidgetNode): Set<string> {
   const names = new Set<string>();

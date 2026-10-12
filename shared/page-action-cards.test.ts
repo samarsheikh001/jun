@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { actionToolResult, resultShape, sanitizeActions, type MessageAction } from "./actions.ts";
-import { cardFromShape, matchWidgetAction, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, parseWidgetFile, renderWidget, toolActionInput, WIDGET_SHOWN_NOTE, WidgetError } from "./widgets.ts";
+import { cardControls, cardFromShape, matchWidgetAction, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, parseWidgetFile, renderWidget, toolActionInput, WIDGET_SHOWN_NOTE, WidgetError } from "./widgets.ts";
 import { widgetPageButtons } from "./agent-links.ts";
 
 const cart = {
@@ -86,4 +86,25 @@ test("W-32: a card's page:<name> button names a website action and fills its inp
   assert.deepEqual(toolActionInput({ type: "page:remove_from_cart", payload: { id: "cap", admin: true } }, { qty: "2" }, params), { id: "cap", qty: 2 });
   const file = JSON.stringify({ version: "1.0", name: "cart", template: JSON.stringify(root).replace("page:remove_from_cart", "page:remove_from_cart") + " page:save_for_later homepage:x" });
   assert.deepEqual(widgetPageButtons(file), ["remove_from_cart", "save_for_later"]);
+});
+
+test("AI-28: a card's controls and what each one does", () => {
+  const root = {
+    type: "Card",
+    children: [
+      { type: "Button", label: "Apply", onClickAction: { type: "page:set_theme", payload: { theme: "dark" } } },
+      { type: "Button", label: "Add seats", onClickAction: { type: "tool:add_seats" } },
+      { type: "Button", label: "Preview", onClickAction: { type: "preview_theme", handler: "client" } },
+      { type: "Button", label: "Docs", onClickAction: { type: "open_url", payload: { url: "https://x.io" } } },
+      { type: "Button", label: "Close", onClickAction: { type: "dismiss" } },
+      { type: "Select", name: "theme", label: "Theme", onChangeAction: { type: "pick_theme" } },
+    ],
+  };
+  assert.deepEqual(cardControls(root as never), [
+    { label: "Apply", does: { kind: "page", name: "set_theme" } },
+    { label: "Add seats", does: { kind: "tool", name: "add_seats" } },
+    { label: "Preview", does: { kind: "client", type: "preview_theme" } },
+    { label: "Docs", does: { kind: "link" } },
+    { label: "Close", does: { kind: "dismiss" } },
+  ]);
 });
