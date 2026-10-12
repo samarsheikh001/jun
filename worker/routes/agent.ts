@@ -14,7 +14,9 @@ import { MAX_WIDGET_JSON } from "../../shared/widgets.ts";
 import { getSessionUser, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { readJson, text } from "../lib/validate.ts";
-import { workerSecretNames } from "../lib/tool-secrets.ts";
+import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
+import { runTool } from "../ai/tools.ts";
+import type { ToolUser } from "../ai/config.ts";
 import { MAX_DESK_SECRETS, MAX_SECRET_VALUE, SECRET_NAME } from "../../shared/action-setup.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 
@@ -146,6 +148,53 @@ agent.get("/workspaces/:id/agent/page-actions", async (c) => {
   const workspaceId = c.req.param("id");
   await memberRole(c, workspaceId);
   return c.json({ actions: await c.env.WORKSPACE_HUB.getByName(workspaceId).pageActions() });
+});
+
+/** AI-25: a "Try it" result kept for the page, at most (the AI reads a shortened `output` anyway). */
+const MAX_TRY_RESULT = 200_000;
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const strings = (v: unknown): Record<string, string> =>
+  isObject(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "").map(([k, s]) => [k, s.slice(0, MAX_SECRET_VALUE)])) : {};
+
+// AI-25: "Try it" on an action's page: the draft's version of the action, called once for real with
+// the inputs the admin typed (and, for {user.*}, a test customer they typed). Same request, keys and
+// scrubbing as a live chat; nothing is saved or audited (no conversation). Body: { files, name,
+// input, customer? }. The page shows the answer and can make it the card's example data.
+agent.post("/workspaces/:id/agent/try-action", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const body = await readJson(c.req);
+  const files = readFiles(body);
+  const name = text(body, "name", { max: 60 });
+  const { config, issues } = parseConfig(files);
+  const spec = config.tools.find((t) => t.name === name);
+  if (!spec) {
+    const problem = issues.find((i) => i.path === `tools/${name}.yaml`);
+    throw new HttpError(400, "invalid_config", problem ? `Fix this first: ${problem.message}` : "There's no action with this name in the draft.");
+  }
+  const input = isObject(body.input) ? body.input : {};
+  const raw = isObject(body.customer) ? body.customer : null;
+  const fields = strings(raw);
+  const customer: ToolUser | null = raw
+    ? {
+        id: fields.id ?? "test-customer",
+        email: fields.email ?? null,
+        name: fields.name ?? null,
+        attributes: strings(raw.attributes),
+        secrets: strings(raw.secrets),
+      }
+    : null;
+  const secrets = await loadToolSecrets(c.env, workspaceId);
+  const { action, result } = await runTool(spec, input, { secrets, user: customer, widgets: config.widgets }, "wtry");
+  const keep = result !== undefined && JSON.stringify(result).length <= MAX_TRY_RESULT;
+  return c.json({
+    status: action.status,
+    httpStatus: action.httpStatus,
+    durationMs: action.durationMs,
+    output: action.output,
+    ...(keep ? { result } : {}),
+    ...(result !== undefined && !keep ? { tooBig: true } : {}),
+  });
 });
 
 agent.get("/workspaces/:id/agent", async (c) => {

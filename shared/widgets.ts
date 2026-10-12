@@ -395,9 +395,10 @@ function sampleFor(schema: unknown, key: string, depth = 0): unknown {
  * W-31: a first card for a website action's result, from its shape (`resultShape`: field names and
  * types): its title, a row per plain field (8 at most, one level into objects), and a list per list
  * of items (2 at most, each row its first two plain fields). Linked to the action (`pageActions`),
- * with example data in that shape, ready for the AI editor to restyle.
+ * with example data in that shape, ready for the AI editor to restyle. AI-25: `action` null for an
+ * action of the desk's own (the action's `widget:` links it), `sample` for real example data.
  */
-export function cardFromShape(title: string, action: string, shape: Record<string, unknown>): string {
+export function cardFromShape(title: string, action: string | null, shape: Record<string, unknown>, sample?: Record<string, unknown>): string {
   const root = typeOf(shape) === "array" ? { type: "object", properties: { items: shape } } : shape;
   const value = (expr: string) => `{{ (${expr} | default("") | string) | tojson }}`;
   const row = (label: string, expr: string) =>
@@ -433,8 +434,8 @@ export function cardFromShape(title: string, action: string, shape: Record<strin
       template,
       ...(summary.length ? { summary: summary.join(" · ") } : {}),
       jsonSchema: root,
-      sample: sampleFor(root, "value"),
-      pageActions: [action],
+      sample: sample ?? sampleFor(root, "value"),
+      ...(action ? { pageActions: [action] } : {}),
     },
     null,
     2,

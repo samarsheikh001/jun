@@ -7,19 +7,18 @@ import { Input } from "@/components/ui/input.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { PlusIcon, TrashIcon } from "../components/icons.tsx";
-import { AddDialog, Advanced, Field, ItemIndex, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize, slug } from "./parts.tsx";
+import { Advanced, Field, ItemIndex, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { FileStudio } from "./FileStudio.tsx";
 import { KeysField, SetupNotice, setupProblems, useActionKeys, type ActionKeys } from "./ActionKeys.tsx";
 import { WebsiteActions } from "./WebsiteActions.tsx";
+import { TryAction } from "./TryAction.tsx";
+import { NewActionDialog } from "./NewActionDialog.tsx";
 
 // /agent/actions[/<name>]: tools/<name>.yaml. An action is a request to the customer's own systems
 // the AI can make: look something up (GET) or change something (POST). /agent/actions lists them as
 // cards; an action's page is laid out like a widget's (FileStudio): AI and Code on the left, the form
 // on the right (W-24).
-
-const starter = () =>
-  `description: \nstatus: Looking that up\nmethod: GET\nurl: https://\n`;
 
 const TYPES = [
   { value: "string", label: "Text" },
@@ -76,28 +75,10 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
         addLabel="New action"
         canEdit={canEdit}
         noun="actions"
-        empty={{ title: "Let the AI do things", text: "An action lets the AI look something up in your systems (an order, a plan) or make a change for the customer." }}
+        empty={{ title: "Let the AI do things", text: "Say what the AI should do, paste a curl command from your API docs if you have one, and the AI sets up the action. Then try it." }}
       />
       <WebsiteActions cfg={cfg} canEdit={canEdit} />
-      <AddDialog
-        open={adding}
-        onClose={() => setAdding(false)}
-        title="New action"
-        description="A request the AI can make to your systems, like looking up an order or adding seats."
-        placeholder="e.g. Look up order"
-        exists={(raw) => {
-          const name = slug(raw, "_");
-          if (!name) return "Start with a letter.";
-          if (["handoff", "flag_problem", "jun_done", "activate_skill"].includes(name)) return "That name is taken by the AI's own actions.";
-          return names.has(name) ? "There's already an action with this name." : null;
-        }}
-        onAdd={(raw) => {
-          const name = slug(raw, "_");
-          cfg.setFile(`tools/${name}.yaml`, starter());
-          setAdding(false);
-          go(`/agent/actions/${name}`);
-        }}
-      />
+      <NewActionDialog open={adding} onClose={() => setAdding(false)} cfg={cfg} keys={keys} names={names} />
     </>
   );
 }
@@ -191,6 +172,7 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
           )}
         </div>
       </Field>
+      <TryAction cfg={cfg} canEdit={canEdit} path={path} name={name} />
       {(runFrom.length > 0 || data.widget_done !== undefined || data.widget_failed !== undefined) && <CardLines str={str} set={set} canEdit={canEdit} runFrom={runFrom} />}
       <Advanced title="More options" defaultOpen={Boolean(data.headers || data.query || data.pages || data.widget)}>
         <Field label="Headers" hint={<>Sent with the request. For your key, write <code>{"{secrets.NAME}"}</code> and add it under Keys (or your developer sets the Worker secret <code>JUN_SECRET_NAME</code>). To act as the signed-in customer with their own key, write <code>{"{user.secrets.NAME}"}</code>: it comes from the <code>secrets</code> claim of their identity token.</>}>

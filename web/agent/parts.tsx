@@ -14,7 +14,12 @@ import type { AgentConfig, Issue } from "./useAgentConfig.ts";
 // the save bar, and where each file lives on the page.
 
 /** "add_seats" → "Add seats". */
-export const humanize = (name: string) => name.replace(/[_-]+/g, " ").trim().replace(/^./, (c) => c.toUpperCase());
+export const humanize = (name: string) =>
+  name
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, (_, a: string, b: string) => `${a} ${b.toLowerCase()}`)
+    .trim()
+    .replace(/^./, (c) => c.toUpperCase());
 
 /** A typed name as a file name: lower-case with dashes (procedures) or underscores (actions, widgets). */
 export function slug(raw: string, sep: "-" | "_"): string {

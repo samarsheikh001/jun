@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { describeError } from "../api.ts";
 import type { WidgetEditTurn } from "../../shared/widget-ai.ts";
 import { EDIT_ATTEMPTS, finishWidgetEdit, liveReply, type EditResult } from "../../shared/edit-finish.ts";
@@ -59,7 +59,13 @@ function useChat(path: string): Turn[] {
   return useSyncExternalStore((cb) => (listeners.add(cb), () => listeners.delete(cb)), () => chats.get(path) ?? EMPTY);
 }
 
-const WIDGET_IDEAS = ["Make it more compact", "Add a status badge in the corner", "Use a dark theme", "Add a button that opens the invoice"];
+/** AI-26: a first request per file, sent as soon as its chat opens ("New action"). */
+const queued = new Map<string, string>();
+export function askOnOpen(path: string, text: string): void {
+  queued.set(path, text);
+}
+
+const WIDGET_IDEAS =["Make it more compact", "Add a status badge in the corner", "Use a dark theme", "Add a button that opens the invoice"];
 
 /** A widget's chat (W-22): its own endpoint, which checks the result renders. */
 export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string; name: string }) {
@@ -116,6 +122,15 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
       input.current?.focus();
     }
   };
+
+  useEffect(() => {
+    const ask = queued.get(path);
+    if (!ask) return;
+    queued.delete(path);
+    void send(ask);
+    // Once per queued request, when this file's chat opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
 
   const undo = (turn: Turn) => {
     if (turn.before === undefined) return;

@@ -8,6 +8,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { cardFromResult } from "../shared/action-try.ts";
 import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const AI_TIMEOUT = 120_000;
@@ -83,6 +84,25 @@ await step("push rejects invalid config with file-level errors, then accepts a v
   version = good.json.version;
   assert.deepEqual(good.json.summary.tools, ["lookup_order"]);
   assert.deepEqual(good.json.summary.skills, ["order-status"]);
+});
+
+await step("AI-25: Try it calls the draft's action for real; the answer can become a card", async () => {
+  const draft = files({ "tools/who_am_i.yaml": `description: Echo the customer\nurl: ${ECHO_URL}/me/{user.id}\nheaders:\n  Authorization: Bearer {user.secrets.TOKEN}\n` });
+  const res = await agent.call(`/workspaces/${workspaceId}/agent/try-action`, { body: { files: draft, name: "lookup_order", input: { orderNumber: "A-1042" } } });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  assert.equal(res.json.status, "ok", JSON.stringify(res.json));
+  assert.equal(res.json.httpStatus, 200);
+  // httpbin gives "shipped", go-httpbin (httpbingo.org) ["shipped"].
+  assert.equal([res.json.result.args.status].flat()[0], "shipped");
+  assert.match(res.json.result.url, /\/orders\/A-1042/);
+  const card = JSON.parse(cardFromResult("Lookup order", res.json.result)!);
+  assert.equal([card.sample.args.eta].flat()[0], "Friday");
+  // A test customer for {user.*}; their key is masked in what comes back.
+  const me = await agent.call(`/workspaces/${workspaceId}/agent/try-action`, { body: { files: draft, name: "who_am_i", input: {}, customer: { id: "cus_9", secrets: { TOKEN: "tok_e2e_secret_value" } } } });
+  assert.equal(me.json.status, "ok", JSON.stringify(me.json));
+  assert.match(me.json.result.url, /\/me\/cus_9/);
+  assert.ok(!JSON.stringify(me.json).includes("tok_e2e_secret_value"));
+  assert.equal((await agent.call(`/workspaces/${workspaceId}/agent/try-action`, { body: { files: draft, name: "nope", input: {} } })).status, 400);
 });
 
 await step("dashboard edits and CLI pushes don't silently overwrite each other", async () => {
