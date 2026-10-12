@@ -53,6 +53,18 @@ function widgetTools(file: string): string[] {
   return [...new Set([...template.matchAll(/tool:([a-z][a-z0-9_]*)/g)].map((m) => m[1]!))];
 }
 
+/** W-32: the website actions a widget's buttons run: `page:<name>` in its template. */
+export function widgetPageButtons(file: string): string[] {
+  let template = "";
+  try {
+    const parsed = JSON.parse(file) as { template?: unknown };
+    template = typeof parsed.template === "string" ? parsed.template : "";
+  } catch {
+    return [];
+  }
+  return [...new Set([...template.matchAll(/\bpage:([\w.-]{1,64})/g)].map((m) => m[1]!))];
+}
+
 /** A procedure's steps: the text after its frontmatter. */
 function stepsOf(text: string): string {
   const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(text);

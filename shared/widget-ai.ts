@@ -69,7 +69,7 @@ The template engine is a small Jinja, not full Jinja. It has: {{ … }}; {% if %
 
 # Actions in this desk
 
-An action is {"type": …, "payload": {…}}. "tool:<action name>" (e.g. "tool:add_seats") runs one of the desk's actions (listed with their inputs in the request) with the card's field values and the payload: each input is filled from the field (or payload key) with exactly its name, so name the fields after the inputs, and give every required input a field or a payload value; "open_url" with payload {"url": "https://…"} opens a link; "dismiss" folds the card on the customer's side (a "Done" or "Close" button; nothing is sent); any other type is sent to the support AI as the customer's choice; add "handler": "client" to send it to the website instead. Keep the actions and field names a widget already has unless the admin asks to change them: the desk's actions depend on them.
+An action is {"type": …, "payload": {…}}. "tool:<action name>" (e.g. "tool:add_seats") runs one of the desk's actions (listed with their inputs in the request) with the card's field values and the payload: each input is filled from the field (or payload key) with exactly its name, so name the fields after the inputs, and give every required input a field or a payload value; "page:<website action name>" (e.g. "page:remove_from_cart") runs one of the actions on the customer's own website (listed in the request when the desk has seen them), filled the same way, in the customer's browser; "open_url" with payload {"url": "https://…"} opens a link; "dismiss" folds the card on the customer's side (a "Done" or "Close" button; nothing is sent); any other type is sent to the support AI as the customer's choice; add "handler": "client" to send it to the website instead. Keep the actions and field names a widget already has unless the admin asks to change them: the desk's actions depend on them.
 
 # Images
 
@@ -105,6 +105,8 @@ export function widgetEditInput(input: {
   schema?: JsonSchema;
   /** W-27: the desk's actions, described (`describeActions`), for `tool:<name>` buttons. */
   actions?: string;
+  /** W-32: the website actions the desk has seen, for `page:<name>` buttons. */
+  siteActions?: string;
   history: WidgetEditTurn[];
   message: string;
   error?: { template: string; message: string };
@@ -117,6 +119,8 @@ export function widgetEditInput(input: {
     input.schema ? `Current data schema (the widget's parameters):\n<schema>\n${JSON.stringify(input.schema, null, 2)}\n</schema>` : "",
     input.actions ? `The desk's actions:
 ${input.actions}` : "",
+    input.siteActions ? `The website's own actions (for "page:<name>" buttons):
+${input.siteActions}` : "",
   ];
   const history = input.history.slice(-MAX_EDIT_HISTORY);
   if (history.length) parts.push(`Earlier in this chat:\n${history.map((t) => `${t.role === "user" ? "Admin" : "You"}: ${t.text}`).join("\n")}`);

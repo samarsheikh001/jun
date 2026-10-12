@@ -193,4 +193,106 @@ await step("junk in the actions list is ignored, and a list that isn't one is to
   s2.close();
 });
 
+await step("W-31: a website action's result shows as a card: the page names one, or the desk picks one made from its shape", async () => {
+  const cart = { total: 42.5, currency: "EUR", items: [{ title: "Mug", qty: 2 }, { title: "Tee", qty: 1 }] };
+  const shop = [{ id: "get_cart", name: "get_cart", description: "The items in the customer's shopping cart and its total", inputSchema: { type: "object", properties: {} }, risk: "auto", widget: "cart_from_code" }];
+  const ask = async () => {
+    const chat = await startChat("What's in my shopping cart right now?", shop);
+    const reply = await nextMessage(chat.socket, (m) => m.authorType === "ai" || m.authorType === "system");
+    assert.equal(reply.meta.action?.name, "get_cart", JSON.stringify(reply.meta));
+    assert.equal(reply.meta.action.widget, "cart_from_code", "the card the page named rides on the action");
+    chat.socket.send({ type: "action_result", runId: reply.meta.action.runId, status: "ok", result: JSON.stringify(cart), data: JSON.stringify(cart) });
+    const done = await nextMessage(chat.socket, (m) => m.meta.action?.runId === reply.meta.action.runId && m.meta.action.status === "ok", 10_000);
+    return { ...chat, reply, done };
+  };
+
+  // No such widget yet: shown as before (no card), but the desk learns the action and its result's shape.
+  const first = await ask();
+  assert.equal(first.done.meta.widgets, undefined);
+  first.socket.close();
+  const seen = (await agent.call(`/workspaces/${workspaceId}/agent/page-actions`)).json.actions as { name: string; widget?: string; shape?: { properties: Record<string, unknown> } }[];
+  const getCart = seen.find((a) => a.name === "get_cart");
+  assert.ok(getCart?.shape, JSON.stringify(seen));
+  assert.equal(getCart.widget, "cart_from_code");
+  assert.deepEqual(Object.keys(getCart.shape.properties), ["total", "currency", "items"]);
+  assert.ok(!/Mug|EUR|42\.5/.test(JSON.stringify(getCart.shape)), "the shape carries no values");
+  const audit = (await agent.call(`/conversations/${first.conversationId}/actions`)).json.actions as { tool: string; output: string }[];
+  assert.ok(audit.some((a) => a.tool === "page:get_cart"), JSON.stringify(audit));
+
+  // The admin makes a card from that shape (the Agent page's "Make a card"): the desk's choice is drawn.
+  const before = (await agent.call(`/workspaces/${workspaceId}/agent`)).json.files as Record<string, string>;
+  const { cardFromShape } = await import("../shared/widgets.ts");
+  const files = { ...before, "widgets/cart.widget": cardFromShape("Cart", "get_cart", getCart.shape) };
+  const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files, base: null, force: true, message: "cart card" } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.json));
+  try {
+    const second = await ask();
+    assert.equal(second.done.seq, second.reply.seq, "the same message, updated in place");
+    assert.equal(second.done.meta.action.card, "cart");
+    const card = second.done.meta.widgets?.[0];
+    assert.equal(card?.name, "cart", JSON.stringify(second.done.meta));
+    for (const value of ["Mug", "Tee", "EUR"]) assert.ok(JSON.stringify(card.root).includes(value), value);
+    // The AI's follow-up turn is told the customer already sees it.
+    const followUp = await nextMessage(second.socket, (m) => m.authorType === "ai" && m.seq > second.reply.seq);
+    console.log(`    AI (follow-up): ${followUp.body.replace(/\s+/g, " ").slice(0, 120)}`);
+    second.socket.close();
+  } finally {
+    await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: before, base: null, force: true, message: "x" } });
+  }
+});
+
+await step("W-32: a card's page:<name> button offers that website action with the row's data; one the page doesn't offer is refused", async () => {
+  const cart = { items: [{ id: "mug", title: "Mug" }, { id: "cap", title: "Cap" }] };
+  const shop = [
+    { id: "get_cart", name: "get_cart", description: "The items in the customer's shopping cart", inputSchema: { type: "object", properties: {} }, risk: "auto" },
+    { id: "remove_from_cart", name: "remove_from_cart", description: "Remove an item from the cart", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  ];
+  const row = '{"type":"ListViewItem","children":[{"type":"Text","value":{{ item.title | tojson }}},{"type":"Button","label":"Remove","onClickAction":{"type":"page:remove_from_cart","payload":{"id":{{ item.id | tojson }}}}},{"type":"Button","label":"Save","onClickAction":{"type":"page:save_for_later","payload":{"id":{{ item.id | tojson }}}}}]}';
+  const widget = { version: "1.0", name: "cart_rows", template: `{"type":"ListView","children":[{% for item in items %}{% if not loop.first %},{% endif %}${row}{% endfor %}]}`, sample: cart, pageActions: ["get_cart"] };
+  const before = (await agent.call(`/workspaces/${workspaceId}/agent`)).json.files as Record<string, string>;
+  const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...before, "widgets/cart_rows.widget": JSON.stringify(widget) }, base: null, force: true, message: "cart rows" } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.json));
+  try {
+    const chat = await startChat("What's in my shopping cart right now?", shop);
+    const reply = await nextMessage(chat.socket, (m) => m.authorType === "ai" || m.authorType === "system");
+    assert.equal(reply.meta.action?.name, "get_cart", JSON.stringify(reply.meta));
+    chat.socket.send({ type: "action_result", runId: reply.meta.action.runId, status: "ok", result: JSON.stringify(cart), data: JSON.stringify(cart) });
+    const done = await nextMessage(chat.socket, (m) => m.meta.action?.runId === reply.meta.action.runId && m.meta.action.status === "ok", 10_000);
+    const card = done.meta.widgets?.[0];
+    assert.equal(card?.name, "cart_rows", JSON.stringify(done.meta));
+    // Let the AI's follow-up to get_cart land first, so it isn't mistaken for the press's answer.
+    await nextMessage(chat.socket, (m) => m.authorType === "ai" && m.seq > reply.seq).catch(() => null);
+
+    // "Remove" on the second row: the press, then the action's card as the reply (confirm: it's consequential).
+    const press = crypto.randomUUID();
+    chat.socket.send({ type: "send", clientMsgId: press, body: "x", attachments: [], widgetAction: { messageId: done.id, widgetId: card.id, action: { type: "page:remove_from_cart", payload: { id: "cap" } }, item: "i1" }, actions: shop });
+    const pressed = await nextMessage(chat.socket, (m) => m.clientMsgId === press, 10_000);
+    assert.equal(pressed.body, "Remove");
+    const offered = await nextMessage(chat.socket, (m) => m.authorType === "ai" && m.clientMsgId === `ai:${pressed.seq}`, 10_000);
+    assert.deepEqual(
+      { name: offered.meta.action.name, input: offered.meta.action.input, missing: offered.meta.action.missing, risk: offered.meta.action.risk, status: offered.meta.action.status, pressed: offered.meta.action.pressed },
+      { name: "remove_from_cart", input: { id: "cap" }, missing: [], risk: "confirm", status: "pending", pressed: true },
+    );
+    chat.socket.send({ type: "action_result", runId: offered.meta.action.runId, status: "ok", result: "Removed Cap" });
+    await nextMessage(chat.socket, (m) => m.meta.action?.runId === offered.meta.action.runId && m.meta.action.status === "ok", 10_000);
+    // No AI turn after it: the step row says what happened.
+    const extra = await nextMessage(chat.socket, (m) => m.authorType === "ai" && m.seq > offered.seq, 8_000).catch(() => null);
+    assert.equal(extra, null, `no AI turn after a button's action: ${extra?.body}`);
+    const audit = (await agent.call(`/conversations/${chat.conversationId}/actions`)).json.actions as { tool: string; output: string }[];
+    assert.ok(audit.some((a) => a.tool === "page:remove_from_cart" && a.output === "Removed Cap"), JSON.stringify(audit));
+
+    // "Save" names an action this page doesn't offer: refused, and the row works again.
+    const other = crypto.randomUUID();
+    chat.socket.send({ type: "send", clientMsgId: other, body: "x", attachments: [], widgetAction: { messageId: done.id, widgetId: card.id, action: { type: "page:save_for_later", payload: { id: "mug" } }, item: "i0" }, actions: shop });
+    const refused = await chat.socket.next((e) => e.type === "error" && e.clientMsgId === other, 10_000);
+    assert.equal(refused.code, "action_failed");
+    const latest = (await chat.visitor.call(`/widget/${widgetKey}/conversations/${chat.conversationId}`, { headers: { "X-Visitor-Token": chat.token } })).json.messages as any[];
+    const items = latest.find((m) => m.id === done.id)?.meta.widgets?.[0]?.items ?? {};
+    assert.deepEqual(Object.keys(items), ["i1"], "only the removed row is used");
+    chat.socket.close();
+  } finally {
+    await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: before, base: null, force: true, message: "x" } });
+  }
+});
+
 summary();

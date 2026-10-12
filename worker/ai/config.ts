@@ -609,6 +609,15 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
       delete tool.widget;
     }
   }
+  // W-31: one card per website action.
+  const shownBy = new Map<string, string>();
+  for (const widget of config.widgets) {
+    for (const name of widget.pageActions ?? []) {
+      const other = shownBy.get(name);
+      if (other) issues.push({ path: `widgets/${widget.name}.widget`, message: `pageActions: widgets/${other}.widget already shows ${name}.` });
+      else shownBy.set(name, widget.name);
+    }
+  }
   // W-17: a button with `tool:<name>` must name a tool (checked on the widget's sample data).
   for (const widget of config.widgets) {
     if (!widget.sample) continue;

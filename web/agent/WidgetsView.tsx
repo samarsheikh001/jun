@@ -18,6 +18,7 @@ import { formatTemplate } from "../../shared/widget-ai.ts";
 import { CodeArea } from "./CodeArea.tsx";
 import { WidgetChat } from "./AiChat.tsx";
 import { Studio } from "./Studio.tsx";
+import { WidgetPageActions, widgetPageActions } from "./WebsiteActions.tsx";
 import { Connections } from "./Connections.tsx";
 import { AddDialog, CodeEditor, Problems, TOOL, WIDGET, changeOf, go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
@@ -323,9 +324,9 @@ function TemplateDialog({ cfg, canEdit, template, onClose }: { cfg: AgentConfig;
 }
 
 /** One widget in the gallery: its live preview (not clickable itself) and a link over the whole tile. */
-/** What shows this widget, for its tile: its actions and (W-29) the AI filling it in itself. */
-function shownBy(tools: string[], aiFill: boolean): string {
-  const who = [...(aiFill ? ["the AI"] : []), ...tools.map(humanize)];
+/** What shows this widget, for its tile: its actions, (W-29) the AI filling it in itself and (W-31) website actions. */
+function shownBy(tools: string[], aiFill: boolean, site: string[]): string {
+  const who = [...(aiFill ? ["the AI"] : []), ...tools.map(humanize), ...site.map(humanize)];
   return who.length ? `Shown by ${who.join(", ")}` : "Nothing shows it yet";
 }
 
@@ -348,7 +349,7 @@ function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
         </a>
         {problems > 0 && <Badge variant="destructive">{problems === 1 ? "1 problem" : `${problems} problems`}</Badge>}
         {change && <Badge variant="secondary">{change}</Badge>}
-        <span className="agent-tile-sub">{shownBy(tools, /"aiFill"\s*:\s*true/.test(cfg.draft[item.path] ?? ""))}</span>
+        <span className="agent-tile-sub">{shownBy(tools, /"aiFill"\s*:\s*true/.test(cfg.draft[item.path] ?? ""), widgetPageActions(cfg.draft, item.name))}</span>
       </div>
     </li>
   );
@@ -732,6 +733,7 @@ function WidgetDetails({ cfg, path, name, canEdit }: { cfg: AgentConfig; path: s
           {aiFill && file.sample === undefined && <p className="agent-wed-warn">Add example data in Code: the AI fills the card in its shape.</p>}
         </div>
       )}
+      {file && <WidgetPageActions cfg={cfg} name={name} canEdit={canEdit} />}
       {file && <Parameters cfg={cfg} path={path} name={name} canEdit={canEdit} file={file} />}
       {summary && (
         <div className="agent-wed-group">

@@ -11,6 +11,7 @@ import { AddDialog, Advanced, Field, ItemIndex, Problems, TextList, TOOL, Unread
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { FileStudio } from "./FileStudio.tsx";
 import { KeysField, SetupNotice, setupProblems, useActionKeys, type ActionKeys } from "./ActionKeys.tsx";
+import { WebsiteActions } from "./WebsiteActions.tsx";
 
 // /agent/actions[/<name>]: tools/<name>.yaml. An action is a request to the customer's own systems
 // the AI can make: look something up (GET) or change something (POST). /agent/actions lists them as
@@ -77,6 +78,7 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
         noun="actions"
         empty={{ title: "Let the AI do things", text: "An action lets the AI look something up in your systems (an order, a plan) or make a change for the customer." }}
       />
+      <WebsiteActions cfg={cfg} canEdit={canEdit} />
       <AddDialog
         open={adding}
         onClose={() => setAdding(false)}

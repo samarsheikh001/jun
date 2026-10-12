@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { MAX_SEEN_PAGE_ACTIONS, type SeenPageAction } from "../shared/actions.ts";
 import { ChatGPTAuth, type ChatGPTCredentials, type CredentialStore } from "@jun/llm";
 import { pickAssignee } from "../shared/inbox.ts";
 import { notificationPayload, notificationRecipients, readNotificationPrefs, type NotificationEvent, type NotificationPayload } from "../shared/notifications.ts";
@@ -67,6 +68,11 @@ const clip = (value: unknown, max: number): string => (typeof value === "string"
  * It also owns dev-only ChatGPT token refresh: refresh tokens rotate, so exactly one place
  * may refresh them.
  */
+/** W-31: the most recently seen website actions, at most MAX_SEEN_PAGE_ACTIONS. */
+function trimSeen(seen: Record<string, SeenPageAction>): Record<string, SeenPageAction> {
+  return Object.fromEntries(Object.entries(seen).sort(([, a], [, b]) => b.seenAt - a.seenAt).slice(0, MAX_SEEN_PAGE_ACTIONS));
+}
+
 export class WorkspaceHub extends DurableObject<Env> {
   #chatgpt: ChatGPTAuth | undefined;
   #vapid: Promise<VapidKeys> | undefined;
@@ -172,6 +178,36 @@ export class WorkspaceHub extends DurableObject<Env> {
   async setActionSecret(name: string, value: string | null): Promise<void> {
     if (value) await this.ctx.storage.put(`action-secret:${name}`, value);
     else await this.ctx.storage.delete(`action-secret:${name}`);
+  }
+
+  /**
+   * RPC (W-31): website actions offered on the customer's site, as the Conversation objects saw them
+   * (name, description, the card the page names, inputs); `seenAt` is refreshed, the list capped.
+   */
+  async notePageActions(actions: Omit<SeenPageAction, "seenAt" | "shape">[]): Promise<void> {
+    const seen = (await this.ctx.storage.get<Record<string, SeenPageAction>>("page-actions")) ?? {};
+    const now = Date.now();
+    for (const a of actions) {
+      const next: SeenPageAction = { ...seen[a.name], ...a, seenAt: now };
+      if (!a.widget) delete next.widget;
+      seen[a.name] = next;
+    }
+    await this.ctx.storage.put("page-actions", trimSeen(seen));
+  }
+
+  /** RPC (W-31): the shape of a website action's latest result (field names and types, never values). */
+  async notePageActionShape(name: string, shape: Record<string, unknown>): Promise<void> {
+    const seen = (await this.ctx.storage.get<Record<string, SeenPageAction>>("page-actions")) ?? {};
+    const current = seen[name];
+    if (!current || JSON.stringify(current.shape) === JSON.stringify(shape)) return;
+    seen[name] = { ...current, shape };
+    await this.ctx.storage.put("page-actions", seen);
+  }
+
+  /** RPC (W-31): the website actions seen, most recent first. */
+  async pageActions(): Promise<SeenPageAction[]> {
+    const seen = (await this.ctx.storage.get<Record<string, SeenPageAction>>("page-actions")) ?? {};
+    return Object.values(seen).sort((a, b) => b.seenAt - a.seenAt);
   }
 
   /**

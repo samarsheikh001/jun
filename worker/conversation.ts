@@ -23,13 +23,13 @@ import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import { DEFAULT_TOOL_STATUS } from "./ai/config.ts";
 import { runTool, type ToolAction } from "./ai/tools.ts";
-import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, resultShape, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
 import { compileTemplate } from "../shared/jinja.ts";
-import { markWidgetUsed, matchWidgetAction, matchWidgetChange, renderActionLine, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
+import { markWidgetUsed, matchWidgetAction, matchWidgetChange, MAX_PAGE_ACTION_DATA, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, renderActionLine, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
 import { notifyTeam } from "./lib/notify.ts";
@@ -340,6 +340,14 @@ export class Conversation extends DurableObject<Env> {
       meta.tool = { name: toolRun.action.tool, status: toolRun.action.status, ...(toolRun.done && !toolRun.widget ? { done: toolRun.done } : {}) };
       if (toolRun.done) await this.#setCard(ref, card.messageId, meta.widgetId, (w) => markWidgetUsed(unmarkWidget(w, meta.item), toolRun.done, meta.item, Date.now()));
     }
+    // W-32: a `page:<name>` button offers that website action as the AI would (it must be on the
+    // customer's page now); otherwise the card opens again and says why.
+    const pageRun = used?.meta && used.card ? await this.#pageButton(ref, used.meta, input.actions) : null;
+    if (pageRun && "error" in pageRun && used?.meta && used.card) {
+      const { meta, card } = used;
+      await this.#setCard(ref, card.messageId, meta.widgetId, (w) => unmarkWidget(w, meta.item));
+      throw new SendError("action_failed", pageRun.error);
+    }
     const body = used ? used.label : typeof input.body === "string" ? input.body.trim() : "";
     const attachments = await this.#checkAttachments(ref, participant, input.attachments ?? []);
     if (!body && attachments.length === 0) throw new SendError("empty", "Message is empty.");
@@ -384,16 +392,26 @@ export class Conversation extends DurableObject<Env> {
       await this.ctx.storage.put(`${TOOL_OUTPUT_KEY}${message.id}`, toolRun.action.output.slice(0, 4000));
       if (toolRun.widget) await this.ctx.storage.put(`${PENDING_WIDGETS_KEY}${message.seq}`, [{ label: toolRun.label, widget: toolRun.widget }]);
     }
+    if (pageRun && "action" in pageRun && created) {
+      // A `human` action is a request for the team (as when the AI picks one).
+      if (pageRun.human) await this.#handoff(ref, `The customer wants to: ${pageRun.action.description}`, HANDOFF_MESSAGES.default);
+      // The answer to the press: the action's card (confirm, or it runs at once), as the AI's reply.
+      else await this.#insert(ref, { authorType: "ai", authorId: null, authorName: null, body: ACTION_ONLY_BODY, clientMsgId: `ai:${message.seq}`, meta: { action: pageRun.action } });
+    }
 
     if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
     // AI-21: the page's actions travel with each message; the AI turn (an alarm) reads the latest list.
-    if (participant.role === "visitor" && input.actions !== undefined) await this.ctx.storage.put(PAGE_ACTIONS_KEY, sanitizeActions(input.actions));
+    if (participant.role === "visitor" && input.actions !== undefined) {
+      const pageActions = sanitizeActions(input.actions);
+      await this.ctx.storage.put(PAGE_ACTIONS_KEY, pageActions);
+      this.ctx.waitUntil(this.#notePageActions(ref, pageActions));
+    }
     // I-14: the visitor wrote in a chat a teammate has: tell them (not on retries).
     if (participant.role === "visitor" && created) this.ctx.waitUntil(this.#notifyAssignee(ref));
 
     // The AI answers visitor messages in AI-handled conversations, from an alarm so the
     // sender isn't kept waiting (and so it's retried if the object restarts).
-    if (participant.role === "visitor" && !used?.meta?.tool?.done) await this.ctx.storage.setAlarm(Date.now());
+    if (participant.role === "visitor" && !used?.meta?.tool?.done && !pageRun) await this.ctx.storage.setAlarm(Date.now());
     return message;
   }
 
@@ -461,6 +479,21 @@ export class Conversation extends DurableObject<Env> {
     const done = ok && spec.widgetDone ? renderActionLine(compileTemplate(spec.widgetDone), values, result) : "";
     const failed = !ok && spec.widgetFailed ? renderActionLine(compileTemplate(spec.widgetFailed), values, undefined) : "";
     return { action, widget, label: spec.status ?? DEFAULT_TOOL_STATUS, configVersion: config.version, done, failed };
+  }
+
+  /**
+   * W-32: the website action a card's `page:<name>` button names, from the page's list sent with
+   * the press (else the latest one), proposed with the button's payload and the card's fields (only
+   * the action's own inputs). Null for other actions; an error when the page doesn't offer it.
+   */
+  async #pageButton(ref: ConversationRef, meta: WidgetActionMeta, sent: unknown): Promise<{ action: MessageAction; human: boolean } | { error: string } | null> {
+    const name = PAGE_ACTION_BUTTON.exec(meta.type)?.[1];
+    if (!name) return null;
+    const list = sent !== undefined ? sanitizeActions(sent) : ((await this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY)) ?? []);
+    const action = list.find((a) => a.id === name) ?? list.find((a) => a.name === name);
+    if (!action) return { error: "This page doesn't offer that right now." };
+    const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, action.params);
+    return { action: { ...this.#proposeAction(action, input), pressed: true }, human: action.risk === "human" };
   }
 
   /** W-27: one card of an AI message changed in place (its latest copy), for everyone. */
@@ -721,7 +754,8 @@ export class Conversation extends DurableObject<Env> {
     const chain = history.slice(visitorAt + 1).filter((m) => m.authorType === "ai" && (m.clientMsgId === replyKey || m.clientMsgId.startsWith(`${replyKey}.`))).length;
     // AI-21: after a page action ran (or failed), the AI gets one follow-up turn: the next step of
     // a longer request, or a short confirmation. Never after a cancel, undo or a vanished action.
-    const followUp = chain > 0 && last.authorType === "ai" && last.meta.action && (last.meta.action.status === "ok" || last.meta.action.status === "error") && !last.meta.action.continued ? last.meta.action : null;
+    // W-32: an action a card's button started answers itself (its step row, its card): no turn.
+    const followUp = chain > 0 && last.authorType === "ai" && last.meta.action && (last.meta.action.status === "ok" || last.meta.action.status === "error") && !last.meta.action.continued && !last.meta.action.pressed ? last.meta.action : null;
     if (chain > 0 && !followUp) return false;
     if (followUp && chain >= MAX_ACTION_CHAIN) return false;
     const turnId = chain === 0 ? replyKey : `${replyKey}.${chain}`;
@@ -799,7 +833,7 @@ export class Conversation extends DurableObject<Env> {
         intent: intent?.intent ?? null,
         pageActions: rankActions(pageActions ?? [], visitor.body),
         pagePath: technical.pagePath,
-        followUp: followUp ? { name: followUp.name, status: followUp.status as "ok" | "error", result: followUp.result } : null,
+        followUp: followUp ? { name: followUp.name, status: followUp.status as "ok" | "error", result: followUp.result, ...(followUp.card ? { card: true } : {}) } : null,
         shownWidgets: pending.length,
         // Citations stream already resolved (numbered by first use, with their sources).
         onVisible: (visible, hits) => {
@@ -1069,6 +1103,22 @@ export class Conversation extends DurableObject<Env> {
 
   // ---------- AI-21 page actions ----------
 
+  /** W-31: what the hub was last told, so a chat tells it only when its page's actions change. */
+  #notedActions = "";
+
+  /** W-31: the Agent page lists the website actions seen on the customer's site (and picks their cards). */
+  async #notePageActions(ref: ConversationRef, actions: PageAction[]): Promise<void> {
+    const seen = actions.map((a) => ({ name: a.name, description: a.description, params: Object.keys(a.params), ...(a.widget ? { widget: a.widget } : {}) }));
+    const key = JSON.stringify(seen);
+    if (!seen.length || key === this.#notedActions) return;
+    this.#notedActions = key;
+    try {
+      await this.env.WORKSPACE_HUB.getByName(ref.workspaceId).notePageActions(seen);
+    } catch (error) {
+      console.warn("noting page actions failed:", error);
+    }
+  }
+
   /** The card for an action the model chose: its inputs checked, the rest asked for by the widget. */
   #proposeAction(action: PageAction, rawInput: Record<string, unknown>): MessageAction {
     const { input, missing } = checkInput(action, rawInput);
@@ -1086,6 +1136,7 @@ export class Conversation extends DurableObject<Env> {
       status: "pending",
       result: null,
       canUndo: false,
+      ...(action.widget ? { widget: action.widget } : {}),
     };
   }
 
@@ -1094,7 +1145,13 @@ export class Conversation extends DurableObject<Env> {
    * to everyone: the thread merges by seq, so the card updates in place. `patch` returns null to
    * leave it alone (wrong state, unknown run). Returns the new card.
    */
-  async #updateAction(ref: ConversationRef, runId: string, patch: (action: MessageAction) => MessageAction | null): Promise<MessageAction | null> {
+  async #updateAction(
+    ref: ConversationRef,
+    runId: string,
+    patch: (action: MessageAction) => MessageAction | null,
+    /** More of the message's meta to change with it (W-31: the result's card). */
+    more?: (meta: MessageMeta) => Partial<MessageMeta>,
+  ): Promise<MessageAction | null> {
     if (!/^run_[\w-]{1,64}$/.test(runId)) return null;
     const row = await this.env.DB.prepare(`${MESSAGE_SELECT} WHERE m.conversation_id = ? AND m.author_type = 'ai' AND m.meta LIKE ? ORDER BY m.seq DESC LIMIT 1`)
       .bind(ref.conversationId, `%"runId":"${runId}"%`)
@@ -1105,14 +1162,17 @@ export class Conversation extends DurableObject<Env> {
     if (!current || current.runId !== runId) return null;
     const next = patch(current);
     if (!next) return null;
-    const meta: MessageMeta = { ...message.meta, action: next };
+    const meta: MessageMeta = { ...message.meta, ...more?.(message.meta), action: next };
     await this.env.DB.prepare("UPDATE messages SET meta = ? WHERE id = ?").bind(JSON.stringify(meta), message.id).run();
     this.#broadcast({ type: "message", message: { ...message, meta } });
     return next;
   }
 
-  /** The page ran the action (or couldn't): close the card, keep the audit row, tell the agents. */
-  async #actionResult(ref: ConversationRef, event: { runId: string; status: string; result?: unknown; canUndo?: unknown }): Promise<void> {
+  /**
+   * The page ran the action (or couldn't): close the card, keep the audit row, tell the agents.
+   * W-31: a result the desk (or the page) gave a widget is drawn as that card on the same message.
+   */
+  async #actionResult(ref: ConversationRef, event: { runId: string; status: string; result?: unknown; canUndo?: unknown; data?: unknown }): Promise<void> {
     const status = event.status as MessageAction["status"];
     if (!ACTION_RESULT_STATUSES.includes(status)) return;
     const runId = String(event.runId);
@@ -1121,21 +1181,49 @@ export class Conversation extends DurableObject<Env> {
       this.#settled.add(runId);
     }
     const result = typeof event.result === "string" && event.result.trim() ? redact(event.result, MAX_ACTION_RESULT) : null;
-    const updated = await this.#updateAction(ref, runId, (action) => {
-      // pending → any result; ok → undone. Nothing else moves.
-      if (action.status === "pending" && status !== "undone") return { ...action, status, result, canUndo: status === "ok" && event.canUndo === true };
-      if (action.status === "ok" && status === "undone" && action.canUndo) return { ...action, status, canUndo: false };
-      return null;
-    });
+    const config = status === "cancelled" || status === "gone" ? null : await loadAgentConfig(this.env, ref.workspaceId);
+    let card: MessageWidget | null = null;
+    let cardNote = "";
+    const updated = await this.#updateAction(
+      ref,
+      runId,
+      (action) => {
+        // pending → any result; ok → undone. Nothing else moves.
+        if (action.status === "pending" && status !== "undone") {
+          const next: MessageAction = { ...action, status, result, canUndo: status === "ok" && event.canUndo === true };
+          const spec = status === "ok" && config ? pageActionWidget(config.widgets, action.name, action.widget) : null;
+          if (spec) {
+            const shown = pageActionCard(spec, event.data, `wp${runId.slice(4)}`);
+            if ("card" in shown) {
+              card = shown.card;
+              next.card = spec.name;
+            } else cardNote = ` (card ${spec.name} not shown: ${shown.error})`;
+          }
+          return next;
+        }
+        if (action.status === "ok" && status === "undone" && action.canUndo) return { ...action, status, canUndo: false };
+        return null;
+      },
+      (meta) => (card ? { widgets: [...(meta.widgets ?? []).filter((w) => w.id !== card!.id), card] } : {}),
+    );
     if (!updated) return;
     if (status === "ok" || status === "error") await this.ctx.storage.setAlarm(Date.now());
-    if (status === "ok" || status === "error" || status === "undone") {
+    // W-31: the result's shape (names and types, no values), so the desk can make a card for it.
+    if (status === "ok" && typeof event.data === "string" && event.data.length <= MAX_PAGE_ACTION_DATA) {
+      let shape: Record<string, unknown> | null = null;
+      try {
+        shape = resultShape(JSON.parse(event.data));
+      } catch {
+        // not JSON: no card to make
+      }
+      if (shape) this.ctx.waitUntil(this.env.WORKSPACE_HUB.getByName(ref.workspaceId).notePageActionShape(updated.name, shape).catch(() => undefined));
+    }
+    if (config && (status === "ok" || status === "error" || status === "undone")) {
       const row = await this.env.DB.prepare("SELECT seq FROM messages WHERE conversation_id = ? AND author_type = 'visitor' ORDER BY seq DESC LIMIT 1").bind(ref.conversationId).first<{ seq: number }>();
-      const config = await loadAgentConfig(this.env, ref.workspaceId);
       await this.#recordAction(ref, row?.seq ?? 0, config.version, {
         tool: `${status === "undone" ? "undo:" : "page:"}${updated.name}`,
         input: updated.input,
-        output: status === "undone" ? "undone by the customer" : (result ?? (status === "ok" ? "done" : "failed")),
+        output: (status === "undone" ? "undone by the customer" : (result ?? (status === "ok" ? "done" : "failed"))) + cardNote,
         status: status === "error" ? "error" : "ok",
         httpStatus: null,
         durationMs: 0,

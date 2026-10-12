@@ -23,6 +23,8 @@ export function widgetEditMessage(input: {
   message: string;
   history: WidgetEditTurn[];
   files?: ConfigFiles;
+  /** W-32: website actions the desk has seen (name, description, inputs). */
+  siteActions?: { name: string; description: string; params: string[] }[];
   error?: { template: string; message: string };
 }): string {
   let current: Record<string, unknown>;
@@ -43,6 +45,7 @@ export function widgetEditMessage(input: {
     summary,
     ...(schema ? { schema } : {}),
     ...(actions ? { actions } : {}),
+    ...(input.siteActions?.length ? { siteActions: input.siteActions.map((a) => `- ${a.name}: ${a.description}${a.params.length ? ` (inputs: ${a.params.join(", ")})` : ""}`).join("\n") } : {}),
     history: input.history,
     message: input.message,
     ...(input.error ? { error: input.error } : {}),

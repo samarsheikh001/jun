@@ -32,6 +32,8 @@ export interface JunActionExtras<Result = unknown> {
   undo?: (result: Result) => void | Promise<void>;
   /** "confirm" (default: a summary and a Confirm button), "auto" (runs at once) or "human" (goes to the team). */
   risk?: "auto" | "confirm" | "human";
+  /** A card made on the desk (its widget name): the result, an object, is shown as that card. */
+  widget?: string;
 }
 
 export type JunAction<Input = Record<string, unknown>, Result = unknown> = WebMcpTool<Input, Result> & JunActionExtras<Result>;

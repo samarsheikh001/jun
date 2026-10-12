@@ -52,7 +52,7 @@ export interface PromptOptions {
   /** AI-21: the actions the customer's current page offers (tools without execute: calling one ends the turn). */
   pageActions?: PageAction[];
   /** AI-21: this turn follows a page action that just ran (or failed); the customer hasn't written since. */
-  followUp?: { name: string; status: "ok" | "error"; result: string | null };
+  followUp?: { name: string; status: "ok" | "error"; result: string | null; /** W-31: its result is on screen as a card. */ card?: boolean };
 }
 
 /** AI-21: what the follow-up turn after an action is for. */
@@ -60,7 +60,7 @@ export function followUpRules(f: NonNullable<PromptOptions["followUp"]>): string
   const outcome = f.status === "ok" ? "has just run (its result is the last tool result)" : "just failed (the error is the last tool result)";
   return `
 
-This reply follows the page action "${f.name}", which ${outcome}. The customer hasn't written anything new. If their request still needs another step, call that next action now (never "${f.name}" again with the same inputs), with one short sentence saying what you're doing. If it failed, call ${DONE_TOOL} with a message that says so plainly and suggests what to try. If nothing more is needed, call ${DONE_TOOL} with a message confirming what was done in one short sentence, with no question. This reply must call exactly one tool: the next action, or ${DONE_TOOL}.`;
+This reply follows the page action "${f.name}", which ${outcome}. The customer hasn't written anything new. If their request still needs another step, call that next action now (never "${f.name}" again with the same inputs), with one short sentence saying what you're doing. If it failed, call ${DONE_TOOL} with a message that says so plainly and suggests what to try. If nothing more is needed, call ${DONE_TOOL} with a message confirming what was done in one short sentence, with no question.${f.card ? " The customer already sees its result laid out as a card, so that sentence doesn't repeat its details (no items, amounts or dates): at most say where to look or what they can do next." : ""} This reply must call exactly one tool: the next action, or ${DONE_TOOL}.`;
 }
 
 /** AI-21 rules for page actions (D-40): only what the page offers, only when asked, one per reply. */

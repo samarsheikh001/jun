@@ -34,6 +34,12 @@ export const MAX_ACTION_VALUE = 2000;
 
 export class WidgetError extends Error {}
 
+/** What the model reads after a result it was shown as a card. */
+export const WIDGET_SHOWN_NOTE = "(The customer already sees this result in the chat, laid out as a card. Don't repeat its details and don't mention the card; answer their question in a short sentence and add only what helps.)";
+/** W-31: website actions one widget may show, and a name's length (as the loader sends it). */
+export const MAX_WIDGET_PAGE_ACTIONS = 10;
+export const MAX_PAGE_ACTION_NAME = 64;
+
 /** One node of a widget tree: `type` plus its props (and `children`). Loose by design: unknown props are ignored. */
 export interface WidgetNode {
   type: string;
@@ -79,6 +85,11 @@ export interface MessageWidget {
 
 /** W-17: `tool:<name>` on a button runs that tool at once (the press is the visitor's yes); the AI then answers. */
 export const TOOL_ACTION = /^tool:([a-z][a-z0-9_]*)$/;
+/**
+ * W-32: `page:<name>` on a button runs a website action (a WebMCP tool on the customer's page) with
+ * the button's payload and the card's fields, offered like one the AI chose (confirm per its risk).
+ */
+export const PAGE_ACTION_BUTTON = /^page:([\w.-]{1,64})$/;
 /** W-17: `open_url` with `payload.url` opens an https link (checkout, invoice); handled in the browser, never sent. */
 export const OPEN_URL = "open_url";
 
@@ -126,6 +137,8 @@ export interface WidgetSpec {
   schema?: JsonSchema;
   /** W-30: more named examples (ChatKit Studio's states; ours: `states: [{ name, data }]`). */
   states?: { name: string; data: Record<string, unknown> }[];
+  /** W-31 (ours, `"pageActions": ["get_cart"]`): website actions whose result this card shows. */
+  pageActions?: string[];
 }
 
 /**
@@ -244,6 +257,15 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
       // not ours to judge: the sample is only for checking
     }
   }
+  // W-31: website actions (WebMCP tools on the customer's page) whose result this card shows.
+  let pageActions: string[] = [];
+  if (file.pageActions !== undefined && file.pageActions !== null) {
+    if (!Array.isArray(file.pageActions) || file.pageActions.some((n) => typeof n !== "string" || !n.trim() || n.trim().length > MAX_PAGE_ACTION_NAME)) {
+      throw new WidgetError(`pageActions is a list of website action names (each up to ${MAX_PAGE_ACTION_NAME} characters), like ["get_cart"].`);
+    }
+    pageActions = [...new Set((file.pageActions as string[]).map((n) => n.trim()))];
+    if (pageActions.length > MAX_WIDGET_PAGE_ACTIONS) throw new WidgetError(`pageActions: at most ${MAX_WIDGET_PAGE_ACTIONS} website actions.`);
+  }
   // W-30: the data's schema: Studio's `jsonSchema` (an empty one says nothing).
   const schema = isRecord(file.jsonSchema) && (isRecord(file.jsonSchema.properties) || typeof file.jsonSchema.type === "string") ? file.jsonSchema : undefined;
   return {
@@ -255,6 +277,7 @@ export function parseWidgetFile(name: string, text: string): WidgetSpec {
     ...(file.aiFill === true ? { aiFill: true } : {}),
     ...(schema ? { schema } : {}),
     ...(states.length ? { states } : {}),
+    ...(pageActions.length ? { pageActions } : {}),
   };
 }
 
@@ -336,11 +359,126 @@ export function starterWidget(title: string): string {
 `;
 }
 
+const SHAPE_FIELD = /^[A-Za-z_]\w*$/;
+const fieldLabel = (key: string) => {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_+/g, " ").trim().toLowerCase();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : key;
+};
+const typeOf = (schema: unknown): string => (isRecord(schema) && typeof schema.type === "string" ? schema.type : "");
+const propsOf = (schema: unknown): [string, unknown][] =>
+  isRecord(schema) && isRecord(schema.properties) ? Object.entries(schema.properties).filter(([k]) => SHAPE_FIELD.test(k)) : [];
+const SCALARS = new Set(["string", "number", "integer", "boolean"]);
+
+/** Example data in a shape (W-31): words for text, small numbers, lists of two. */
+function sampleFor(schema: unknown, key: string, depth = 0): unknown {
+  switch (typeOf(schema)) {
+    case "object":
+      return depth > 4 ? {} : Object.fromEntries(propsOf(schema).map(([k, s]) => [k, sampleFor(s, k, depth + 1)]));
+    case "array": {
+      const items = isRecord(schema) ? schema.items : undefined;
+      return items === undefined || depth > 4 ? [] : [sampleFor(items, key, depth + 1), sampleFor(items, key, depth + 1)];
+    }
+    case "number":
+      return 12.5;
+    case "integer":
+      return 3;
+    case "boolean":
+      return true;
+    case "null":
+      return null;
+    default:
+      return fieldLabel(key);
+  }
+}
+
+/**
+ * W-31: a first card for a website action's result, from its shape (`resultShape`: field names and
+ * types): its title, a row per plain field (8 at most, one level into objects), and a list per list
+ * of items (2 at most, each row its first two plain fields). Linked to the action (`pageActions`),
+ * with example data in that shape, ready for the AI editor to restyle.
+ */
+export function cardFromShape(title: string, action: string, shape: Record<string, unknown>): string {
+  const root = typeOf(shape) === "array" ? { type: "object", properties: { items: shape } } : shape;
+  const value = (expr: string) => `{{ (${expr} | default("") | string) | tojson }}`;
+  const row = (label: string, expr: string) =>
+    `,{"type":"Row","children":[{"type":"Caption","value":${JSON.stringify(label)}},{"type":"Spacer"},{"type":"Text","value":${value(expr)},"size":"sm"}]}`;
+  const rows: string[] = [];
+  const lists: string[] = [];
+  const summary: string[] = [];
+  for (const [key, schema] of propsOf(root)) {
+    const type = typeOf(schema);
+    if (SCALARS.has(type)) {
+      if (rows.length < 8) rows.push(row(fieldLabel(key), key));
+      if (summary.length < 2 && type === "string") summary.push(`{{ ${key} }}`);
+    } else if (type === "object") {
+      for (const [sub, s] of propsOf(schema)) if (SCALARS.has(typeOf(s)) && rows.length < 8) rows.push(row(fieldLabel(`${key} ${sub}`), `${key}.${sub}`));
+    } else if (type === "array" && lists.length < 2) {
+      const items = isRecord(schema) ? schema.items : undefined;
+      const head = `,{"type":"Divider","flush":true},{"type":"Caption","value":${JSON.stringify(fieldLabel(key))}}`;
+      if (SCALARS.has(typeOf(items))) {
+        lists.push(`${head}{% for v in ${key} %},{"type":"Text","value":${value("v")},"size":"sm"}{% endfor %}`);
+      } else {
+        const [a, b] = propsOf(items).filter(([, s]) => SCALARS.has(typeOf(s))).map(([k]) => k);
+        if (!a) continue;
+        const second = b ? `,{"type":"Spacer"},{"type":"Text","value":${value(`item.${b}`)},"size":"sm","color":"secondary"}` : "";
+        lists.push(`${head}{% for item in ${key} %},{"type":"Row","children":[{"type":"Text","value":${value(`item.${a}`)},"size":"sm"}${second}]}{% endfor %}`);
+      }
+    }
+  }
+  const template = `{"type":"Card","size":"sm","children":[{"type":"Title","value":${JSON.stringify(title)},"size":"sm"}${rows.join("")}${lists.join("")}]}`;
+  return `${JSON.stringify(
+    {
+      version: "1.0",
+      name: title,
+      template,
+      ...(summary.length ? { summary: summary.join(" · ") } : {}),
+      jsonSchema: root,
+      sample: sampleFor(root, "value"),
+      pageActions: [action],
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 /** A tool's result as the template's data: an object as is, a list as `items`, anything else as `value`. */
 export function widgetData(result: unknown): Record<string, unknown> {
   if (isRecord(result)) return result;
   if (Array.isArray(result)) return { items: result };
   return { value: result };
+}
+
+/** W-31: how much of a website action's result (JSON) the page may send for its card. */
+export const MAX_PAGE_ACTION_DATA = 32 * 1024;
+
+/**
+ * W-31: the card for a website action's result: a widget that lists the action in `pageActions`
+ * (the desk's choice) wins, else the one the page named when it registered it (`widget`). Null when
+ * neither names a widget the desk has.
+ */
+export function pageActionWidget(widgets: WidgetSpec[], name: string, declared: string | undefined): WidgetSpec | null {
+  return widgets.find((w) => w.pageActions?.includes(name)) ?? (declared ? (widgets.find((w) => w.name === declared) ?? null) : null);
+}
+
+/**
+ * W-31: a website action's result drawn as its card. `data` is the JSON the page sent; anything that
+ * isn't JSON, is too big or doesn't draw gives `error` (for the audit log) and no card.
+ */
+export function pageActionCard(spec: WidgetSpec, data: unknown, id: string): { card: MessageWidget } | { error: string } {
+  if (typeof data !== "string" || !data) return { error: "the page sent no data for the card (the action returned plain text)" };
+  if (data.length > MAX_PAGE_ACTION_DATA) return { error: `the result is over ${MAX_PAGE_ACTION_DATA / 1024} KB` };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    return { error: "the result isn't JSON" };
+  }
+  if (typeof parsed !== "object" || parsed === null) return { error: "the result isn't a JSON object or list" };
+  try {
+    return { card: { id, name: spec.name, root: renderWidget(spec, parsed), ...summaryFor(spec, parsed) } };
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
 }
 
 /** Renders a widget with data and checks the tree. Throws WidgetError (template or tree problems). */

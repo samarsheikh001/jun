@@ -905,7 +905,7 @@ function WidgetThread({
   actionResult.current = thread.actionResult;
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      const data = e.data as { type?: string; runId?: string; status?: string; result?: string; canUndo?: boolean } | undefined;
+      const data = e.data as { type?: string; runId?: string; status?: string; result?: string; canUndo?: boolean; data?: string } | undefined;
       if (e.source !== window.parent || data?.type !== "jun:action" || typeof data.runId !== "string") return;
       const runId = data.runId;
       if (data.status === "undo_failed") setUndoErrors((s) => ({ ...s, [runId]: data.result || "Couldn't undo that." }));
@@ -914,7 +914,7 @@ function WidgetThread({
           const { [runId]: _done, ...rest } = r;
           return rest;
         });
-        actionResult.current(runId, data.status, data.result, data.canUndo);
+        actionResult.current(runId, data.status, data.result, data.canUndo, typeof data.data === "string" ? data.data : undefined);
       }
     };
     window.addEventListener("message", onMessage);

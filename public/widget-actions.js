@@ -15,6 +15,7 @@
  *     available: () => boolean, checked before the action is offered and before it runs
  *     undo:      (result) => …, gives the chat an Undo button
  *     risk:      "auto" | "confirm" (default) | "human"; or WebMCP annotations
+ *     widget:    a card made on the desk ("cart_summary"): the result (an object) is shown as it
  *   returns a function that removes the action.
  * Nothing here reads the page or fills forms: only what the page's own code registers.
  */
@@ -102,7 +103,7 @@
   }
   function describe(id, t) {
     var ctx = typeof t.context == "function" ? safe(t.context) : t.context;
-    return { id: id, name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, risk: t.risk, context: ctx, visible: safe(function () { return inView(t); }, false) };
+    return { id: id, name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, risk: t.risk, context: ctx, widget: typeof t.widget == "string" ? t.widget : void 0, visible: safe(function () { return inView(t); }, false) };
   }
   // The current list (ours first, what's on screen before the rest, then the page's own WebMCP
   // tools), to `cb`; never the functions.
@@ -143,6 +144,11 @@
     if (typeof r.summary == "string") return r.summary.slice(0, 2000);
     return safe(function () { return JSON.stringify(r).slice(0, 2000); }, "");
   }
+  // The whole result as JSON for its card (W-31), if it is one: the desk draws only what a card asks for.
+  function data(r) {
+    var s = typeof r == "string" ? r : r && typeof r == "object" ? safe(function () { return JSON.stringify(r); }, "") : "";
+    return s && /^\s*[[{]/.test(s) && s.length <= 32768 ? s : void 0;
+  }
   // From the chat: run the chosen action, or undo one. `post` answers the frame.
   function handle(m, post) {
     var runId = m.runId;
@@ -162,7 +168,7 @@
       highlight(t);
       Promise.resolve().then(function () { return ours ? t.execute(input, runOptions()) : mc.executeTool(t, input); }).then(function (r) {
         results.set(runId, { tool: t, result: r });
-        post({ type: "jun:action", runId: runId, status: "ok", result: text(r), canUndo: typeof t.undo == "function" });
+        post({ type: "jun:action", runId: runId, status: "ok", result: text(r), data: data(r), canUndo: typeof t.undo == "function" });
       }, function (e) {
         post({ type: "jun:action", runId: runId, status: "error", result: text(e && e.message) || "Something went wrong." });
       }).then(unhighlight, unhighlight);

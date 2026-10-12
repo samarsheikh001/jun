@@ -47,7 +47,7 @@ export interface RunInput {
   /** AI-21: the path of the page the customer is on; tools with `pages:` are offered only where they match. */
   pagePath?: string | null;
   /** AI-21: this turn follows a page action that just ran (or failed), with no new visitor message. */
-  followUp?: { name: string; status: "ok" | "error"; result: string | null } | null;
+  followUp?: { name: string; status: "ok" | "error"; result: string | null; card?: boolean } | null;
   /** W-17: cards already shown with this reply (a card button's tool ran before the turn), so no words is still an answer. */
   shownWidgets?: number;
 }

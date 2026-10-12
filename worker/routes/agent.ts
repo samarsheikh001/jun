@@ -141,6 +141,13 @@ agent.delete("/workspaces/:id/action-secrets/:name", async (c) => {
   return c.json({ ok: true });
 });
 
+// W-31: the website actions seen on the customer's site (names, descriptions, result shapes; never values).
+agent.get("/workspaces/:id/agent/page-actions", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  return c.json({ actions: await c.env.WORKSPACE_HUB.getByName(workspaceId).pageActions() });
+});
+
 agent.get("/workspaces/:id/agent", async (c) => {
   const workspaceId = c.req.param("id");
   await memberRole(c, workspaceId);
@@ -217,7 +224,9 @@ agent.post("/workspaces/:id/agent/widget-edit", async (c) => {
   try {
     // W-27: the draft (optional), so the AI sees the actions the widget's buttons run.
     const files = body.files === undefined ? undefined : readFiles(body);
-    user = widgetEditMessage({ name, file: body.file, message, history: readHistory(body), ...(files ? { files } : {}), ...(error ? { error } : {}) });
+    // W-32: the website actions seen on the customer's site, for `page:<name>` buttons.
+    const siteActions = ((await c.env.WORKSPACE_HUB.getByName(workspaceId).pageActions()) as unknown as { name: string; description: string; params: string[] }[]).slice(0, 30);
+    user = widgetEditMessage({ name, file: body.file, message, history: readHistory(body), siteActions, ...(files ? { files } : {}), ...(error ? { error } : {}) });
   } catch (e) {
     if (e instanceof WidgetEditError) throw new HttpError(400, "edit_failed", e.message);
     throw e;

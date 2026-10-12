@@ -225,8 +225,8 @@ export function useThread(options: {
     /** AI-21: the visitor's answers for a proposed action's missing params. */
     actionInput: (runId: string, input: Record<string, unknown>) => sendEvent({ type: "action_input", runId, input }),
     /** AI-21: what the page did with the action (or that it was cancelled, gone, undone). */
-    actionResult: (runId: string, status: Exclude<ActionStatus, "pending">, result?: string, canUndo?: boolean) =>
-      sendEvent({ type: "action_result", runId, status, ...(result ? { result } : {}), ...(canUndo ? { canUndo } : {}) }),
+    actionResult: (runId: string, status: Exclude<ActionStatus, "pending">, result?: string, canUndo?: boolean, data?: string) =>
+      sendEvent({ type: "action_result", runId, status, ...(result ? { result } : {}), ...(canUndo ? { canUndo } : {}), ...(data ? { data } : {}) }),
     merge,
     send,
     sendWidgetAction,

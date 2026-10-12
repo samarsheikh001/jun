@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { agentLinks } from "../../shared/agent-links.ts";
+import { agentLinks, widgetPageButtons } from "../../shared/agent-links.ts";
 import { parseWidgetFile, previewWidget, toolButtonInputs, widgetData, widgetSchema, type ToolButtonInputs } from "../../shared/widgets.ts";
 import { checkData } from "../../shared/widget-schema.ts";
 import { readYaml } from "../lib/agentFiles.ts";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { PlusIcon } from "../components/icons.tsx";
 import { go, humanize } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { useSeenPageActions, widgetPageActions } from "./WebsiteActions.tsx";
 
 // W-25: what an action, a procedure or a widget is connected to (shared/agent-links.ts), from the
 // draft, as links: an action's widget, the widget buttons that run it and the procedures that mention
@@ -131,6 +132,7 @@ function ButtonRow({ b }: { b: ToolButtonInputs }) {
 
 export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; kind: Kind; name: string; canEdit: boolean }) {
   const links = useMemo(() => agentLinks(cfg.draft), [cfg.draft]);
+  const seen = useSeenPageActions(cfg);
   // W-27: a widget's buttons; for an action, the buttons elsewhere that run it without an input it needs.
   const buttons = useMemo(() => (kind === "widget" ? widgetButtons(cfg.draft, name) : []), [cfg.draft, kind, name]);
   const short = useMemo(
@@ -144,6 +146,8 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
   let rows: ReactNode[] = [];
   let empty = "";
   let missing: string[] = [];
+  let pageButtons: string[] = [];
+  let unseen: string[] = [];
   if (kind === "action") {
     const widget = links.actionWidget[name];
     rows = [
@@ -161,6 +165,11 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
   } else {
     const aiFill = /"aiFill"\s*:\s*true/.test(cfg.draft[`widgets/${name}.widget`] ?? "");
     const shownBy = links.widgetShownBy[name] ?? [];
+    // W-31: website actions it shows (chosen here, or named in the site's code).
+    pageButtons = widgetPageButtons(cfg.draft[`widgets/${name}.widget`] ?? "");
+    // A name the desk hasn't seen on the site may be a typo (or no customer has chatted there yet).
+    if (seen) unseen = pageButtons.filter((n) => !seen.some((a) => a.name === n));
+    const site = [...new Set([...widgetPageActions(cfg.draft, name), ...(seen ?? []).filter((a) => a.widget === name).map((a) => a.name)])];
     rows = [
       // W-29: the AI filling it in itself sits with the actions that show it.
       aiFill ? (
@@ -174,10 +183,27 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
       ) : (
         <Row key="s" label="Shown by" kind="action" names={shownBy} />
       ),
+      site.length > 0 && (
+        <div key="site" className="agent-links-row">
+          <span className="agent-links-label">Shown by website actions</span>
+          <span className="agent-links-chips">
+            {site.map((n) => <span key={n} className="agent-link-chip" data-kind="action">{humanize(n)}</span>)}
+          </span>
+        </div>
+      ),
       ...(buttons.length ? buttons.map((b, i) => <ButtonRow key={`b${i}`} b={b} />) : [<Row key="r" label="Its buttons run" kind="action" names={links.widgetRuns[name]?.filter((a) => links.actions.includes(a)) ?? []} />]),
+      // W-32: `page:<name>` buttons run actions on the customer's website.
+      pageButtons.length > 0 && (
+        <div key="pb" className="agent-links-row">
+          <span className="agent-links-label">Its buttons run on your website</span>
+          <span className="agent-links-chips">
+            {pageButtons.map((n) => <span key={n} className="agent-link-chip" data-kind="action">{humanize(n)}</span>)}
+          </span>
+        </div>
+      ),
     ];
-    if (!aiFill && !links.widgetShownBy[name]?.length && !links.widgetRuns[name]?.length) rows = [];
-    empty = "No action shows it: pick it under \"Show the result as a widget\" on an action, or let the AI fill it in itself (below).";
+    if (!aiFill && !site.length && !pageButtons.length && !links.widgetShownBy[name]?.length && !links.widgetRuns[name]?.length) rows = [];
+    empty = "No action shows it: pick it under \"Show the result as a widget\" on an action, add a website action (below), or let the AI fill it in itself.";
   }
 
   return (
@@ -193,6 +219,13 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
       ) : (
         !missing.length && !short.length && !misfit && <p className="agent-links-empty">{empty}</p>
       )}
+      {unseen.map((n) => (
+        <div key={`unseen:${n}`} className="agent-links-warn" role="note">
+          <span>
+            A button runs <code>page:{n}</code>, but the desk hasn't seen a website action called <code>{n}</code> yet. Check the name matches the one your site registers; the button says it isn't available until it does.
+          </span>
+        </div>
+      ))}
       {misfit && (
         <div className="agent-links-warn" role="note">
           <span>

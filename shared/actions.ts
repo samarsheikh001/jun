@@ -1,3 +1,5 @@
+import { MAX_PAGE_ACTION_NAME, WIDGET_SHOWN_NOTE } from "./widgets.ts";
+
 // AI-21 page actions over WebMCP (D-40). Pure functions shared by the Worker (sanitising the
 // list the loader sends, offering the actions to the model, checking its inputs), the widget
 // (param UI, confirm, Done) and the eval runner.
@@ -35,6 +37,8 @@ export interface PageAction {
   context: Record<string, string | number | boolean>;
   /** The loader saw the action's element in the viewport when the message was sent. */
   visible: boolean;
+  /** W-31: the desk widget the page asked to show the result as (`registerAction({ widget })`). */
+  widget?: string;
 }
 
 export type ActionStatus = "pending" | "ok" | "error" | "cancelled" | "gone" | "undone";
@@ -60,6 +64,12 @@ export interface MessageAction {
   canUndo: boolean;
   /** The AI already had its follow-up turn after this action's result (one per run). */
   continued?: boolean;
+  /** W-31: the widget the page named for its result. */
+  widget?: string;
+  /** W-31: the widget the result was shown as (in the message's `meta.widgets`). */
+  card?: string;
+  /** W-32: a card's `page:<name>` button offered it, not the AI: its result gets no AI turn. */
+  pressed?: true;
 }
 
 /** The body of an AI message that only proposed an action (the model wrote no sentence); the widget hides it. */
@@ -145,7 +155,7 @@ export function sanitizeActions(raw: unknown): PageAction[] {
   const byId = new Map<string, Omit<PageAction, "tool">>();
   for (const [index, item] of raw.entries()) {
     if (!isRecord(item)) continue;
-    const name = clean(item.name, 64);
+    const name = clean(item.name, MAX_PAGE_ACTION_NAME);
     const description = clean(item.description, MAX_ACTION_DESCRIPTION);
     if (!name || !description) continue;
     const rawId = clean(item.id, 120);
@@ -175,8 +185,9 @@ export function sanitizeActions(raw: unknown): PageAction[] {
         } else if ((typeof value === "number" && Number.isFinite(value)) || typeof value === "boolean") context[k] = value;
       }
     }
+    const widget = typeof item.widget === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(item.widget) ? item.widget : null;
     byId.delete(id);
-    byId.set(id, { id, name, description, params, required, risk: riskFrom(item), context, visible: item.visible === true });
+    byId.set(id, { id, name, description, params, required, risk: riskFrom(item), context, visible: item.visible === true, ...(widget ? { widget } : {}) });
   }
 
   const taken = new Set<string>();
@@ -362,7 +373,7 @@ export function actionToolResult(action: MessageAction): string {
     case "pending":
       return "Waiting for the customer to confirm it in the chat.";
     case "ok":
-      return action.result || "Done.";
+      return action.card ? `${action.result || "Done."}\n\n${WIDGET_SHOWN_NOTE}` : action.result || "Done.";
     case "error":
       return `Failed: ${action.result || "the page reported an error"}`;
     case "cancelled":
@@ -372,6 +383,46 @@ export function actionToolResult(action: MessageAction): string {
     case "undone":
       return `Ran${action.result ? ` (${action.result})` : ""}, then the customer undid it.`;
   }
+}
+
+/**
+ * W-31: a website action as the desk last saw it on the customer's site, for the Agent page (pick or
+ * make its card). `shape` is its last JSON result's shape (field names and types, never values).
+ */
+export interface SeenPageAction {
+  name: string;
+  description: string;
+  /** The widget the page names for its result (`registerAction({ widget })`). */
+  widget?: string;
+  /** Its inputs' names. */
+  params: string[];
+  shape?: Record<string, unknown>;
+  seenAt: number;
+}
+
+/** W-31: website actions the desk remembers (most recently seen). */
+export const MAX_SEEN_PAGE_ACTIONS = 100;
+const SHAPE_KEY = /^[A-Za-z_$][\w$-]{0,39}$/;
+const MAX_SHAPE = 4000;
+
+/**
+ * W-31: a JSON result's shape, as a JSON Schema (like `schemaFromSample`) with no values at all: field
+ * names that look like names only (a key that's an email or an id drops), 6 levels, 40 fields an
+ * object, lists by their first item, ≤ 4 KB. Null for anything else.
+ */
+export function resultShape(value: unknown): Record<string, unknown> | null {
+  const shape = (v: unknown, depth: number): Record<string, unknown> => {
+    if (Array.isArray(v)) return depth < 6 && v.length ? { type: "array", items: shape(v[0], depth + 1) } : { type: "array" };
+    if (typeof v === "object" && v !== null) {
+      if (depth >= 6) return { type: "object" };
+      const keys = Object.keys(v).filter((k) => SHAPE_KEY.test(k)).slice(0, 40);
+      return { type: "object", properties: Object.fromEntries(keys.map((k) => [k, shape((v as Record<string, unknown>)[k], depth + 1)])) };
+    }
+    return { type: v === null ? "null" : typeof v };
+  };
+  if (typeof value !== "object" || value === null) return null;
+  const out = shape(value, 0);
+  return JSON.stringify(out).length <= MAX_SHAPE ? out : null;
 }
 
 /** The status word the widget and the inbox show under an action. */

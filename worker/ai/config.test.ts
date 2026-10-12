@@ -468,3 +468,10 @@ test("W-29: show_widget fills a card the AI may fill itself; bad data comes back
   assert.deepEqual(actions.slice(1).map((a) => a.status), ["error", "error", "error"]);
   assert.equal(shown.length, 1);
 });
+
+test("W-31: a website action is shown by one widget at most", () => {
+  const card = (actions: string[]) => JSON.stringify({ version: "1.0", template: '{"type":"Card","children":[]}', pageActions: actions });
+  const { issues } = parseConfig({ "AGENTS.md": "x", "widgets/a.widget": card(["get_cart"]), "widgets/b.widget": card(["get_cart", "other"]) });
+  assert.deepEqual(issues, [{ path: "widgets/b.widget", message: "pageActions: widgets/a.widget already shows get_cart." }]);
+  assert.deepEqual(parseConfig({ "AGENTS.md": "x", "widgets/a.widget": card(["get_cart"]) }).issues, []);
+});

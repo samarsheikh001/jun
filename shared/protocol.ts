@@ -125,7 +125,7 @@ export type ClientEvent =
   /** AI-21: the visitor's answers for a proposed action's missing params (visitors only). */
   | { type: "action_input"; runId: string; input: Record<string, unknown> }
   /** AI-21: what happened when the page ran (or didn't run) the action (visitors only). */
-  | { type: "action_result"; runId: string; status: Exclude<ActionStatus, "pending">; result?: string; canUndo?: boolean }
+  | { type: "action_result"; runId: string; status: Exclude<ActionStatus, "pending">; result?: string; canUndo?: boolean; /** W-31: the result as JSON, for its card. */ data?: string }
   /**
    * D-51: a card field's ChatKit `onChangeAction` (`tool:<name>` only), sent quietly as the visitor
    * changes it: no message, no AI turn. The tool runs; a card it returns replaces this one in place

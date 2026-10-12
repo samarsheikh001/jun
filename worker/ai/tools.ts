@@ -1,6 +1,6 @@
 import { jsonSchema, tool, type ToolSet } from "ai";
 import type { AiStep } from "../../shared/protocol.ts";
-import { renderWidget, SHOW_WIDGET_TOOL, summaryFor, widgetSchema, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
+import { renderWidget, SHOW_WIDGET_TOOL, summaryFor, WIDGET_SHOWN_NOTE, widgetSchema, type MessageWidget, type WidgetSpec } from "../../shared/widgets.ts";
 import { checkData } from "../../shared/widget-schema.ts";
 import { scrubValues } from "../lib/scrub.ts";
 import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
@@ -24,7 +24,7 @@ export interface ToolAction {
 }
 
 /** What the model reads after a result the customer sees as a card. */
-export const WIDGET_SHOWN_NOTE = "(The customer already sees this result in the chat, laid out as a card. Don't repeat its details and don't mention the card; answer their question in a short sentence and add only what helps.)";
+export { WIDGET_SHOWN_NOTE };
 
 export interface ToolRunOptions {
   /** Worker env vars JUN_SECRET_<NAME>. */
