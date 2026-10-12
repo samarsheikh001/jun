@@ -108,6 +108,31 @@ export interface AgentConfig {
   evals: EvalCase[];
   /** W-09: cards tools can show their results as. */
   widgets: WidgetSpec[];
+  /** D-74: website-actions.yaml: how each action on the customer's site runs, over the site's own setting. */
+  websiteActionRisk: Record<string, "auto" | "confirm" | "human">;
+}
+
+/** D-74: website-actions.yaml, a map of action name → auto, confirm or human. */
+function parseWebsiteActions(path: string, text: string, issues: ConfigIssue[]): AgentConfig["websiteActionRisk"] {
+  const data = yaml(path, text, issues);
+  const out: AgentConfig["websiteActionRisk"] = {};
+  if (data === undefined || data === null) return out;
+  if (!isRecord(data)) {
+    issues.push({ path, message: "website-actions.yaml is a map of action name: auto, confirm or human." });
+    return out;
+  }
+  for (const [name, value] of Object.entries(data)) {
+    if (!/^[\w.-]{1,64}$/.test(name)) {
+      issues.push({ path, message: `${name}: not a website action's name.` });
+      continue;
+    }
+    if (!ACTION_RISKS.includes(value as (typeof ACTION_RISKS)[number])) {
+      issues.push({ path, message: `${name}: use auto (runs without asking), confirm (the customer confirms first) or human (a person does it).` });
+      continue;
+    }
+    out[name] = value as (typeof ACTION_RISKS)[number];
+  }
+  return out;
 }
 
 export interface ConfigIssue {
@@ -140,11 +165,14 @@ const SKILL_PATH = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
 const TOOL_PATH = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
 const EVAL_PATH = /^evals\/([a-zA-Z0-9_-]+)\.ya?ml$/;
 const WIDGET_PATH = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
+/** D-74: how each action on the customer's website runs, set on the desk. */
+export const WEBSITE_ACTIONS_PATH = "website-actions.yaml";
+const ACTION_RISKS = ["auto", "confirm", "human"] as const;
 export const MAX_WIDGETS = 20;
 const PLACEHOLDER = /\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g;
 
 export function isConfigPath(path: string): boolean {
-  return path === "AGENTS.md" || path === "README.md" || SKILL_PATH.test(path) || TOOL_PATH.test(path) || EVAL_PATH.test(path) || WIDGET_PATH.test(path);
+  return path === "AGENTS.md" || path === "README.md" || path === WEBSITE_ACTIONS_PATH || SKILL_PATH.test(path) || TOOL_PATH.test(path) || EVAL_PATH.test(path) || WIDGET_PATH.test(path);
 }
 
 /** Splits `---\nyaml\n---\nbody`. Returns null frontmatter when there is none. */
@@ -564,11 +592,16 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     tools: [],
     evals: [],
     widgets: [],
+    websiteActionRisk: {},
   };
   for (const path of paths) {
     const text = files[path]!;
     let m: RegExpExecArray | null;
     if (path === "AGENTS.md" || path === "README.md") continue;
+    if (path === WEBSITE_ACTIONS_PATH) {
+      config.websiteActionRisk = parseWebsiteActions(path, text, issues);
+      continue;
+    }
     if ((m = SKILL_PATH.exec(path))) {
       const skill = parseSkill(path, m[1]!, text, issues);
       const taken = skill?.intent && config.skills.find((s) => s.intent?.name === skill.intent!.name);
@@ -596,7 +629,7 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     } else {
       issues.push({
         path,
-        message: "Unknown file. Allowed: AGENTS.md, README.md, skills/<name>/SKILL.md, tools/<name>.yaml, evals/<name>.yaml, widgets/<name>.widget (lowercase names).",
+        message: "Unknown file. Allowed: AGENTS.md, README.md, website-actions.yaml, skills/<name>/SKILL.md, tools/<name>.yaml, evals/<name>.yaml, widgets/<name>.widget (lowercase names).",
       });
     }
   }

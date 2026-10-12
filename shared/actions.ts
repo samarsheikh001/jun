@@ -75,8 +75,11 @@ export interface MessageAction {
 /** The body of an AI message that only proposed an action (the model wrote no sentence); the widget hides it. */
 export const ACTION_ONLY_BODY = "I can do that right here:";
 
-/** AI messages in a row after the visitor's last message (a chain of actions), at most. */
-export const MAX_ACTION_CHAIN = 8;
+/**
+ * AI messages in a row after the visitor's last message (a chain of actions), at most. 12 (was 8,
+ * D-74): a booking form on limoni.io takes about 10 steps, with a retry.
+ */
+export const MAX_ACTION_CHAIN = 12;
 
 /** A lookup's result (JSON) is for the AI; the card shows only plain text. */
 export function visibleResult(result: string | null): string | null {
@@ -137,6 +140,14 @@ function riskFrom(raw: Record<string, unknown>): ActionRisk {
   if (annotations.consequentialHint === true) return "confirm";
   if (annotations.readOnlyHint === true) return "auto";
   return "confirm";
+}
+
+/**
+ * D-74: the desk's own setting for how a website action runs (website-actions.yaml: name → auto,
+ * confirm or human), over what the site asked for. Actions it doesn't name keep the site's.
+ */
+export function withRiskOverrides(actions: PageAction[], overrides: Record<string, ActionRisk>): PageAction[] {
+  return actions.map((a) => (overrides[a.name] && overrides[a.name] !== a.risk ? { ...a, risk: overrides[a.name]! } : a));
 }
 
 /** The model's tool name for a page action: pa_ + a safe slug of the registered name. */
@@ -397,6 +408,8 @@ export interface SeenPageAction {
   /** Its inputs' names. */
   params: string[];
   shape?: Record<string, unknown>;
+  /** D-74: how the site asked for it to run (its WebMCP annotations or `risk`), before any desk override. */
+  risk?: ActionRisk;
   seenAt: number;
 }
 

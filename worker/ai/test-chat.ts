@@ -1,4 +1,4 @@
-import { rankActions, sanitizeActions, type MessageAction, type PageAction, type SeenPageAction } from "../../shared/actions.ts";
+import { rankActions, sanitizeActions, withRiskOverrides, type MessageAction, type PageAction, type SeenPageAction } from "../../shared/actions.ts";
 import type { Message } from "../../shared/protocol.ts";
 import type { TestCall, TestChatEvent, TestPress, TestReply, TestTurn } from "../../shared/test-chat.ts";
 import { matchWidgetAction, PAGE_ACTION_BUTTON, renderActionLine, TOOL_ACTION, toolActionInput, type MessageWidget, type WidgetActionMeta } from "../../shared/widgets.ts";
@@ -30,6 +30,7 @@ export function seenAsPageActions(seen: SeenPageAction[]): PageAction[] {
       name: a.name,
       description: a.description,
       inputSchema: { type: "object", properties: Object.fromEntries(a.params.map((p) => [p, { type: "string" }])) },
+      ...(a.risk ? { risk: a.risk } : {}),
       ...(a.widget ? { widget: a.widget } : {}),
     })),
   );
@@ -143,7 +144,7 @@ async function runPress(input: RunTestInput, press: TestPress, pageActions: Page
 }
 
 export async function runTestChat(input: RunTestInput, emit: (event: TestChatEvent) => void): Promise<{ inputTokens: number; outputTokens: number }> {
-  const allActions = seenAsPageActions(input.seen);
+  const allActions = withRiskOverrides(seenAsPageActions(input.seen), input.config.websiteActionRisk);
   // AI-30: the last turn may be a button's press.
   const last = input.turns.at(-1);
   let pressRun: { tool: NonNullable<TestPress["tool"]>; call: TestCall; widget: MessageWidget | null } | null = null;

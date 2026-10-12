@@ -475,3 +475,18 @@ test("W-31: a website action is shown by one widget at most", () => {
   assert.deepEqual(issues, [{ path: "widgets/b.widget", message: "pageActions: widgets/a.widget already shows get_cart." }]);
   assert.deepEqual(parseConfig({ "AGENTS.md": "x", "widgets/a.widget": card(["get_cart"]) }).issues, []);
 });
+
+test("D-74: website-actions.yaml sets how each website action runs, over the site's own setting", async () => {
+  const { withRiskOverrides, sanitizeActions } = await import("../../shared/actions.ts");
+  const files = { ...defaultFiles(), "website-actions.yaml": "# comment\nset_pickup: auto\nsearch_prices: confirm\nrefund: human\nbad name!: auto\nselect_vehicle: maybe\n" };
+  const { config, issues } = parseConfig(files);
+  assert.deepEqual(config.websiteActionRisk, { set_pickup: "auto", search_prices: "confirm", refund: "human" });
+  assert.equal(issues.filter((i) => i.path === "website-actions.yaml").length, 2);
+  const actions = sanitizeActions([
+    { name: "set_pickup", description: "Sets the pickup." },
+    { name: "get_form", description: "Reads the form.", annotations: { readOnlyHint: true } },
+    { name: "refund", description: "Refunds.", risk: "auto" },
+  ]);
+  assert.deepEqual(withRiskOverrides(actions, config.websiteActionRisk).map((a) => [a.name, a.risk]), [["set_pickup", "auto"], ["get_form", "auto"], ["refund", "human"]]);
+  assert.deepEqual(parseConfig({ ...defaultFiles(), "website-actions.yaml": "- a\n" }).issues.map((i) => i.path), ["website-actions.yaml"]);
+});

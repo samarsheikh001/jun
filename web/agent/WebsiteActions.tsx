@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
 import { PlusIcon, XIcon } from "../components/icons.tsx";
 import { go, humanize, slug, WIDGET } from "./parts.tsx";
+import { editYaml, readYaml } from "../lib/agentFiles.ts";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
 // W-31: website actions are WebMCP tools the customer's own site registers; the AI runs them in the
@@ -102,17 +103,41 @@ function makeCard(cfg: AgentConfig, action: SeenPageAction): void {
 
 const TEXT = "";
 
+// D-74: how each website action runs, set on the desk (website-actions.yaml: name → auto, confirm or
+// human), over what the site asked for (its WebMCP annotations or `risk`).
+const RISK_FILE = "website-actions.yaml";
+const RISK_HEADER = "# How each action on your website runs, over what your site asked for (D-74).\n# auto: without asking · confirm: the customer confirms first · human: a person does it\n";
+type Risk = "auto" | "confirm" | "human";
+const RISK_LABEL: Record<Risk, string> = { auto: "Runs without asking", confirm: "Asks the customer first", human: "A person does it" };
+
+/** The desk's setting for each website action (from website-actions.yaml). */
+export function riskOverrides(draft: Record<string, string>): Record<string, Risk> {
+  const data = draft[RISK_FILE] === undefined ? null : readYaml(draft[RISK_FILE]!);
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return {};
+  return Object.fromEntries(Object.entries(data as Record<string, unknown>).filter((e): e is [string, Risk] => e[1] === "auto" || e[1] === "confirm" || e[1] === "human"));
+}
+
+/** Sets (or with null, clears) the desk's setting for one website action. */
+function setRisk(cfg: AgentConfig, name: string, risk: Risk | null): void {
+  const text = cfg.draft[RISK_FILE] ?? RISK_HEADER;
+  const next = editYaml(text.trim() ? text : RISK_HEADER, { op: "set", path: [name], value: risk ?? "" });
+  // Nothing left but the header: no file.
+  const left = readYaml(next);
+  cfg.setFile(RISK_FILE, left && typeof left === "object" && Object.keys(left).length ? next : undefined);
+}
+
 /** /agent/actions: the actions on the customer's website, each with the card its result shows as. */
 export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: boolean }) {
   const seen = useSeenPageActions(cfg);
   const widgets = widgetNames(cfg.draft);
+  const risks = riskOverrides(cfg.draft);
   return (
     <section className="agent-site-actions" aria-labelledby="site-actions-h">
       <div className="agent-site-actions-head">
         <h2 id="site-actions-h">On your website</h2>
         <p>
-          Actions your site's code registers (WebMCP or <code>JunDesk.registerAction</code>). The AI runs them in the customer's browser. Pick a widget to show
-          what one returns, or make one from what it returned last time.
+          Actions your site's code registers (WebMCP or <code>JunDesk.registerAction</code>). The AI runs them in the customer's browser. Choose whether each one
+          asks the customer first, and pick a widget to show what one returns.
         </p>
       </div>
       {seen === null ? null : seen.length === 0 ? (
@@ -127,7 +152,22 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                 <span className="agent-index-title">{humanize(a.name)}</span>
                 <p className="agent-index-sub">{a.description}</p>
                 <label className="agent-site-card">
-                  <span>Shows its result as</span>
+                  <span>When the AI runs it</span>
+                  <NativeSelect
+                    aria-label={`When the AI runs ${humanize(a.name)}`}
+                    size="sm"
+                    value={risks[a.name] ?? ""}
+                    disabled={!canEdit}
+                    onChange={(e) => setRisk(cfg, a.name, (e.target.value || null) as Risk | null)}
+                  >
+                    <NativeSelectOption value="">{a.risk ? `${RISK_LABEL[a.risk]} (your site's setting)` : "Your site's setting"}</NativeSelectOption>
+                    {(["auto", "confirm", "human"] as const).map((r) => (
+                      <NativeSelectOption key={r} value={r}>{RISK_LABEL[r]}</NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </label>
+                <label className="agent-site-card">
+                  <span>Show what it returns as</span>
                   <NativeSelect
                     aria-label={`Widget for ${humanize(a.name)}`}
                     size="sm"
@@ -143,6 +183,7 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                     ))}
                   </NativeSelect>
                 </label>
+                {card && <p className="agent-index-sub">Every time it runs, its result shows as this widget. To show a widget at a step of a task, use the task's steps instead.</p>}
                 {card?.by === "page" && <p className="agent-index-sub">Set in your site's code. Picking another widget here wins.</p>}
                 {buttons.length > 0 && (
                   <div className="agent-site-card">

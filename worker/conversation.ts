@@ -23,7 +23,7 @@ import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import { DEFAULT_TOOL_STATUS } from "./ai/config.ts";
 import { runTool, type ToolAction } from "./ai/tools.ts";
-import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, resultShape, sanitizeActions, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, resultShape, sanitizeActions, withRiskOverrides, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
@@ -489,7 +489,9 @@ export class Conversation extends DurableObject<Env> {
   async #pageButton(ref: ConversationRef, meta: WidgetActionMeta, sent: unknown): Promise<{ action: MessageAction; human: boolean } | { error: string } | null> {
     const name = PAGE_ACTION_BUTTON.exec(meta.type)?.[1];
     if (!name) return null;
-    const list = sent !== undefined ? sanitizeActions(sent) : ((await this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY)) ?? []);
+    const raw = sent !== undefined ? sanitizeActions(sent) : ((await this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY)) ?? []);
+    // D-74: a website action the desk says a person does still hands off when a button runs it.
+    const list = withRiskOverrides(raw, (await loadAgentConfig(this.env, ref.workspaceId)).websiteActionRisk);
     const action = list.find((a) => a.id === name) ?? list.find((a) => a.name === name);
     if (!action) return { error: "This page doesn't offer that right now." };
     const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, action.params);
@@ -834,7 +836,8 @@ export class Conversation extends DurableObject<Env> {
         ...(technical.timezone ? { timezone: technical.timezone } : {}),
         user,
         intent: intent?.intent ?? null,
-        pageActions: rankActions(pageActions ?? [], visitor.body),
+        // D-74: the desk's own setting for each website action wins over the site's.
+        pageActions: rankActions(withRiskOverrides(pageActions ?? [], config.websiteActionRisk), visitor.body),
         pagePath: technical.pagePath,
         followUp: followUp ? { name: followUp.name, status: followUp.status as "ok" | "error", result: followUp.result, ...(followUp.card ? { card: true } : {}) } : null,
         shownWidgets: pending.length,
@@ -1111,7 +1114,7 @@ export class Conversation extends DurableObject<Env> {
 
   /** W-31: the Agent page lists the website actions seen on the customer's site (and picks their cards). */
   async #notePageActions(ref: ConversationRef, actions: PageAction[]): Promise<void> {
-    const seen = actions.map((a) => ({ name: a.name, description: a.description, params: Object.keys(a.params), ...(a.widget ? { widget: a.widget } : {}) }));
+    const seen = actions.map((a) => ({ name: a.name, description: a.description, params: Object.keys(a.params), risk: a.risk, ...(a.widget ? { widget: a.widget } : {}) }));
     const key = JSON.stringify(seen);
     if (!seen.length || key === this.#notedActions) return;
     this.#notedActions = key;

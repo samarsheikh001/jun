@@ -41,6 +41,7 @@ export function routeFor(path: string): string {
   const widget = WIDGET.exec(path)?.[1];
   if (widget) return `/agent/widgets/${widget}`;
   if (EVAL.test(path)) return "/agent/tests";
+  if (path === "website-actions.yaml") return "/agent/actions";
   return "/agent";
 }
 
@@ -392,5 +393,6 @@ export function labelFor(path: string): string {
   const widget = WIDGET.exec(path)?.[1];
   if (widget) return `${humanize(widget)} widget`;
   if (EVAL.test(path)) return "Tests";
+  if (path === "website-actions.yaml") return "Website actions";
   return path || "Config";
 }
