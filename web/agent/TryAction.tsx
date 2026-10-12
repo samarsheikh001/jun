@@ -191,35 +191,35 @@ function TryOutcome({ cfg, canEdit, path, name, result }: { cfg: AgentConfig; ca
         <strong>{result.status === "ok" ? "It worked" : "It didn't work"}</strong> <span className="muted">{facts}</span>
       </p>
       <pre className="agent-try-out">{shown}</pre>
-      {result.tooBig && <p className="muted small">The answer is too big to show here or use as a card's example. The AI gets its first 4,000 characters.</p>}
+      {result.tooBig && <p className="muted small">The answer is too big to show here or use as a widget's example. The AI gets its first 4,000 characters.</p>}
       {result.status === "ok" && json && (
         <div className="agent-try-card">
           {own && "root" in own ? (
             <>
               <p className="small">
-                Shown to the customer as <a href={`/agent/cards/${widget}`} onClick={(e) => { e.preventDefault(); go(`/agent/cards/${widget}`); }}>{humanize(widget!)}</a>:
+                Shown to the customer as <a href={`/agent/widgets/${widget}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${widget}`); }}>{humanize(widget!)}</a>:
               </p>
               <div className="agent-try-preview"><WidgetCard widget={{ id: `try-${name}`, name: widget!, root: own.root }} interactive={false} theme={pageTheme()} /></div>
               {own.problems.length > 0 ? (
-                <p className="muted small">It doesn't match the card's parameters ({own.problems.slice(0, 2).join("; ")}), so it can't be its example data. Ask the card's AI to fit it to this answer.</p>
+                <p className="muted small">It doesn't match the widget's parameters ({own.problems.slice(0, 2).join("; ")}), so it can't be its example data. Ask the card's AI to fit it to this answer.</p>
               ) : (
                 canEdit && (
                   <Button size="sm" variant="secondary" className="agent-try-use" disabled={sameSample} onClick={() => widgetPath && cfg.setFile(widgetPath, withSample(cfg.draft[widgetPath]!, sample!))}>
-                    {sameSample ? "This is the card's example data" : "Use as the card's example data"}
+                    {sameSample ? "This is the widget's example data" : "Use as the widget's example data"}
                   </Button>
                 )
               )}
             </>
           ) : own && "error" in own ? (
-            <p className="muted small">Its card ({humanize(widget!)}) can't draw this answer: {own.error}</p>
+            <p className="muted small">Its widget ({humanize(widget!)}) can't draw this answer: {own.error}</p>
           ) : freshCard && "root" in freshCard ? (
             <>
-              <p className="small">Show it to the customer as a card, like this:</p>
+              <p className="small">Show it to the customer as a widget, like this:</p>
               <div className="agent-try-preview"><WidgetCard widget={{ id: `try-${name}`, name, root: freshCard.root }} interactive={false} theme={pageTheme()} /></div>
               {canEdit && (
                 <div className="agent-try-actions">
-                  <Button size="sm" onClick={keepCard}>Show it as this card</Button>
-                  <span className="muted small">You can restyle it after, with the card's AI. Without one, the AI describes the answer in words.</span>
+                  <Button size="sm" onClick={keepCard}>Show it as this widget</Button>
+                  <span className="muted small">You can restyle it after, with the widget's AI. Without one, the AI describes the answer in words.</span>
                 </div>
               )}
             </>

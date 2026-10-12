@@ -34,9 +34,9 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
   { label: "Agent", path: "/agent" },
   { label: "Agent: Tasks", path: "/agent/tasks" },
   { label: "Agent: Actions", path: "/agent/actions" },
-  { label: "Agent: Cards", path: "/agent/cards" },
+  { label: "Agent: Widgets", path: "/agent/widgets" },
   { label: "Agent: Tests", path: "/agent/tests" },
-  { label: "Widget", path: "/appearance" },
+  { label: "Chat widget", path: "/appearance" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];
 /**
@@ -45,10 +45,10 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
  */
 const SETTINGS_SECTIONS: { heading: string; path: string; area?: string }[] = [
   { heading: "General", path: "/settings/general" },
-  { heading: "Install the chat widget", path: "/appearance/install", area: "Widget" },
-  { heading: "Allowed websites", path: "/appearance/install", area: "Widget" },
-  { heading: "Proactive help", path: "/appearance/install", area: "Widget" },
-  { heading: "Identify signed-in customers", path: "/appearance/install", area: "Widget" },
+  { heading: "Install the chat widget", path: "/appearance/install", area: "Chat widget" },
+  { heading: "Allowed websites", path: "/appearance/install", area: "Chat widget" },
+  { heading: "Proactive help", path: "/appearance/install", area: "Chat widget" },
+  { heading: "Identify signed-in customers", path: "/appearance/install", area: "Chat widget" },
   { heading: "AI replies", path: "/settings/ai" },
   { heading: "Assignment", path: "/settings/inbox" },
   { heading: "Business hours", path: "/settings/inbox" },

@@ -127,7 +127,7 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
       </Field>
       <Field
         label="Request"
-        hint={<>Your developer can give you this address. Put details the AI fills in inside braces: <code>https://api.acme.com/orders/{"{order_id}"}</code>. Only showing a card? Leave it empty: the card shows with its example data.</>}
+        hint={<>Your developer can give you this address. Put details the AI fills in inside braces: <code>https://api.acme.com/orders/{"{order_id}"}</code>. Only showing a widget? Leave it empty: the widget shows with its example data.</>}
         htmlFor="act-url"
       >
         <div className="agent-request">
@@ -184,9 +184,9 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
         <Field label="Only on these pages" hint="Offer this action only while the customer is on these pages of your site. Leave empty for everywhere.">
           <TextList values={Array.isArray(data.pages) ? (data.pages as unknown[]).map(String) : []} onChange={(next) => set("pages", next)} placeholder="/billing or /orders/*" label="Page" addLabel="Add a page" disabled={!canEdit} />
         </Field>
-        <Field label="Show the result as a card" htmlFor="act-widget">
+        <Field label="Show the result as a widget" htmlFor="act-widget">
           <NativeSelect id="act-widget" value={str("widget")} disabled={!canEdit} onChange={(e) => set("widget", e.target.value)}>
-            <NativeSelectOption value="">No card (the AI describes it)</NativeSelectOption>
+            <NativeSelectOption value="">No widget (the AI describes it)</NativeSelectOption>
             {widgets.map((w) => <NativeSelectOption key={w} value={w}>{humanize(w)}</NativeSelectOption>)}
           </NativeSelect>
         </Field>
@@ -203,17 +203,17 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
  * one line each, `{{ name }}` for what the customer entered (and, when it worked, the result's fields).
  */
 function CardLines({ str, set, canEdit, runFrom }: { str: (key: string) => string; set: (key: string, value: unknown) => void; canEdit: boolean; runFrom: string[] }) {
-  const from = runFrom.length ? `Buttons in ${runFrom.map(humanize).join(", ")} run this action.` : "For when a card's button runs this action.";
+  const from = runFrom.length ? `Buttons in ${runFrom.map(humanize).join(", ")} run this action.` : "For when a widget's button runs this action.";
   return (
     <>
       <Field
-        label="When a card's button runs it, the card says"
-        hint={<>{from} The card folds to this line and the AI doesn't need to answer. <code>{"{{ name }}"}</code> puts in what the customer typed in the field called name. Leave empty to let the AI answer.</>}
+        label="When a widget's button runs it, the widget says"
+        hint={<>{from} The widget folds to this line and the AI doesn't need to answer. <code>{"{{ name }}"}</code> puts in what the customer typed in the field called name. Leave empty to let the AI answer.</>}
         htmlFor="act-done"
       >
         <Input id="act-done" value={str("widget_done")} readOnly={!canEdit} maxLength={200} placeholder="e.g. Thanks {{ name }}, we'll call you today." onChange={(e) => set("widget_done", e.target.value)} />
       </Field>
-      <Field label="If it fails, the card says" hint="The card stays open with this line, so they can fix a field and try again. Leave empty to let the AI explain." htmlFor="act-failed">
+      <Field label="If it fails, the widget says" hint="The widget stays open with this line, so they can fix a field and try again. Leave empty to let the AI explain." htmlFor="act-failed">
         <Input id="act-failed" value={str("widget_failed")} readOnly={!canEdit} maxLength={200} placeholder="e.g. That didn't go through. Please try again." onChange={(e) => set("widget_failed", e.target.value)} />
       </Field>
     </>

@@ -160,11 +160,11 @@ function CardUse({ cfg, widget, keys, seen }: { cfg: AgentConfig; widget: string
     }
   }, [text, widget]);
   if (text === undefined) {
-    return <p className="agent-use-problem small">Shows <code>{widget}</code>, but there's no card with that name.</p>;
+    return <p className="agent-use-problem small">Shows <code>{widget}</code>, but there's no widget with that name.</p>;
   }
   return (
     <div className="agent-use-card">
-      <p className="agent-use-card-name">Card: <Go to={`/agent/cards/${widget}`}>{humanize(widget)}</Go></p>
+      <p className="agent-use-card-name">Widget: <Go to={`/agent/widgets/${widget}`}>{humanize(widget)}</Go></p>
       {controls && controls.length > 0 ? (
         <ul className="agent-use-buttons">
           {controls.map((c, i) => {
@@ -226,7 +226,7 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
   const fillable = links.widgets.filter((w) => /"aiFill"\s*:\s*true/.test(cfg.draft[`widgets/${w}.widget`] ?? ""));
 
   return (
-    <Field label="What it uses" hint="The actions and cards its steps use. Each action has to be set up before the AI can use it; try it to see what it returns.">
+    <Field label="What it uses" hint="The actions and widgets its steps use. Each action has to be set up before the AI can use it; try it to see what it returns.">
       <div className="agent-uses">
         {uses.map((action) => {
           const path = cfg.draft[`tools/${action}.yaml`] !== undefined ? `tools/${action}.yaml` : `tools/${action}.yml`;
@@ -242,7 +242,7 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
             <div key={action} className="agent-use">
               <div className="agent-use-head">
                 <span className="agent-use-name"><Go to={`/agent/actions/${action}`}>{humanize(action)}</Go></span>
-                <span className="agent-use-kind">{cardOnly ? "Shows a card (calls nothing)" : method === "POST" ? "Makes a change" : "Looks up"}</span>
+                <span className="agent-use-kind">{cardOnly ? "Shows a widget (calls nothing)" : method === "POST" ? "Makes a change" : "Looks up"}</span>
                 {!cardOnly && !widget && <span className="agent-use-shows">Answers in words</span>}
                 <span className="agent-use-state" data-ready={problems.length ? undefined : true}>{problems.length ? "Not set up" : "Ready"}</span>
                 <Button size="sm" variant="ghost" className="agent-use-try" aria-expanded={open} onClick={() => setTrying(open ? null : action)}>{open ? "Close" : "Try it"}</Button>
@@ -256,14 +256,14 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
         {fillsCards && (
           <div className="agent-use">
             <div className="agent-use-head">
-              <span className="agent-use-name">Cards the AI fills in</span>
-              <span className="agent-use-kind">Shows a card (calls nothing)</span>
-              <span className="agent-use-state" data-ready={fillable.length ? true : undefined}>{fillable.length ? "Ready" : "No card allows it"}</span>
+              <span className="agent-use-name">Widgets the AI fills in</span>
+              <span className="agent-use-kind">Shows a widget (calls nothing)</span>
+              <span className="agent-use-state" data-ready={fillable.length ? true : undefined}>{fillable.length ? "Ready" : "No widget allows it"}</span>
             </div>
             {fillable.length ? (
               fillable.map((w) => <CardUse key={w} cfg={cfg} widget={w} keys={keys} seen={seen} />)
             ) : (
-              <p className="agent-use-problem small">The steps use show_widget, but no card has "The AI can fill this card itself" switched on. Turn it on in a card's Details on the <Go to="/agent/cards">Widgets</Go> page.</p>
+              <p className="agent-use-problem small">The steps use show_widget, but no widget has "The AI can fill this widget itself" switched on. Turn it on in a widget's Details on the <Go to="/agent/widgets">Widgets</Go> page.</p>
             )}
           </div>
         )}
@@ -271,11 +271,11 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
           <div key={w} className="agent-use">
             <div className="agent-use-head">
               <span className="agent-use-name">{humanize(w)}</span>
-              <span className="agent-use-kind">A card</span>
+              <span className="agent-use-kind">A widget</span>
               <span className="agent-use-state">Can't be shown like this</span>
             </div>
             <p className="agent-use-problem small">
-              The steps name this card like an action, but the AI shows a card through an action that shows it, or by filling it in itself: switch on "The AI can fill this card itself" in the card's Details and write @show_widget in the step.
+              The steps name this widget like an action, but the AI shows a widget through an action that shows it, or by filling it in itself: switch on "The AI can fill this widget itself" in the widget's Details and write @show_widget in the step.
             </p>
             <CardUse cfg={cfg} widget={w} keys={keys} seen={seen} />
           </div>
@@ -302,7 +302,7 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
           </div>
         ))}
         {!uses.length && !site.length && !absent.length && !namedCards.length && !fillsCards && (
-          <p className="muted small">Its steps don't use an action or a card yet. Type @ in a step to pick one, or ask the AI to "add the action this needs".</p>
+          <p className="muted small">Its steps don't use an action or a widget yet. Type @ in a step to pick one, or ask the AI to "add the action this needs".</p>
         )}
       </div>
       <NewActionDialog open={creating !== null} onClose={() => setCreating(null)} cfg={cfg} keys={keys} names={actionNames} {...(creating ? { initial: creating } : {})} />

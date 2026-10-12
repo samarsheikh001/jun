@@ -134,12 +134,12 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
 
       <StepCard n={4} title="Make the widget yours" done={s.brand} optional>
         {s.brand ? (
-          <p className="muted small">Branded. Logo, greeting and side are on the <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Widget</a> page; business hours in <a href="/settings/inbox" onClick={(e) => { e.preventDefault(); navigate("/settings/inbox"); }}>Settings → Inbox</a>.</p>
+          <p className="muted small">Branded. Logo, greeting and side are on the <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Chat widget</a> page; business hours in <a href="/settings/inbox" onClick={(e) => { e.preventDefault(); navigate("/settings/inbox"); }}>Settings → Inbox</a>.</p>
         ) : (
           <div className="row">
             <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Brand colour" />
             <Button variant="outline" disabled={busy} onClick={saveColor}>Use this colour</Button>
-            <span className="muted small">More (logo, greeting) on the <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Widget</a> page.</span>
+            <span className="muted small">More (logo, greeting) on the <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Chat widget</a> page.</span>
           </div>
         )}
       </StepCard>

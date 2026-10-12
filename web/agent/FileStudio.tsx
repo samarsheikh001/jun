@@ -18,7 +18,7 @@ import type { AgentConfig } from "./useAgentConfig.ts";
 // (D-62: here, with the server's config checker, once the streamed answer is in).
 
 const IDEAS: Record<AgentFileKind, string[]> = {
-  action: ["Make the description clearer for the AI", "Also ask for the customer's email", "Only offer it on the billing pages", "Show the result as a card"],
+  action: ["Make the description clearer for the AI", "Also ask for the customer's email", "Only offer it on the billing pages", "Show the result as a widget"],
   procedure: ["Add a step to confirm before anything changes", "Hand over to a person if they're upset", "Make the steps shorter", "Add the action this needs"],
 };
 const INTRO: Record<AgentFileKind, string> = {
@@ -153,7 +153,7 @@ async function taskRequest(cfg: AgentConfig, path: string, message: string, hist
     const made: Record<string, string> = {};
     const notMade: string[] = [];
     for (const card of done.check.cards) {
-      onReply(`Making the ${humanize(card.name)} card…`);
+      onReply(`Making the ${humanize(card.name)} widget…`);
       const file = await makeCard(cfg, card, { ...cfg.draft, ...done.check.files, ...made });
       if (file) made[`widgets/${card.name}.widget`] = file;
       else notMade.push(card.name);
@@ -166,8 +166,8 @@ async function taskRequest(cfg: AgentConfig, path: string, message: string, hist
       const { [path]: own, ...others } = written;
       const cards = Object.keys(made).map((p) => humanize(p.slice("widgets/".length, -".widget".length)));
       let reply = withMissingNote(next, agentFileKind(path)?.name ?? "", done.check.reply);
-      if (cards.length) reply += ` Made the ${cards.join(" and ")} card${cards.length > 1 ? "s" : ""}: open ${cards.length > 1 ? "them" : "it"} under What it uses to change how ${cards.length > 1 ? "they look" : "it looks"}.`;
-      if (notMade.length) reply += ` I couldn't make the ${notMade.map(humanize).join(", ")} card; ask me again, or make it on the Cards page.`;
+      if (cards.length) reply += ` Made the ${cards.join(" and ")} widget${cards.length > 1 ? "s" : ""}: open ${cards.length > 1 ? "them" : "it"} under What it uses to change how ${cards.length > 1 ? "they look" : "it looks"}.`;
+      if (notMade.length) reply += ` I couldn't make the ${notMade.map(humanize).join(", ")} widget; ask me again, or make it on the Widgets page.`;
       return { reply, file: own ?? cfg.draft[path] ?? "", changed: true, ...(Object.keys(others).length ? { others } : {}) };
     }
     error = { file: taskFilesText(written), problems };

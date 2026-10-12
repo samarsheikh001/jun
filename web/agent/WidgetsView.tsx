@@ -23,7 +23,7 @@ import { Connections } from "./Connections.tsx";
 import { AddDialog, CodeEditor, Problems, TOOL, WIDGET, changeOf, go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
-// /agent/cards[/<name>]: widgets/<name>.widget (W-09). /agent/cards is a gallery of live previews
+// /agent/widgets[/<name>]: widgets/<name>.widget (W-09). /agent/widgets is a gallery of live previews
 // (after Chatbase's Widgets page), with ChatKit Studio's own gallery as Templates to start from (W-23).
 // A widget's page (W-22, after ChatKit Studio's editor) is AI / Code / Details beside a large preview
 // canvas with a light / dark switch, which follows every change.
@@ -85,7 +85,7 @@ export function WidgetsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
   // A widget that's gone (discarded, removed, another version): back to the gallery.
   const gone = selected !== null && !current && cfg.state !== null;
   useEffect(() => {
-    if (gone) go("/agent/cards");
+    if (gone) go("/agent/widgets");
   }, [gone]);
   if (current) return <WidgetEditor key={current.path} cfg={cfg} canEdit={canEdit} path={current.path} name={current.name} />;
   return <WidgetGallery cfg={cfg} canEdit={canEdit} items={items} />;
@@ -111,8 +111,8 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
   return (
     <div className="agent-gallery">
       <Tabs value={tab} onValueChange={(v) => setTab(v as GalleryTab)}>
-        <TabsList className="kb-tabs agent-gallery-tabs" aria-label="Cards">
-          <TabsTrigger value="mine">My cards</TabsTrigger>
+        <TabsList className="kb-tabs agent-gallery-tabs" aria-label="Widgets">
+          <TabsTrigger value="mine">My widgets</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -121,8 +121,8 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
           <SearchIcon />
           <Input
             type="search"
-            placeholder={tab === "templates" ? "Search templates…" : "Search cards…"}
-            aria-label={tab === "templates" ? "Search templates" : "Search cards"}
+            placeholder={tab === "templates" ? "Search templates…" : "Search widgets…"}
+            aria-label={tab === "templates" ? "Search templates" : "Search widgets"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -134,7 +134,7 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
               <UploadIcon />
             </Button>
             <Button onClick={() => setAdding(true)}>
-              <PlusIcon /> New card
+              <PlusIcon /> New widget
             </Button>
             <input
               ref={upload}
@@ -147,7 +147,7 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
                 if (!file) return;
                 const name = freeName(cfg, file.name);
                 cfg.setFile(`widgets/${name}.widget`, await file.text());
-                go(`/agent/cards/${name}`);
+                go(`/agent/widgets/${name}`);
               }}
             />
           </>
@@ -158,19 +158,19 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
         <TemplateGallery cfg={cfg} canEdit={canEdit} query={q} />
       ) : items.length === 0 ? (
         <div className="agent-gallery-empty">
-          <h2>Show results as cards</h2>
-          <p>A card shows an action's result to the customer, like an order's status or their plan, instead of text. Its buttons can run your actions. (In ChatKit and in the files they're called widgets.)</p>
+          <h2>Show results as widgets</h2>
+          <p>A widget shows an action's result to the customer as a card, like an order's status or their plan, instead of text. Its buttons can run your actions.</p>
           {canEdit && (
             <div className="row agent-gallery-empty-actions">
               <Button onClick={() => setTab("templates")}>Start from a template</Button>
               <Button variant="outline" onClick={() => setAdding(true)}>
-                <PlusIcon /> New card
+                <PlusIcon /> New widget
               </Button>
             </div>
           )}
         </div>
       ) : shown.length === 0 ? (
-        <p className="muted small agent-gallery-none">No card matches "{query}".</p>
+        <p className="muted small agent-gallery-none">No widget matches "{query}".</p>
       ) : (
         <ul className="agent-gallery-grid">
           {shown.map((item) => (
@@ -182,15 +182,15 @@ function WidgetGallery({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boo
       <AddDialog
         open={adding}
         onClose={() => setAdding(false)}
-        title="New card"
-        description="Starts from a simple card. Or start from a template, or upload a widget file from ChatKit Studio."
+        title="New widget"
+        description="Starts from a simple widget. Or start from a template, or upload a file from ChatKit Studio."
         placeholder="e.g. Order status"
         exists={(raw) => nameProblem(cfg, raw)}
         onAdd={(raw) => {
           const name = slug(raw, "_");
           cfg.setFile(`widgets/${name}.widget`, starterWidget(humanize(name)));
           setAdding(false);
-          go(`/agent/cards/${name}`);
+          go(`/agent/widgets/${name}`);
         }}
       />
     </div>
@@ -278,7 +278,7 @@ function TemplateDialog({ cfg, canEdit, template, onClose }: { cfg: AgentConfig;
     const id = slug(name, "_");
     cfg.setFile(`widgets/${id}.widget`, template.file);
     onClose();
-    go(`/agent/cards/${id}`);
+    go(`/agent/widgets/${id}`);
   };
   return (
     <Dialog open={template !== null} onOpenChange={(o) => !o && onClose()}>
@@ -313,7 +313,7 @@ function TemplateDialog({ cfg, canEdit, template, onClose }: { cfg: AgentConfig;
                   </Button>
                 </>
               ) : (
-                <p className="muted small">Only admins can add cards.</p>
+                <p className="muted small">Only admins can add widgets.</p>
               )}
             </form>
           </>
@@ -335,7 +335,7 @@ function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
   const tools = usedBy(cfg, item.name);
   const change = changeOf(cfg, item.path);
   const problems = cfg.issuesFor(item.path).length;
-  const href = `/agent/cards/${item.name}`;
+  const href = `/agent/widgets/${item.name}`;
   return (
     <li className="agent-tile">
       <div className="agent-stage agent-tile-stage" aria-hidden="true" inert>
@@ -390,10 +390,10 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
       canEdit={canEdit}
       path={path}
       title={humanize(name)}
-      back={{ path: "/agent/cards", label: "All cards" }}
+      back={{ path: "/agent/widgets", label: "All widgets" }}
       onRemove={() => {
         cfg.setFile(path, undefined);
-        go("/agent/cards");
+        go("/agent/widgets");
       }}
       panes={[
         ...(canEdit ? [{ id: "ai" as const, label: "AI", content: <WidgetChat cfg={cfg} path={path} name={name} /> }] : []),
@@ -515,7 +515,7 @@ function WidgetCode({ cfg, path, canEdit, states, state, setState }: { cfg: Agen
               placeholder="e.g. {{ plan }} plan · {{ status }}"
               onChange={(e) => cfg.setFile(path, withKey(text, "summary", e.target.value || undefined))}
             />
-            <p className="wcode-hint">One plain-text line from the same data. The chat shows it when it folds the card away.</p>
+            <p className="wcode-hint">One plain-text line from the same data. The chat shows it when it folds the widget away.</p>
           </div>
         ) : (
           <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
@@ -598,7 +598,7 @@ function ExampleData({ cfg, path, canEdit, file, states, state, setState }: { cf
         }}
       />
       <p className={error ? "wcode-hint error" : "wcode-hint"}>
-        {error ?? (named ? "Another example to preview the card with. It must fit the schema and draw." : "Data shaped like your action's response; the preview uses it.")}
+        {error ?? (named ? "Another example to preview the widget with. It must fit the schema and draw." : "Data shaped like your action's response; the preview uses it.")}
       </p>
     </>
   );
@@ -623,8 +623,8 @@ function SchemaCode({ cfg, path, canEdit, file }: { cfg: AgentConfig; path: stri
     }
   }, [current]);
   const hint = own
-    ? "The card's parameters as JSON Schema (ChatKit Studio's Schema tab). Actions and the AI fill the card in this shape."
-    : "Worked out from the example data. Edit it to make it the card's own, with descriptions and optional fields.";
+    ? "The widget's parameters as JSON Schema (ChatKit Studio's Schema tab). Actions and the AI fill the widget in this shape."
+    : "Worked out from the example data. Edit it to make it the widget's own, with descriptions and optional fields.";
   return (
     <>
       <CodeArea
@@ -667,7 +667,7 @@ function Parameters({ cfg, path, name, canEdit, file }: { cfg: AgentConfig; path
     return (
       <div className="agent-wed-group">
         <h3>Parameters</h3>
-        <p>Add example data in Code: the card's parameters come from it.</p>
+        <p>Add example data in Code: the widget's parameters come from it.</p>
       </div>
     );
   }
@@ -675,7 +675,7 @@ function Parameters({ cfg, path, name, canEdit, file }: { cfg: AgentConfig; path
   return (
     <div className="agent-wed-group">
       <h3>Parameters</h3>
-      <p>{own ? "The data this card draws, from its schema." : "The data this card draws, worked out from its example data."} Describe a field when its name doesn't say enough: the AI reads it when it fills the card.</p>
+      <p>{own ? "The data this widget draws, from its schema." : "The data this widget draws, worked out from its example data."} Describe a field when its name doesn't say enough: the AI reads it when it fills the card.</p>
       <ul className="agent-params-list">
         {params.map((p) => (
           <li key={p.path} style={{ paddingLeft: `${(p.path.split(".").length - 1) * 14}px` }}>
@@ -722,15 +722,15 @@ function WidgetDetails({ cfg, path, name, canEdit }: { cfg: AgentConfig; path: s
       {file && (
         <div className="agent-wed-group">
           <div className="agent-wed-switch">
-            <h3 id="wd-aifill">The AI can fill this card itself</h3>
+            <h3 id="wd-aifill">The AI can fill this widget itself</h3>
             <Switch checked={aiFill} disabled={!canEdit} aria-labelledby="wd-aifill" onCheckedChange={(on) => cfg.setFile(path, withKey(text, "aiFill", on ? true : undefined))} />
           </div>
           <p>
             {aiFill
               ? "The AI may show it whenever it fits, filled with what it knows from the chat, your docs and actions, in the shape of the example data. No action is needed."
-              : "Off: the card only shows an action's result. Turn it on for cards the AI can rightly fill in, like a summary, a comparison or a contact card. Leave it off for account data such as invoices or plans."}
+              : "Off: the widget only shows an action's result. Turn it on for widgets the AI can rightly fill in, like a summary, a comparison or a contact card. Leave it off for account data such as invoices or plans."}
           </p>
-          {aiFill && file.sample === undefined && <p className="agent-wed-warn">Add example data in Code: the AI fills the card in its shape.</p>}
+          {aiFill && file.sample === undefined && <p className="agent-wed-warn">Add example data in Code: the AI fills the widget in its shape.</p>}
         </div>
       )}
       {file && <WidgetPageActions cfg={cfg} name={name} canEdit={canEdit} />}
@@ -738,12 +738,12 @@ function WidgetDetails({ cfg, path, name, canEdit }: { cfg: AgentConfig; path: s
       {summary && (
         <div className="agent-wed-group">
           <h3>Folded</h3>
-          <p>When the chat folds the card away, it reads "{summary}".</p>
+          <p>When the chat folds the widget away, it reads "{summary}".</p>
         </div>
       )}
       <div className="agent-wed-group">
         <h3>ChatKit Studio</h3>
-        <p>You can also design a card in ChatKit Studio (it calls them widgets), download the file and upload it here.</p>
+        <p>You can also design a widget in ChatKit Studio, download the file and upload it here.</p>
         <div className="agent-wed-actions">
           <Button variant="outline" size="sm" nativeButton={false} render={<a href="https://widgets.chatkit.studio" target="_blank" rel="noopener noreferrer" />}>
             <ExternalLinkIcon /> Open ChatKit Studio

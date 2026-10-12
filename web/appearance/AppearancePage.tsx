@@ -17,7 +17,7 @@ import { previewChime } from "../lib/sound.ts";
 export function WidgetPage({ workspaceId, workspaceName, canEdit, tab }: { workspaceId: string; workspaceName: string; canEdit: boolean; tab: "look" | "install" }) {
   return (
     <PageTabs
-      title="Widget"
+      title="Chat widget"
       value={tab}
       className="widget-page"
       tabs={[

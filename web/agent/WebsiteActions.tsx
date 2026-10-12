@@ -97,7 +97,7 @@ function makeCard(cfg: AgentConfig, action: SeenPageAction): void {
   for (let n = 2; `widgets/${name}.widget` in cfg.draft; n++) name = `${base}_${n}`;
   setCard(cfg, action.name, null);
   cfg.setFile(`widgets/${name}.widget`, cardFromShape(humanize(action.name), action.name, action.shape!));
-  go(`/agent/cards/${name}`);
+  go(`/agent/widgets/${name}`);
 }
 
 const TEXT = "";
@@ -111,7 +111,7 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
       <div className="agent-site-actions-head">
         <h2 id="site-actions-h">On your website</h2>
         <p>
-          Actions your site's code registers (WebMCP or <code>JunDesk.registerAction</code>). The AI runs them in the customer's browser. Pick a card to show
+          Actions your site's code registers (WebMCP or <code>JunDesk.registerAction</code>). The AI runs them in the customer's browser. Pick a widget to show
           what one returns, or make one from what it returned last time.
         </p>
       </div>
@@ -129,13 +129,13 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                 <label className="agent-site-card">
                   <span>Shows its result as</span>
                   <NativeSelect
-                    aria-label={`Card for ${humanize(a.name)}`}
+                    aria-label={`Widget for ${humanize(a.name)}`}
                     size="sm"
                     value={card?.widget ?? TEXT}
                     disabled={!canEdit}
                     onChange={(e) => setCard(cfg, a.name, e.target.value || null)}
                   >
-                    <NativeSelectOption value={TEXT}>Text (no card)</NativeSelectOption>
+                    <NativeSelectOption value={TEXT}>Text (no widget)</NativeSelectOption>
                     {widgets.map((w) => (
                       <NativeSelectOption key={w} value={w}>
                         {humanize(w)}
@@ -143,13 +143,13 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                     ))}
                   </NativeSelect>
                 </label>
-                {card?.by === "page" && <p className="agent-index-sub">Set in your site's code. Picking another card here wins.</p>}
+                {card?.by === "page" && <p className="agent-index-sub">Set in your site's code. Picking another widget here wins.</p>}
                 {buttons.length > 0 && (
                   <div className="agent-site-card">
                     <span>Run by buttons in</span>
                     <span className="agent-links-chips">
                       {buttons.map((w) => (
-                        <a key={w} className="agent-link-chip" data-kind="widget" href={`/agent/cards/${w}`} onClick={(e) => { e.preventDefault(); go(`/agent/cards/${w}`); }}>
+                        <a key={w} className="agent-link-chip" data-kind="widget" href={`/agent/widgets/${w}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${w}`); }}>
                           {humanize(w)}
                         </a>
                       ))}
@@ -159,10 +159,10 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                 {canEdit && !card && (
                   a.shape ? (
                     <Button variant="outline" size="sm" className="agent-site-make" onClick={() => makeCard(cfg, a)}>
-                      <PlusIcon /> Make a card
+                      <PlusIcon /> Make a widget
                     </Button>
                   ) : (
-                    <p className="agent-index-sub">Run it once on your site and you can make a card from what it returns.</p>
+                    <p className="agent-index-sub">Run it once on your site and you can make a widget from what it returns.</p>
                   )
                 )}
               </li>
@@ -183,7 +183,7 @@ export function WidgetPageActions({ cfg, name, canEdit }: { cfg: AgentConfig; na
   return (
     <div className="agent-wed-group">
       <h3>Website actions</h3>
-      <p>Actions on your website whose result shows as this card.</p>
+      <p>Actions on your website whose result shows as this widget.</p>
       {(mine.length > 0 || fromCode.length > 0) && (
         <ul className="agent-site-chips">
           {mine.map((a) => (

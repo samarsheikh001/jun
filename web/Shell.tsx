@@ -34,7 +34,7 @@ const NAV = [
   { id: "visitors", label: "Visitors", Icon: UsersIcon },
   { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
   { id: "agent", label: "Agent", Icon: BotIcon },
-  { id: "appearance", label: "Widget", Icon: ChatIcon },
+  { id: "appearance", label: "Chat widget", Icon: ChatIcon },
 ] as const;
 
 export interface Hub {

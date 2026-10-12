@@ -39,7 +39,7 @@ export function routeFor(path: string): string {
   const tool = TOOL.exec(path)?.[1];
   if (tool) return `/agent/actions/${tool}`;
   const widget = WIDGET.exec(path)?.[1];
-  if (widget) return `/agent/cards/${widget}`;
+  if (widget) return `/agent/widgets/${widget}`;
   if (EVAL.test(path)) return "/agent/tests";
   return "/agent";
 }
@@ -390,7 +390,7 @@ export function labelFor(path: string): string {
   const tool = TOOL.exec(path)?.[1];
   if (tool) return humanize(tool);
   const widget = WIDGET.exec(path)?.[1];
-  if (widget) return `${humanize(widget)} card`;
+  if (widget) return `${humanize(widget)} widget`;
   if (EVAL.test(path)) return "Tests";
   return path || "Config";
 }

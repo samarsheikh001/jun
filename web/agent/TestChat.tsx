@@ -95,8 +95,8 @@ function Reply({ reply, handlers }: { reply: TestReply; handlers: PressHandlers 
           />
         </div>
       ))}
-      {reply.pressed?.done && <p className="tchat-note">The card says: {reply.pressed.done}</p>}
-      {reply.pressed?.failed && <p className="tchat-note tchat-handoff">The card opens again and says: {reply.pressed.failed}</p>}
+      {reply.pressed?.done && <p className="tchat-note">The widget says: {reply.pressed.done}</p>}
+      {reply.pressed?.failed && <p className="tchat-note tchat-handoff">The widget opens again and says: {reply.pressed.failed}</p>}
       {reply.text && <div className="tchat-text"><Markdown blocks={parseMarkdown(reply.text)} cite={(n) => { const s = reply.sources?.[n - 1]; return s ? <sup className="cite" title={s.title}>{n}</sup> : `[${n}]`; }} /></div>}
       {reply.pageAction && (
         <p className="tchat-note">
@@ -286,7 +286,7 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
                 <MessageScrollerItem className="wchat-empty">
                   <p className="wchat-empty-title">Try a conversation</p>
                   <p className="wchat-empty-text">
-                    Write as a customer would. The AI answers with your unsaved changes, as it would on your website. Nothing is saved and nobody sees it. Buttons on cards work here too.
+                    Write as a customer would. The AI answers with your unsaved changes, as it would on your website. Nothing is saved and nobody sees it. Buttons on widgets work here too.
                   </p>
                 </MessageScrollerItem>
               )}

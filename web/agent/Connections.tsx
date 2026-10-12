@@ -18,7 +18,7 @@ import { useSeenPageActions, widgetPageActions } from "./WebsiteActions.tsx";
 
 type Kind = "action" | "procedure" | "widget";
 
-const ROUTE: Record<Kind, string> = { action: "/agent/actions", procedure: "/agent/tasks", widget: "/agent/cards" };
+const ROUTE: Record<Kind, string> = { action: "/agent/actions", procedure: "/agent/tasks", widget: "/agent/widgets" };
 
 function Chip({ kind, name }: { kind: Kind; name: string }) {
   const href = `${ROUTE[kind]}/${name}`;
@@ -155,7 +155,7 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
       <Row key="r" label="Run by buttons in" kind="widget" names={links.actionRunFrom[name] ?? []} />,
       <Row key="p" label="Used in tasks" kind="procedure" names={links.actionUsedBy[name] ?? []} />,
     ];
-    empty = "Nothing points at this action yet. The AI can still use it on its own; to guide it, name it in a task's steps, or give a card a button that runs it.";
+    empty = "Nothing points at this action yet. The AI can still use it on its own; to guide it, name it in a task's steps, or give a widget a button that runs it.";
     if (!widget && !links.actionRunFrom[name]?.length && !links.actionUsedBy[name]?.length) rows = [];
   } else if (kind === "procedure") {
     rows = [<Row key="a" label="Uses actions" kind="action" names={links.procedureUses[name] ?? []} />];
@@ -203,7 +203,7 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
       ),
     ];
     if (!aiFill && !site.length && !pageButtons.length && !links.widgetShownBy[name]?.length && !links.widgetRuns[name]?.length) rows = [];
-    empty = "No action shows it: pick it under \"Show the result as a card\" on an action, add a website action (below), or let the AI fill it in itself.";
+    empty = "No action shows it: pick it under \"Show the result as a widget\" on an action, add a website action (below), or let the AI fill it in itself.";
   }
 
   return (
@@ -214,7 +214,7 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
       ) : kind === "widget" ? (
         // AI-24: a widget nothing can show never reaches a customer; asking for it, the AI guessed.
         <div className="agent-links-warn" role="note">
-          <span>The AI can't show this card yet. {empty}</span>
+          <span>The AI can't show this widget yet. {empty}</span>
         </div>
       ) : (
         !missing.length && !short.length && !misfit && <p className="agent-links-empty">{empty}</p>
@@ -243,7 +243,7 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
                 <Missing m={m} />
               </span>
             ))}
-            : the card has no field with that name.
+            : the widget has no field with that name.
           </span>
         </div>
       ))}

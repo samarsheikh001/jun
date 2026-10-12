@@ -27,7 +27,7 @@ export function useMentionActions(cfg: AgentConfig): MentionAction[] {
           return { name, description: typeof data?.description === "string" ? data.description : "" };
         })
         // W-29: the AI's own tool for cards it fills in itself, when a card allows it.
-        .concat(Object.entries(cfg.draft).some(([p, t]) => p.startsWith("widgets/") && /"aiFill"\s*:\s*true/.test(t)) ? [{ name: "show_widget", description: "Show a card the AI fills in itself (cards with that switch on)." }] : []),
+        .concat(Object.entries(cfg.draft).some(([p, t]) => p.startsWith("widgets/") && /"aiFill"\s*:\s*true/.test(t)) ? [{ name: "show_widget", description: "Show a widget the AI fills in itself (widgets with that switch on)." }] : []),
     [cfg.draft],
   );
 }

@@ -75,8 +75,8 @@ export function WidgetChat({ cfg, path, name }: { cfg: AgentConfig; path: string
     <AiChat
       cfg={cfg}
       path={path}
-      noun="card"
-      intro="Describe it in your words. The AI edits this card and the preview updates; nothing goes live until you save."
+      noun="widget"
+      intro="Describe it in your words. The AI edits this widget and the preview updates; nothing goes live until you save."
       ideas={WIDGET_IDEAS}
       request={async (message, history, file, onReply) => {
         let error: { template: string; message: string } | undefined;
