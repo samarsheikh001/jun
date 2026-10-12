@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardFromResult, customerRefs, exampleData, exampleInputs, actionName, typedInput } from "./action-try.ts";
+import { cardFromResult, customerRefs, exampleData, exampleInputs, actionName, taskName, typedInput } from "./action-try.ts";
 import { parseWidgetFile, renderWidget, widgetSchema } from "./widgets.ts";
 import { checkData } from "./widget-schema.ts";
 
@@ -46,4 +46,11 @@ test("AI-26: a new action's name from what it should do", () => {
   assert.equal(actionName("Look up an order by its number"), "look_up_order");
   assert.equal(actionName("Refund the customer's last payment"), "refund_last_payment");
   assert.equal(actionName("!!!"), "new_action");
+});
+
+test("AI-27: a task's name from when it applies", () => {
+  assert.equal(taskName("The customer asks where their order is"), "order");
+  assert.equal(taskName("They want to change their plan"), "change-plan");
+  assert.equal(taskName("Someone asks for a refund on a late order"), "refund-late-order");
+  assert.equal(taskName("?"), "new-task");
 });

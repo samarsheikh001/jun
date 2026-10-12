@@ -108,3 +108,13 @@ export function actionName(sentence: string): string {
   const name = words.slice(0, 3).join("_").replace(/^[^a-z]+/, "").slice(0, 40).replace(/_+$/, "");
   return name || "new_action";
 }
+
+/** More words a task's "when" sentence has that say nothing about it. */
+const WHEN_FILLER = new Set(["asks", "ask", "asking", "wants", "want", "wanting", "needs", "need", "would", "like", "where", "what", "why", "how", "which", "who", "is", "are", "was", "about", "they", "help", "tell", "know", "says", "say", "has", "have", "do", "does", "get", "some", "any", "this", "that"]);
+
+/** AI-27: a task's folder name from when it applies: "The customer asks where their order is" → order. */
+export function taskName(when: string): string {
+  const words = when.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).map((w) => w.replace(/'s$/, "").replace(/'/g, "")).filter((w) => w && !FILLER.has(w) && !WHEN_FILLER.has(w));
+  const name = words.slice(0, 3).join("-").replace(/^[^a-z0-9]+/, "").slice(0, 40).replace(/-+$/, "");
+  return name || "new-task";
+}

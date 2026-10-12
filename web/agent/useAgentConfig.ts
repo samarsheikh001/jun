@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 
-// The agent's files, shared by every part of the Agent page (Instructions, Procedures, Actions,
+// The agent's files, shared by every part of the Agent page (Instructions, Tasks, Actions,
 // Widgets, Tests, in Form or Code): one draft, checked as you type, saved together as one version.
 
 export type Files = Record<string, string>;

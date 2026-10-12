@@ -11,14 +11,14 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { ActionsView } from "./ActionsView.tsx";
 import { WidgetsView } from "./WidgetsView.tsx";
 import { InstructionsView } from "./InstructionsView.tsx";
-import { ProceduresView } from "./ProceduresView.tsx";
+import { TasksView } from "./TasksView.tsx";
 import { TestsView } from "./TestsView.tsx";
 import { SaveBar, routeFor, setCodeView, useCodeView } from "./parts.tsx";
 import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
 
 // The Agent page (AI-18). Plain views, one URL each, for the people who run support:
 //   /agent              Instructions: how the AI talks, when it hands over (AGENTS.md)
-//   /agent/procedures   step-by-step procedures (skills/*/SKILL.md)
+//   /agent/tasks        tasks: when, steps and the actions they use (skills/*/SKILL.md; AI-27)
 //   /agent/actions      requests to your systems (tools/*.yaml)
 //   /agent/widgets      how an action's result is shown (widgets/*.widget)
 //   /agent/tests        test cases and "Run tests" (evals/*.yaml)
@@ -27,13 +27,13 @@ import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
 // text, exactly as `jun pull` / `jun push` see it. Every view edits one shared draft; one save makes
 // it a new version.
 
-type Tab = "instructions" | "procedures" | "actions" | "widgets" | "tests" | "settings";
-const TABS: Tab[] = ["instructions", "procedures", "actions", "widgets", "tests", "settings"];
+type Tab = "instructions" | "tasks" | "actions" | "widgets" | "tests" | "settings";
+const TABS: Tab[] = ["instructions", "tasks", "actions", "widgets", "tests", "settings"];
 
 /** The Agent's parts, as the sidebar lists them under Agent. */
 export const AGENT_SECTIONS: { id: Tab; label: string; path: string }[] = [
   { id: "instructions", label: "Instructions", path: "/agent" },
-  { id: "procedures", label: "Procedures", path: "/agent/procedures" },
+  { id: "tasks", label: "Tasks", path: "/agent/tasks" },
   { id: "actions", label: "Actions", path: "/agent/actions" },
   { id: "widgets", label: "Widgets", path: "/agent/widgets" },
   { id: "tests", label: "Tests", path: "/agent/tests" },
@@ -45,6 +45,8 @@ export const AGENT_SECTIONS: { id: Tab; label: string; path: string }[] = [
  * switched to Code. The shell rewrites them before rendering, like the moved Settings links.
  */
 export function movedFromAgentCode(path: string): string | null {
+  // AI-27: Procedures became Tasks.
+  if (/^\/agent\/procedures(\/|$)/.test(path)) return path.replace("/agent/procedures", "/agent/tasks");
   if (!/^\/agent\/code(\/|$)/.test(path)) return null;
   setCodeView(true, true);
   const file = decodeURIComponent(path.slice("/agent/code/".length));
@@ -89,8 +91,8 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         className="agent-tabs"
         actions={
           tab !== "settings" && <>
-            {/* An item's page (a widget, an action, a procedure) has its own AI / Code tabs. */}
-            {!(item && (tab === "widgets" || tab === "actions" || tab === "procedures")) && (
+            {/* An item's page (a widget, an action, a task) has its own AI / Code tabs. */}
+            {!(item && (tab === "widgets" || tab === "actions" || tab === "tasks")) && (
               <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
                 <TabsList className="kb-tabs agent-view-switch" aria-label="View">
                   <TabsTrigger value="form">Form</TabsTrigger>
@@ -103,7 +105,7 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         }
         tabs={[
           { value: "instructions", label: "Instructions", path: "/agent", content: view(<InstructionsView cfg={cfg} canEdit={canEdit} workspaceId={workspaceId} />) },
-          { value: "procedures", label: "Procedures", path: "/agent/procedures", content: view(<ProceduresView cfg={cfg} canEdit={canEdit} selected={tab === "procedures" ? item : null} />) },
+          { value: "tasks", label: "Tasks", path: "/agent/tasks", content: view(<TasksView cfg={cfg} canEdit={canEdit} selected={tab === "tasks" ? item : null} />) },
           { value: "actions", label: "Actions", path: "/agent/actions", content: view(<ActionsView cfg={cfg} canEdit={canEdit} selected={tab === "actions" ? item : null} />) },
           { value: "widgets", label: "Widgets", path: "/agent/widgets", content: view(<WidgetsView cfg={cfg} canEdit={canEdit} selected={tab === "widgets" ? item : null} />) },
           { value: "tests", label: "Tests", path: "/agent/tests", content: view(<TestsView cfg={cfg} canEdit={canEdit} />) },

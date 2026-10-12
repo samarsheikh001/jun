@@ -20,7 +20,7 @@ export function agentFileKind(path: string): { kind: AgentFileKind; name: string
   return null;
 }
 
-const ACTION_FORMAT = `An action is a YAML file: one HTTP request to the business's own API that the support AI may call.
+export const ACTION_FORMAT = `An action is a YAML file: one HTTP request to the business's own API that the support AI may call.
 
 Keys (no others are allowed):
 - description (required): what it does and returns, and when the AI should use it. The AI reads only this to decide.
@@ -52,7 +52,7 @@ mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }
 
 An action that changes something (a refund, a plan change) should say in its description that the AI must only call it after the customer clearly says yes.`;
 
-const PROCEDURE_FORMAT = `A procedure is a SKILL.md file: the steps the support AI follows in one situation.
+export const PROCEDURE_FORMAT = `A procedure is a SKILL.md file: the steps the support AI follows in one situation.
 
 It starts with YAML frontmatter between --- lines:
 - name (required): exactly the folder's name.
@@ -76,7 +76,7 @@ const PROCEDURE_RULES = `- Whenever a step can be done with one of the desk's ac
 - An action that shows a widget already shows its result to the customer: don't repeat that result in the steps.
 - Use only the actions listed. If a step needs an action the desk doesn't have, still write it as @a_snake_case_name and say in the reply that this action needs to be created.`;
 
-const ACTION_RULES = `- Keep the input names that procedures and widgets already use (listed under "This action is used by"): renaming one breaks them. If the change needs a rename, say so in the reply.
+export const ACTION_RULES = `- Keep the input names that procedures and widgets already use (listed under "This action is used by"): renaming one breaks them. If the change needs a rename, say so in the reply.
 - A widget's button fills inputs from the card's fields of the same name: keep input names and field names in step.`;
 
 /** The system prompt for one kind of file. */

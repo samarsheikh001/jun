@@ -27,7 +27,7 @@ const MAX_HOW = 1500;
 const RESERVED = ["handoff", "flag_problem", "jun_done", "activate_skill", "show_widget"];
 
 /** The new action's file from a curl command (the AI fills in the description and status). */
-function actionFile(req: CurlRequest): string {
+export function actionFile(req: CurlRequest): string {
   return stringify({
     description: "",
     status: "Working on it",
@@ -50,7 +50,54 @@ function firstAsk(what: string, how: string, curl: CurlRequest | null): string {
   return `New action: "${what}". Write the description (when the AI should use this and what it returns or changes), the short line the customer sees while it runs, and the details the AI needs to ask the customer for. I don't have the API address yet: keep a clear placeholder address.`;
 }
 
-export function NewActionDialog({ open, onClose, cfg, keys, names }: { open: boolean; onClose: () => void; cfg: AgentConfig; keys: ActionKeys; names: Set<string> }) {
+/** A pasted curl command, read (null when the text isn't one). */
+export function useCurl(how: string): { req: CurlRequest } | { error: string } | null {
+  return useMemo(() => {
+    if (!looksLikeCurl(how)) return null;
+    try {
+      return { req: parseCurl(how) };
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+  }, [how]);
+}
+
+/**
+ * Puts a curl command's action in the draft at `path`: its keys kept on the desk first (a key already
+ * there keeps its value), and the command's values remembered for Try it.
+ */
+export async function addCurlAction(cfg: AgentConfig, keys: ActionKeys, path: string, req: CurlRequest): Promise<void> {
+  for (const key of req.keys) {
+    if (key.value && !keys.keys?.some((k) => k.name === key.name)) await keys.save(key.name, key.value);
+  }
+  cfg.setFile(path, actionFile(req));
+  actionExamples.set(path, { url: req.url, query: req.query, ...(req.body !== undefined ? { body: req.body } : {}) });
+}
+
+/** What the desk read from a pasted curl command: the request, its keys, what it changed. */
+export function CurlRead({ req }: { req: CurlRequest }) {
+  return (
+    <div className="agent-new-action-read" aria-live="polite">
+      <p><span className="agent-new-action-method">{req.method}</span> <code>{req.url}</code></p>
+      {req.keys.map((k) => (
+        <p key={k.name} className="small">
+          {k.value ? <>Key <code>{k.name}</code>: kept on the desk, never in the action's file.</> : <>Key <code>{k.name}</code>: add it on the action's page.</>}
+        </p>
+      ))}
+      {req.notes.map((n) => <p key={n} className="small muted">{n}</p>)}
+    </div>
+  );
+}
+
+export function NewActionDialog({ open, onClose, cfg, keys, names, initial }: {
+  open: boolean;
+  onClose: () => void;
+  cfg: AgentConfig;
+  keys: ActionKeys;
+  names: Set<string>;
+  /** AI-27: "Create it" for an action a task's steps name: its name and the step that needs it. */
+  initial?: { name: string; what: string };
+}) {
   const [what, setWhat] = useState("");
   const [how, setHow] = useState("");
   const [name, setName] = useState("");
@@ -59,21 +106,14 @@ export function NewActionDialog({ open, onClose, cfg, keys, names }: { open: boo
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
-    setWhat("");
+    setWhat(initial?.what ?? "");
     setHow("");
-    setName("");
-    setNamed(false);
+    setName(initial?.name ?? "");
+    setNamed(Boolean(initial?.name));
     setError(null);
   }, [open]);
 
-  const curl = useMemo((): { req: CurlRequest } | { error: string } | null => {
-    if (!looksLikeCurl(how)) return null;
-    try {
-      return { req: parseCurl(how) };
-    } catch (e) {
-      return { error: (e as Error).message };
-    }
-  }, [how]);
+  const curl = useCurl(how);
   const req = curl && "req" in curl ? curl.req : null;
   const fileName = slug(named ? name : actionName(what), "_");
   const nameProblem = !what.trim() && !named ? null : !fileName ? "Start with a letter." : RESERVED.includes(fileName) ? "That name is taken by the AI's own actions." : names.has(fileName) ? "There's already an action with this name." : null;
@@ -84,13 +124,9 @@ export function NewActionDialog({ open, onClose, cfg, keys, names }: { open: boo
     setBusy(true);
     setError(null);
     try {
-      // Keys from the command are kept on the desk first (a key already there keeps its value).
-      for (const key of req?.keys ?? []) {
-        if (key.value && !keys.keys?.some((k) => k.name === key.name)) await keys.save(key.name, key.value);
-      }
       const path = `tools/${fileName}.yaml`;
-      cfg.setFile(path, req ? actionFile(req) : `description: ""\nstatus: Working on it\nmethod: GET\nurl: https://\n`);
-      if (req) actionExamples.set(path, { url: req.url, query: req.query, ...(req.body !== undefined ? { body: req.body } : {}) });
+      if (req) await addCurlAction(cfg, keys, path, req);
+      else cfg.setFile(path, `description: ""\nstatus: Working on it\nmethod: GET\nurl: https://\n`);
       askOnOpen(path, firstAsk(what.trim(), req ? "" : how.trim(), req));
       onClose();
       go(`/agent/actions/${fileName}`);
@@ -128,15 +164,7 @@ export function NewActionDialog({ open, onClose, cfg, keys, names }: { open: boo
             {curl && "error" in curl ? (
               <FieldError>{curl.error}</FieldError>
             ) : req ? (
-              <div className="agent-new-action-read" aria-live="polite">
-                <p><span className="agent-new-action-method">{req.method}</span> <code>{req.url}</code></p>
-                {req.keys.map((k) => (
-                  <p key={k.name} className="small">
-                    {k.value ? <>Key <code>{k.name}</code>: kept on the desk, never in the action's file.</> : <>Key <code>{k.name}</code>: add it on the next page.</>}
-                  </p>
-                ))}
-                {req.notes.map((n) => <p key={n} className="small muted">{n}</p>)}
-              </div>
+              <CurlRead req={req} />
             ) : (
               <FieldDescription>A curl command is read right here; anything else goes to the AI as notes.</FieldDescription>
             )}

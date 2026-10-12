@@ -44,6 +44,8 @@ interface Turn {
   /** The file before this change (Undo puts it back) and after it. */
   before?: string;
   after?: string;
+  /** AI-27: other files the change wrote (a task's actions): each one before (undefined: new) and after. */
+  others?: { path: string; before: string | undefined; after: string }[];
   undone?: boolean;
 }
 
@@ -112,8 +114,12 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
     try {
       const result = await request(ask, history, file, setStreaming);
       // Applied to the draft as it is now (the request carried the file it was made from).
-      if (result.changed) cfg.setFile(path, result.file);
-      setChat(path, [...withAsk, { id: nextId++, role: "assistant", text: result.reply, ...(result.changed ? { before: file, after: result.file } : {}) }]);
+      const others = Object.entries(result.others ?? {}).map(([p, after]) => ({ path: p, before: cfg.draft[p], after }));
+      if (result.changed) {
+        cfg.setFile(path, result.file);
+        for (const o of others) cfg.setFile(o.path, o.after);
+      }
+      setChat(path, [...withAsk, { id: nextId++, role: "assistant", text: result.reply, ...(result.changed ? { before: file, after: result.file, ...(others.length ? { others } : {}) } : {}) }]);
     } catch (error) {
       setChat(path, [...withAsk, { id: nextId++, role: "error", text: describeError(error) }]);
     } finally {
@@ -135,11 +141,13 @@ export function AiChat({ cfg, path, noun, intro, ideas, request }: AiChatProps) 
   const undo = (turn: Turn) => {
     if (turn.before === undefined) return;
     cfg.setFile(path, turn.before);
+    for (const o of turn.others ?? []) cfg.setFile(o.path, o.before);
     setChat(path, turns.map((t) => (t.id === turn.id ? { ...t, undone: true } : t)));
   };
   const redo = (turn: Turn) => {
     if (turn.after === undefined) return;
     cfg.setFile(path, turn.after);
+    for (const o of turn.others ?? []) cfg.setFile(o.path, o.after);
     setChat(path, turns.map((t) => (t.id === turn.id ? { ...t, undone: false } : t)));
   };
   const lastAsk = [...turns].reverse().find((t) => t.role === "user");

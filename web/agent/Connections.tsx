@@ -18,7 +18,7 @@ import { useSeenPageActions, widgetPageActions } from "./WebsiteActions.tsx";
 
 type Kind = "action" | "procedure" | "widget";
 
-const ROUTE: Record<Kind, string> = { action: "/agent/actions", procedure: "/agent/procedures", widget: "/agent/widgets" };
+const ROUTE: Record<Kind, string> = { action: "/agent/actions", procedure: "/agent/tasks", widget: "/agent/widgets" };
 
 function Chip({ kind, name }: { kind: Kind; name: string }) {
   const href = `${ROUTE[kind]}/${name}`;
@@ -153,9 +153,9 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
     rows = [
       <Row key="w" label="Shows its result as" kind="widget" names={widget && links.widgets.includes(widget) ? [widget] : []} />,
       <Row key="r" label="Run by buttons in" kind="widget" names={links.actionRunFrom[name] ?? []} />,
-      <Row key="p" label="Used in procedures" kind="procedure" names={links.actionUsedBy[name] ?? []} />,
+      <Row key="p" label="Used in tasks" kind="procedure" names={links.actionUsedBy[name] ?? []} />,
     ];
-    empty = "Nothing points at this action yet. The AI can still use it on its own; to guide it, name it in a procedure's steps, or give a widget a button that runs it.";
+    empty = "Nothing points at this action yet. The AI can still use it on its own; to guide it, name it in a task's steps, or give a widget a button that runs it.";
     if (!widget && !links.actionRunFrom[name]?.length && !links.actionUsedBy[name]?.length) rows = [];
   } else if (kind === "procedure") {
     rows = [<Row key="a" label="Uses actions" kind="action" names={links.procedureUses[name] ?? []} />];

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { keyName, looksLikeCurl, parseCurl, shellWords } from "./curl.ts";
+import { curlActionName, keyName, looksLikeCurl, parseCurl, shellWords } from "./curl.ts";
 
 test("shellWords: quotes, escapes and line continuations", () => {
   assert.deepEqual(shellWords(`curl -H 'A: b c' \\\n  "https://x.io/a?q=1" -d "{\\"a\\":1}"`), ["curl", "-H", "A: b c", "https://x.io/a?q=1", "-d", '{"a":1}']);
@@ -48,4 +48,12 @@ test("not a curl command, or no address", () => {
   assert.ok(!looksLikeCurl("GET /orders/{id}"));
   assert.equal(keyName("https://api.acme.com/x"), "ACME_API_KEY");
   assert.equal(keyName("nope"), "API_KEY");
+});
+
+test("AI-27: an action's name from its curl command", () => {
+  assert.equal(curlActionName({ method: "GET", url: "https://api.acme.com/v1/orders/1042" }), "look_up_order");
+  assert.equal(curlActionName({ method: "POST", url: "https://api.acme.com/orders/{id}/refund" }), "refund_order");
+  assert.equal(curlActionName({ method: "POST", url: "https://api.acme.com/tickets" }), "create_ticket");
+  assert.equal(curlActionName({ method: "GET", url: "https://api.acme.com/categories" }), "look_up_category");
+  assert.equal(curlActionName({ method: "GET", url: "https://api.acme.com/" }), "look_up");
 });

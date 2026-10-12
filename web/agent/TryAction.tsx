@@ -54,7 +54,8 @@ function draw(name: string, text: string, data: Data): { root: WidgetNode; probl
   }
 }
 
-export function TryAction({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string }) {
+/** `compact`: inside a task's list of what it uses (no heading of its own). */
+export function TryAction({ cfg, canEdit, path, name, compact = false }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string; compact?: boolean }) {
   const text = cfg.draft[path] ?? "";
   const data = readYaml(text);
   const saved = remembered.get(path);
@@ -100,8 +101,8 @@ export function TryAction({ cfg, canEdit, path, name }: { cfg: AgentConfig; canE
   };
 
   return (
-    <section className="agent-try" aria-labelledby="try-h">
-      <h3 id="try-h">Try it</h3>
+    <section className="agent-try" data-compact={compact || undefined} aria-label={`Try ${name}`}>
+      {!compact && <h3>Try it</h3>}
       <p className="muted small">
         Run it once with real details and see what your system sends back.{" "}
         {changes ? <strong>This makes a real change in your system.</strong> : "Nothing changes: it's a look-up."} Uses the draft, so you can try before saving.

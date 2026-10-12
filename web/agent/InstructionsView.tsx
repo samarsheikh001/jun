@@ -57,7 +57,7 @@ function InstructionsForm({ cfg, canEdit, workspaceId }: { cfg: AgentConfig; can
       <section className="agent-doc-main">
         <div className="agent-doc-head">
           <h2>How the AI talks</h2>
-          <p>Its tone, and anything it should always or never do. Write it like you'd brief a new teammate. Steps for one situation (like refunds) go in Procedures.</p>
+          <p>Its tone, and anything it should always or never do. Write it like you'd brief a new teammate. Steps for one job (like refunds) go in Tasks.</p>
         </div>
         <div className="agent-doc-editor">
           {/* W-26: @ names an action. */}

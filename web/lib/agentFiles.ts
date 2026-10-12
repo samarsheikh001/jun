@@ -1,6 +1,6 @@
 import { isMap, isScalar, isSeq, parseDocument, type Document } from "yaml";
 
-// The Agent page's forms (Instructions, Procedures, Actions, Tests) read and write the same files
+// The Agent page's forms (Instructions, Tasks, Actions, Tests) read and write the same files
 // as the Code view, `jun pull` and `jun push`. Each edit changes only the field it names, through
 // yaml's Document API, so a developer's comments, key order and other keys survive a form edit.
 // A file the forms can't read (invalid YAML) is left to the Code view.

@@ -5,7 +5,7 @@ import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
 import { WIDGET_EDIT_MAX_TOKENS, WIDGET_EDIT_PROMPT, WidgetEditError, widgetEditMessage } from "../ai/widget-edit.ts";
-import { AGENT_FILE_EDIT_MAX_TOKENS, AgentFileEditError, agentFileEditMessages } from "../ai/agent-file-edit.ts";
+import { AGENT_FILE_EDIT_MAX_TOKENS, AgentFileEditError, agentFileEditMessages, TASK_EDIT_MAX_TOKENS, taskEditMessages } from "../ai/agent-file-edit.ts";
 import { editorSettings, editStream } from "../ai/edit-stream.ts";
 import { recordUsage } from "../ai/topics.ts";
 import { agentFileKind } from "../../shared/agent-file-ai.ts";
@@ -284,7 +284,7 @@ agent.post("/workspaces/:id/agent/widget-edit", async (c) => {
 });
 
 // W-24: one change to an action or a procedure, asked for in plain words. Body: { path, files, message,
-// history?, error? } (files: the whole draft; error: { file, problems }, for the one retry). D-62:
+// history?, error?, task? } (files: the whole draft; error: { file, problems }, for the one retry). D-62:
 // returns the model's answer as its raw event stream; the browser checks it like a save
 // (…/agent/validate). Nothing is saved.
 agent.post("/workspaces/:id/agent/file-edit", async (c) => {
@@ -303,12 +303,14 @@ agent.post("/workspaces/:id/agent/file-edit", async (c) => {
   const settings = await editorReady(c, workspaceId);
   let prompt: { system: string; user: string };
   try {
-    prompt = agentFileEditMessages({ path, files, message, history: readHistory(body), ...(error ? { error } : {}) });
+    // AI-27: `task: true` on a procedure (a task): its chat may change the actions it uses and create new ones.
+    const edit = { path, files, message, history: readHistory(body), ...(error ? { error } : {}) };
+    prompt = body.task === true ? taskEditMessages(edit) : agentFileEditMessages(edit);
   } catch (e) {
     if (e instanceof AgentFileEditError) throw new HttpError(400, "edit_failed", e.message);
     throw e;
   }
-  return editStream(c.env, workspaceId, settings, prompt.system, prompt.user, AGENT_FILE_EDIT_MAX_TOKENS);
+  return editStream(c.env, workspaceId, settings, prompt.system, prompt.user, body.task === true ? TASK_EDIT_MAX_TOKENS : AGENT_FILE_EDIT_MAX_TOKENS);
 });
 
 // D-62: the tokens an editor answer used, reported by the browser once the stream ends (the Worker

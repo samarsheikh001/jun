@@ -136,7 +136,7 @@ npm run jun -- push support-agent -m "Refund window is now 30 days"
 | File | What |
 |---|---|
 | `AGENTS.md` | Tone and rules. Frontmatter: `maxReplies`, `handoffTopics` |
-| `skills/<name>/SKILL.md` | Procedures in plain language, in the [Agent Skills](https://agentskills.io) format |
+| `skills/<name>/SKILL.md` | Tasks (procedures) in plain language: when they apply and the steps, in the [Agent Skills](https://agentskills.io) format |
 | `tools/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`). `status:` is the one line the customer sees while it runs ("Checking your order"; default "Looking that up"); they never see the tool's name, inputs or results |
 | `evals/<name>.yaml` | A customer message and what a good reply does: outcome, tools called, or criteria |
 

@@ -2,6 +2,7 @@ import type { ActionBrief } from "../../shared/action-brief.ts";
 import { agentFileEditInput, agentFileEditPrompt, agentFileKind, type AgentFileContext } from "../../shared/agent-file-ai.ts";
 import { agentLinks } from "../../shared/agent-links.ts";
 import type { WidgetEditTurn } from "../../shared/widget-ai.ts";
+import { TASK_EDIT_PROMPT, taskEditInput } from "../../shared/task-ai.ts";
 import { parseConfig, type AgentConfig, type ConfigFiles } from "./config.ts";
 
 // W-24: an action or a procedure edited by chat on the Agent page, like a widget (W-22,
@@ -59,5 +60,30 @@ export function agentFileEditMessages(input: { path: string; files: ConfigFiles;
   return {
     system: agentFileEditPrompt(target.kind),
     user: agentFileEditInput({ ...target, path: input.path, text, context, history: input.history, message: input.message, ...(input.error ? { error: input.error } : {}) }),
+  };
+}
+
+/** AI-27: a task's answer may write several files (its procedure and actions), so it gets more room. */
+export const TASK_EDIT_MAX_TOKENS = 8000;
+
+/**
+ * AI-27: the prompt and input for one change to a task: its procedure plus the actions its steps use
+ * (and any the request names with @), which the model may change, and new actions it may create.
+ */
+export function taskEditMessages(input: { path: string; files: ConfigFiles; message: string; history: WidgetEditTurn[]; error?: { file: string; problems: string[] } }): { system: string; user: string } {
+  const target = agentFileKind(input.path);
+  if (target?.kind !== "procedure") throw new AgentFileEditError("A task's chat edits its procedure (skills/<name>/SKILL.md).");
+  const text = input.files[input.path];
+  if (text === undefined) throw new AgentFileEditError("That file isn't in the draft.");
+  const links = agentLinks(input.files);
+  const named = [...input.message.matchAll(/@([a-z][a-z0-9_]*)/g)].map((m) => m[1]!);
+  const actions: Record<string, string> = {};
+  for (const name of new Set([...(links.procedureUses[target.name] ?? []), ...named])) {
+    const path = `tools/${name}.yaml`;
+    if (input.files[path] !== undefined) actions[path] = input.files[path]!;
+  }
+  return {
+    system: TASK_EDIT_PROMPT,
+    user: taskEditInput({ name: target.name, path: input.path, text, actions, context: contextOf(input.files, input.path, target), history: input.history, message: input.message, ...(input.error ? { error: input.error } : {}) }),
   };
 }

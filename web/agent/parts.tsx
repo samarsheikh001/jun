@@ -21,7 +21,7 @@ export const humanize = (name: string) =>
     .trim()
     .replace(/^./, (c) => c.toUpperCase());
 
-/** A typed name as a file name: lower-case with dashes (procedures) or underscores (actions, widgets). */
+/** A typed name as a file name: lower-case with dashes (tasks) or underscores (actions, widgets). */
 export function slug(raw: string, sep: "-" | "_"): string {
   const name = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, sep).replace(/^[-_]+|[-_]+$/g, "");
   return sep === "_" ? name.replace(/^[^a-z]+/, "") : name;
@@ -35,7 +35,7 @@ export const EVAL = /^evals\/([a-zA-Z0-9_-]+)\.ya?ml$/;
 /** The page a file is edited on (as a form, or in Code). Files of no known kind are under Instructions. */
 export function routeFor(path: string): string {
   const skill = SKILL.exec(path)?.[1];
-  if (skill) return `/agent/procedures/${skill}`;
+  if (skill) return `/agent/tasks/${skill}`;
   const tool = TOOL.exec(path)?.[1];
   if (tool) return `/agent/actions/${tool}`;
   const widget = WIDGET.exec(path)?.[1];
@@ -103,7 +103,7 @@ export function ItemIndex({ cfg, items, base, onAdd, addLabel, canEdit, empty, n
   addLabel: string;
   canEdit: boolean;
   empty: { title: string; text: string };
-  /** "actions", "procedures": in the search box. */
+  /** "actions", "tasks": in the search box. */
   noun: string;
 }) {
   const [query, setQuery] = useState("");
@@ -165,7 +165,7 @@ export function ItemIndex({ cfg, items, base, onAdd, addLabel, canEdit, empty, n
 
 // The config checker speaks in file keys; the forms show the few a new item hits first in their words.
 const PLAIN: [RegExp, string][] = [
-  [/^description is required: say when/, "Say when the AI should use this procedure."],
+  [/^description is required: say when/, "Say when the AI should do this task."],
   [/^description is required: tell the AI/, "Say what this action does, so the AI knows when to use it."],
   [/^url must start with https/, "The request address must start with https://."],
   [/: give the customer's message/, "Write what the customer says."],
@@ -382,7 +382,7 @@ export function SaveBar({ cfg, canEdit }: { cfg: AgentConfig; canEdit: boolean }
   );
 }
 
-/** A file as people know it on this page: "Instructions", "Procedure: cancellation"… */
+/** A file as people know it on this page: "Instructions", "Cancellation"… */
 export function labelFor(path: string): string {
   if (path === "AGENTS.md") return "Instructions";
   const skill = SKILL.exec(path)?.[1];

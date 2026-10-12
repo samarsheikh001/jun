@@ -38,7 +38,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
   { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Widget page)." },
-  { job: "editor", label: "Agent page editing", hint: "Changes a widget, action or procedure when you ask in its AI chat." },
+  { job: "editor", label: "Agent page editing", hint: "Changes a widget, action or task when you ask in its AI chat." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";
@@ -189,7 +189,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         </details>
         <p className="small muted">
           How it talks and when it hands over are under{" "}
-          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Instructions</a>; procedures, actions and tests are under Agent in the sidebar.
+          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Instructions</a>; tasks, actions and tests are under Agent in the sidebar.
         </p>
         {error && <p className="error">{error}</p>}
         {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}

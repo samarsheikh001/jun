@@ -83,6 +83,29 @@ export function keyName(url: string, kind = "API_KEY"): string {
   return base ? `${base}_${kind}` : kind;
 }
 
+/**
+ * AI-27: a name for the action a curl command makes, from its path: GET /orders/1042 → look_up_order,
+ * POST /orders/{id}/refund → refund_order, POST /tickets → create_ticket.
+ */
+export function curlActionName(req: Pick<CurlRequest, "method" | "url">): string {
+  let path = "";
+  try {
+    path = new URL(req.url.replace(/\{[^}]*\}/g, "0")).pathname;
+  } catch {
+    // no path
+  }
+  const words = path.split("/").map((s) => s.toLowerCase()).filter((s) => /^[a-z][a-z_-]*$/.test(s) && !/^v\d+$/.test(s) && !["api", "rest"].includes(s));
+  const one = (w: string) => w.replace(/-/g, "_").replace(/ies$/, "y").replace(/([^s])s$/, "$1");
+  const last = words[words.length - 1];
+  const prev = words[words.length - 2];
+  let name: string;
+  if (!last) name = req.method === "GET" ? "look_up" : "send_request";
+  else if (req.method === "GET") name = `look_up_${one(last)}`;
+  else if (prev && !/s$/.test(last)) name = `${last.replace(/-/g, "_")}_${one(prev)}`;
+  else name = `create_${one(last)}`;
+  return name.replace(/[^a-z0-9_]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+}
+
 /** Reads a curl command. Throws an Error with a plain reason when it can't. */
 export function parseCurl(command: string): CurlRequest {
   const words = shellWords(command.trim());

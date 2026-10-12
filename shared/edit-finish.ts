@@ -4,6 +4,7 @@
 
 import { agentLinks } from "./agent-links.ts";
 import { parseAgentFileEdit } from "./agent-file-ai.ts";
+import { parseTaskEdit } from "./task-ai.ts";
 import { applyWidgetEdit, parseWidgetEdit } from "./widget-ai.ts";
 import { checkExamples, MAX_WIDGET_JSON, parseWidgetFile, previewWidget, toolButtonInputs, type ToolButtonInputs } from "./widgets.ts";
 
@@ -12,6 +13,8 @@ export interface EditResult {
   /** The whole new file (the one sent, when nothing changed). */
   file: string;
   changed: boolean;
+  /** AI-27: other files the change writes (a task's actions), path → whole new file. */
+  others?: Record<string, string>;
 }
 
 /** How many answers an edit gets: the first, and one more with what was wrong. */
@@ -87,5 +90,17 @@ export function withMissingNote(files: Record<string, string>, name: string, rep
   const missing = (agentLinks(files).procedureMissing[name] ?? []).filter((m) => !reply.includes(m));
   if (!missing.length) return reply;
   const list = missing.map((m) => `@${m}`).join(", ");
-  return `${reply} ${missing.length === 1 ? `${list} isn't an action yet` : `${list} aren't actions yet`}: create ${missing.length === 1 ? "it" : "them"} from Connected.`;
+  return `${reply} ${missing.length === 1 ? `${list} isn't an action yet` : `${list} aren't actions yet`}: create ${missing.length === 1 ? "it" : "them"} under "What it uses", or ask me to.`;
+}
+
+/**
+ * AI-27: a task edit from the model's answer: the files that actually change (its procedure, its
+ * actions, new actions). `check` still has to pass the config checker with the whole draft.
+ */
+export function readTaskEdit(procedurePath: string, draft: Record<string, string>, answer: string): { result: EditResult } | { check: { reply: string; files: Record<string, string> } } | { failed: { file: string; problems: string[] } } {
+  const edit = parseTaskEdit(answer, procedurePath);
+  if (!edit) return { failed: { file: "(none)", problems: ["The answer had no <reply> and no <file path=\"…\">…</file>."] } };
+  const files = Object.fromEntries(Object.entries(edit.files).filter(([p, t]) => (draft[p] ?? "").trim() !== t.trim()));
+  if (!Object.keys(files).length) return { result: { reply: edit.reply, file: draft[procedurePath] ?? "", changed: false } };
+  return { check: { reply: edit.reply, files } };
 }
