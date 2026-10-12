@@ -233,9 +233,9 @@ function TestCase({ data, result, tools, widgets, canEdit, edit, remove }: {
             </NativeSelect>
           </Field>
           {widgets.length > 0 && (
-            <Field label="And show this widget">
-              <NativeSelect aria-label="And show this widget" value={String(expect.widget ?? "")} disabled={!canEdit} onChange={(e) => edit({ op: "set", path: ["expect", "widget"], value: e.target.value })}>
-                <NativeSelectOption value="">No widget needed</NativeSelectOption>
+            <Field label="And show this card">
+              <NativeSelect aria-label="And show this card" value={String(expect.widget ?? "")} disabled={!canEdit} onChange={(e) => edit({ op: "set", path: ["expect", "widget"], value: e.target.value })}>
+                <NativeSelectOption value="">No card needed</NativeSelectOption>
                 {widgets.map((w) => <NativeSelectOption key={w} value={w}>{humanize(w)}</NativeSelectOption>)}
               </NativeSelect>
             </Field>

@@ -164,7 +164,7 @@ function CardUse({ cfg, widget, keys, seen }: { cfg: AgentConfig; widget: string
   }
   return (
     <div className="agent-use-card">
-      <p className="agent-use-card-name">Card: <Go to={`/agent/widgets/${widget}`}>{humanize(widget)}</Go></p>
+      <p className="agent-use-card-name">Card: <Go to={`/agent/cards/${widget}`}>{humanize(widget)}</Go></p>
       {controls && controls.length > 0 ? (
         <ul className="agent-use-buttons">
           {controls.map((c, i) => {
@@ -263,7 +263,7 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
             {fillable.length ? (
               fillable.map((w) => <CardUse key={w} cfg={cfg} widget={w} keys={keys} seen={seen} />)
             ) : (
-              <p className="agent-use-problem small">The steps use show_widget, but no card has "The AI can fill this card itself" switched on. Turn it on in a card's Details on the <Go to="/agent/widgets">Widgets</Go> page.</p>
+              <p className="agent-use-problem small">The steps use show_widget, but no card has "The AI can fill this card itself" switched on. Turn it on in a card's Details on the <Go to="/agent/cards">Widgets</Go> page.</p>
             )}
           </div>
         )}

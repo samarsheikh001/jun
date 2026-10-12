@@ -268,6 +268,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                         const active = agentSection(pagePath) === a.id;
                         return (
                           <SidebarMenuSubItem key={a.id}>
+                            {a.group && <span className="agent-nav-group">{a.group}</span>}
                             <SidebarMenuSubButton
                               isActive={active}
                               href={a.path}

@@ -123,10 +123,10 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
 
       <StepCard n={3} title="Turn on the AI assistant" done={s.ai}>
         {s.ai ? (
-          <p className="muted small">On. It answers new chats first and hands off to your team when it can't help. How it talks, its tasks and actions are on the <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a> page; provider, model and monthly cap on its <a href="/agent/settings" onClick={(e) => { e.preventDefault(); navigate("/agent/settings"); }}>Settings</a> tab.</p>
+          <p className="muted small">On. It answers new chats first and hands off to your team when it can't help. How it talks, its tasks and actions are on the <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent"); }}>Agent</a> page; provider, model and monthly cap on its <a href="/settings/ai" onClick={(e) => { e.preventDefault(); navigate("/settings/ai"); }}>Settings</a> tab.</p>
         ) : (
           <>
-            <p className="muted small">Uses Workers AI out of the box (no API key, included with Cloudflare). You can switch to OpenAI later on the <a href="/agent/settings" onClick={(e) => { e.preventDefault(); navigate("/agent/settings"); }}>Agent page's Settings</a> tab.</p>
+            <p className="muted small">Uses Workers AI out of the box (no API key, included with Cloudflare). You can switch to OpenAI later on the <a href="/settings/ai" onClick={(e) => { e.preventDefault(); navigate("/settings/ai"); }}>Agent page's Settings</a> tab.</p>
             <Button disabled={busy} onClick={turnOnAi}>Turn on the AI</Button>
           </>
         )}

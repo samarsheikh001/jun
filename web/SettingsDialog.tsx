@@ -6,10 +6,11 @@ import { NotificationsPanel } from "./settings/NotificationsPanel.tsx";
 import { HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
 import { SettingRow, SettingsCard } from "./settings/layout.tsx";
 import { navigate } from "./lib/router.ts";
+import { AiPanel, GitCard } from "./agent/AiPanel.tsx";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "./lib/theme.ts";
 import { useAction } from "./useAction.ts";
 import {
-  BugIcon, ChevronLeftIcon, CodeIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SunIcon, UsersIcon, XIcon,
+  BugIcon, ChevronLeftIcon, CodeIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SparkleIcon, SunIcon, UsersIcon, XIcon,
 } from "@/components/icons";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -30,6 +31,7 @@ const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString() : "n
 // the page you came from stays behind it.
 export const SETTINGS_SECTIONS = [
   { id: "general", label: "General", Icon: SettingsIcon },
+  { id: "ai", label: "AI", Icon: SparkleIcon },
   { id: "inbox", label: "Inbox", Icon: InboxIcon },
   { id: "team", label: "Team", Icon: UsersIcon },
   { id: "notifications", label: "Notifications", Icon: NotificationIcon },
@@ -50,15 +52,15 @@ const LEGACY_HASHES: Record<string, string> = {
 };
 
 /**
- * Settings URLs whose parts moved to their own pages: the widget's install panels (the Widget page's
- * Install tab) and the AI settings (the Agent page's Settings tab). The ChatGPT sign-in still returns
- * to /settings?chatgpt=connected. Null when the URL is still the dialog's.
+ * Settings URLs whose parts moved: the widget's install panels (the Widget page's Install tab), and
+ * old links to the AI settings (D-71: Settings → AI). The ChatGPT sign-in still returns to
+ * /settings?chatgpt=connected. Null when the URL is still the dialog's.
  */
 export function movedFromSettings(path: string, search: string, hash: string): string | null {
   if (!path.startsWith("/settings")) return null;
   const sub = path.replace(/^\/settings\/?/, "").split("/")[0] ?? "";
   if (sub === "widget") return "/appearance/install";
-  if (sub === "ai" || (!sub && (hash === "#ai-assistant" || new URLSearchParams(search).get("chatgpt") === "connected"))) return `/agent/settings${search}`;
+  if (!sub && (hash === "#ai-assistant" || new URLSearchParams(search).get("chatgpt") === "connected")) return `/settings/ai${search}`;
   return null;
 }
 
@@ -142,6 +144,13 @@ function Section({ id, me, workspaceId, canEdit, role, myId }: { id: SectionId; 
   switch (id) {
     case "general":
       return <GeneralPanel me={me} />;
+    case "ai":
+      return (
+        <>
+          <AiPanel workspaceId={workspaceId} canEdit={canEdit} />
+          <GitCard />
+        </>
+      );
     case "inbox":
       return (
         <>

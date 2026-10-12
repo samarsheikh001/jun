@@ -38,7 +38,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
   { job: "suggestions", label: "Suggested questions", hint: "Drafts the widget's questions from your knowledge (Widget page)." },
-  { job: "editor", label: "Agent page editing", hint: "Changes a widget, action or task when you ask in its AI chat." },
+  { job: "editor", label: "Agent page editing", hint: "Changes a card, action or task when you ask in its AI chat." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";
@@ -67,7 +67,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   useEffect(() => {
     load().catch(() => {});
     // Back from ChatGPT sign-in (the Shell sends /settings?chatgpt=connected here).
-    if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/agent/settings");
+    if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/settings/ai");
   }, [load]);
 
   if (!state) return null;
@@ -194,6 +194,26 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         {error && <p className="error">{error}</p>}
         {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
       </form>
+    </SettingsCard>
+  );
+}
+
+/** Developers can keep the agent's files in git and push them from CI. */
+export function GitCard() {
+  return (
+    <SettingsCard
+      id="agent-git"
+      title="Keep it in git"
+      description="Everything on the Agent pages is a set of text files. Developers can pull them into your Jun Desk checkout, review changes there, run the tests and push them back."
+    >
+      <p className="small muted">
+        Create a token in{" "}
+        <a href="/settings/developer#api-tokens" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#api-tokens"); }}>Settings → Developer → API tokens</a>, then run:
+      </p>
+      <pre className="agent-git-commands">{`npm run jun -- login ${window.location.origin}
+npm run jun -- pull support-agent
+npm run jun -- eval support-agent
+npm run jun -- push support-agent`}</pre>
     </SettingsCard>
   );
 }

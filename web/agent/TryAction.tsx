@@ -197,7 +197,7 @@ function TryOutcome({ cfg, canEdit, path, name, result }: { cfg: AgentConfig; ca
           {own && "root" in own ? (
             <>
               <p className="small">
-                Shown to the customer as <a href={`/agent/widgets/${widget}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${widget}`); }}>{humanize(widget!)}</a>:
+                Shown to the customer as <a href={`/agent/cards/${widget}`} onClick={(e) => { e.preventDefault(); go(`/agent/cards/${widget}`); }}>{humanize(widget!)}</a>:
               </p>
               <div className="agent-try-preview"><WidgetCard widget={{ id: `try-${name}`, name: widget!, root: own.root }} interactive={false} theme={pageTheme()} /></div>
               {own.problems.length > 0 ? (

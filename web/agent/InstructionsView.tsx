@@ -184,7 +184,7 @@ function ModelSummary({ workspaceId }: { workspaceId: string }) {
         </dl>
       )}
       <p className="agent-panel-note">
-        Change the model in <a {...link("/agent/settings", true)}>Settings</a>. Answers come from your <a {...link("/knowledge")}>Knowledge</a>.
+        Change the model in <a {...link("/settings/ai", true)}>Settings → AI</a>. Answers come from your <a {...link("/knowledge")}>Knowledge</a>.
       </p>
     </div>
   );

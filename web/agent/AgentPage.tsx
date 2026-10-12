@@ -1,8 +1,5 @@
 import { useState } from "react";
-import { navigate } from "../lib/router.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
-import { AiPanel } from "./AiPanel.tsx";
-import { SettingsCard } from "../settings/layout.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -20,24 +17,26 @@ import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
 //   /agent              Instructions: how the AI talks, when it hands over (AGENTS.md)
 //   /agent/tasks        tasks: when, steps and the actions they use (skills/*/SKILL.md; AI-27)
 //   /agent/actions      requests to your systems (tools/*.yaml)
-//   /agent/widgets      how an action's result is shown (widgets/*.widget)
+//   /agent/cards        cards: how an action's result is shown (widgets/*.widget; "widgets" in the files)
 //   /agent/tests        test cases and "Run tests" (evals/*.yaml)
-//   /agent/settings     provider, model, monthly cap; keeping it in git
 // Each page has a Form / Code switch (remembered, not in the URL): Code shows the same item's file as
 // text, exactly as `jun pull` / `jun push` see it. Every view edits one shared draft; one save makes
 // it a new version.
 
-type Tab = "instructions" | "tasks" | "actions" | "widgets" | "tests" | "settings";
-const TABS: Tab[] = ["instructions", "tasks", "actions", "widgets", "tests", "settings"];
+type Tab = "instructions" | "tasks" | "tests" | "actions" | "cards";
+const TABS: Tab[] = ["instructions", "tasks", "tests", "actions", "cards"];
 
-/** The Agent's parts, as the sidebar lists them under Agent. */
-export const AGENT_SECTIONS: { id: Tab; label: string; path: string }[] = [
+/**
+ * The Agent's parts, as the sidebar lists them under Agent. `group` starts a labelled group: Actions
+ * and Cards are the building blocks tasks use (D-71), so they come last, apart. The AI's settings
+ * are in Settings → AI.
+ */
+export const AGENT_SECTIONS: { id: Tab; label: string; path: string; group?: string }[] = [
   { id: "instructions", label: "Instructions", path: "/agent" },
   { id: "tasks", label: "Tasks", path: "/agent/tasks" },
-  { id: "actions", label: "Actions", path: "/agent/actions" },
-  { id: "widgets", label: "Widgets", path: "/agent/widgets" },
   { id: "tests", label: "Tests", path: "/agent/tests" },
-  { id: "settings", label: "Settings", path: "/agent/settings" },
+  { id: "actions", label: "Actions", path: "/agent/actions", group: "Building blocks" },
+  { id: "cards", label: "Cards", path: "/agent/cards" },
 ];
 
 /**
@@ -45,8 +44,11 @@ export const AGENT_SECTIONS: { id: Tab; label: string; path: string }[] = [
  * switched to Code. The shell rewrites them before rendering, like the moved Settings links.
  */
 export function movedFromAgentCode(path: string): string | null {
-  // AI-27: Procedures became Tasks.
+  // AI-27: Procedures became Tasks; D-71: Widgets became Cards.
   if (/^\/agent\/procedures(\/|$)/.test(path)) return path.replace("/agent/procedures", "/agent/tasks");
+  if (/^\/agent\/widgets(\/|$)/.test(path)) return path.replace("/agent/widgets", "/agent/cards");
+  // D-71: the AI's settings moved to Settings → AI.
+  if (/^\/agent\/settings\/?$/.test(path)) return "/settings/ai";
   if (!/^\/agent\/code(\/|$)/.test(path)) return null;
   setCodeView(true, true);
   const file = decodeURIComponent(path.slice("/agent/code/".length));
@@ -90,9 +92,9 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         value={tab}
         className="agent-tabs"
         actions={
-          tab !== "settings" && <>
-            {/* An item's page (a widget, an action, a task) has its own AI / Code tabs. */}
-            {!(item && (tab === "widgets" || tab === "actions" || tab === "tasks")) && (
+          <>
+            {/* An item's page (a card, an action, a task) has its own AI / Code tabs. */}
+            {!(item && (tab === "cards" || tab === "actions" || tab === "tasks")) && (
               <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
                 <TabsList className="kb-tabs agent-view-switch" aria-label="View">
                   <TabsTrigger value="form">Form</TabsTrigger>
@@ -107,19 +109,8 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
           { value: "instructions", label: "Instructions", path: "/agent", content: view(<InstructionsView cfg={cfg} canEdit={canEdit} workspaceId={workspaceId} />) },
           { value: "tasks", label: "Tasks", path: "/agent/tasks", content: view(<TasksView cfg={cfg} canEdit={canEdit} selected={tab === "tasks" ? item : null} />) },
           { value: "actions", label: "Actions", path: "/agent/actions", content: view(<ActionsView cfg={cfg} canEdit={canEdit} selected={tab === "actions" ? item : null} />) },
-          { value: "widgets", label: "Widgets", path: "/agent/widgets", content: view(<WidgetsView cfg={cfg} canEdit={canEdit} selected={tab === "widgets" ? item : null} />) },
+          { value: "cards", label: "Cards", path: "/agent/cards", content: view(<WidgetsView cfg={cfg} canEdit={canEdit} selected={tab === "cards" ? item : null} />) },
           { value: "tests", label: "Tests", path: "/agent/tests", content: view(<TestsView cfg={cfg} canEdit={canEdit} />) },
-          {
-            value: "settings",
-            label: "Settings",
-            path: "/agent/settings",
-            content: (
-              <div className="page-settings settings-sections">
-                <AiPanel workspaceId={workspaceId} canEdit={canEdit} />
-                <GitCard />
-              </div>
-            ),
-          },
         ]}
       />
       <HistorySheet cfg={cfg} canEdit={canEdit} open={history} onClose={() => setHistory(false)} />
@@ -160,22 +151,3 @@ function HistorySheet({ cfg, canEdit, open, onClose }: { cfg: AgentConfig; canEd
   );
 }
 
-/** Developers can keep the agent's files in git and push them from CI. */
-function GitCard() {
-  return (
-    <SettingsCard
-      id="agent-git"
-      title="Keep it in git"
-      description="Everything on these pages is a set of text files. Developers can pull them into your Jun Desk checkout, review changes there, run the tests and push them back."
-    >
-      <p className="small muted">
-        Create a token in{" "}
-        <a href="/settings/developer#api-tokens" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#api-tokens"); }}>Settings → Developer → API tokens</a>, then run:
-      </p>
-      <pre className="agent-git-commands">{`npm run jun -- login ${window.location.origin}
-npm run jun -- pull support-agent
-npm run jun -- eval support-agent
-npm run jun -- push support-agent`}</pre>
-    </SettingsCard>
-  );
-}

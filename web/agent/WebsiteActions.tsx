@@ -97,7 +97,7 @@ function makeCard(cfg: AgentConfig, action: SeenPageAction): void {
   for (let n = 2; `widgets/${name}.widget` in cfg.draft; n++) name = `${base}_${n}`;
   setCard(cfg, action.name, null);
   cfg.setFile(`widgets/${name}.widget`, cardFromShape(humanize(action.name), action.name, action.shape!));
-  go(`/agent/widgets/${name}`);
+  go(`/agent/cards/${name}`);
 }
 
 const TEXT = "";
@@ -149,7 +149,7 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                     <span>Run by buttons in</span>
                     <span className="agent-links-chips">
                       {buttons.map((w) => (
-                        <a key={w} className="agent-link-chip" data-kind="widget" href={`/agent/widgets/${w}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${w}`); }}>
+                        <a key={w} className="agent-link-chip" data-kind="widget" href={`/agent/cards/${w}`} onClick={(e) => { e.preventDefault(); go(`/agent/cards/${w}`); }}>
                           {humanize(w)}
                         </a>
                       ))}
