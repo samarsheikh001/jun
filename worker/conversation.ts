@@ -493,7 +493,10 @@ export class Conversation extends DurableObject<Env> {
     const action = list.find((a) => a.id === name) ?? list.find((a) => a.name === name);
     if (!action) return { error: "This page doesn't offer that right now." };
     const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, action.params);
-    return { action: { ...this.#proposeAction(action, input), pressed: true }, human: action.risk === "human" };
+    // D-73: the press is the customer's yes (the button said what it does), so it runs at once, not
+    // behind a second Confirm; one that still needs an input keeps its card to fill it in.
+    const proposed = this.#proposeAction(action, input);
+    return { action: { ...proposed, pressed: true, ...(proposed.missing.length ? {} : { risk: "auto" as const }) }, human: action.risk === "human" };
   }
 
   /** W-27: one card of an AI message changed in place (its latest copy), for everyone. */

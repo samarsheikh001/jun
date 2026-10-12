@@ -271,7 +271,8 @@ await step("W-32: a card's page:<name> button offers that website action with th
     const offered = await nextMessage(chat.socket, (m) => m.authorType === "ai" && m.clientMsgId === `ai:${pressed.seq}`, 10_000);
     assert.deepEqual(
       { name: offered.meta.action.name, input: offered.meta.action.input, missing: offered.meta.action.missing, risk: offered.meta.action.risk, status: offered.meta.action.status, pressed: offered.meta.action.pressed },
-      { name: "remove_from_cart", input: { id: "cap" }, missing: [], risk: "confirm", status: "pending", pressed: true },
+      // D-73: the press is the yes: it runs at once (auto), no second Confirm.
+      { name: "remove_from_cart", input: { id: "cap" }, missing: [], risk: "auto", status: "pending", pressed: true },
     );
     chat.socket.send({ type: "action_result", runId: offered.meta.action.runId, status: "ok", result: "Removed Cap" });
     await nextMessage(chat.socket, (m) => m.meta.action?.runId === offered.meta.action.runId && m.meta.action.status === "ok", 10_000);
