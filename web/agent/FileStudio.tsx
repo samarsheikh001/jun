@@ -8,6 +8,7 @@ import { streamAnswer } from "./editStream.ts";
 import { CodeEditor, go } from "./parts.tsx";
 import { Connections } from "./Connections.tsx";
 import { Studio } from "./Studio.tsx";
+import { TestChat } from "./TestChat.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
 // An action's or a procedure's page (W-24), laid out like a widget's (Studio.tsx): AI and Code on the
@@ -79,6 +80,10 @@ export function FileStudio({ cfg, canEdit, path, title, kind, back, form }: {
                 />
               ),
             }]
+          : []),
+        // AI-29: a task's page: chat with it as a customer would, on the unsaved draft.
+        ...(kind === "procedure" && canEdit
+          ? [{ id: "test" as const, label: "Test", content: <TestChat key={path} cfg={cfg} path={path} name={agentFileKind(path)?.name ?? ""} /> }]
           : []),
         {
           id: "code" as const,

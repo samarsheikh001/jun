@@ -21,6 +21,8 @@ export interface ToolAction {
   durationMs: number;
   /** W-09: the widget the result was shown as, or why it couldn't be. */
   widget?: { name: string; error?: string };
+  /** AI-29: a test chat answered it without calling anything (a change, in its safe mode). */
+  pretended?: true;
 }
 
 /** What the model reads after a result the customer sees as a card. */
@@ -31,6 +33,11 @@ export interface ToolRunOptions {
   secrets: (name: string) => string | undefined;
   /** Use each tool's `mock:` response instead of calling it (evals). */
   mock?: boolean;
+  /**
+   * AI-29: a test chat's safe mode: calls this returns true for (changes) aren't made; they answer
+   * with the action's `mock`, else its widget's example data with the inputs, else `{"ok": true}`.
+   */
+  pretend?: (spec: ToolSpec) => boolean;
   fetch?: typeof fetch;
   onAction?: (action: ToolAction) => void;
   /**
@@ -130,6 +137,11 @@ async function callTool(spec: ToolSpec, input: Record<string, unknown>, options:
     if (spec.mock === undefined) return action("error", "No mock response defined for this tool.", null);
     const mock = typeof spec.mock === "string" ? spec.mock : JSON.stringify(spec.mock);
     return action("ok", shapeOutput(mock, spec.pick), null, mock);
+  }
+  if (options.pretend?.(spec)) {
+    const sample = options.widgets?.find((w) => w.name === spec.widget)?.sample;
+    const raw = spec.mock !== undefined ? (typeof spec.mock === "string" ? spec.mock : JSON.stringify(spec.mock)) : JSON.stringify(sample ? { ...sample, ...input } : { ok: true });
+    return { ...action("ok", shapeOutput(raw, spec.pick), null, raw), pretended: true };
   }
   // W-28: no address: the action only shows its widget, from the widget's example data and the AI's inputs.
   if (!spec.url) {

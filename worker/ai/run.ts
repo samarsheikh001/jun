@@ -3,7 +3,7 @@ import { actionInputSchema, DONE_TOOL, matchesPage, type PageAction } from "../.
 import type { AiStep, Message } from "../../shared/protocol.ts";
 import type { MessageWidget } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL, INLINE_SKILLS_MAX_CHARS, replyOutcome, searchQuery, systemPrompt, toChatMessages, type ReplyDecisions, type ReplyOutcome } from "./agent.ts";
-import { intentSkill, type AgentConfig, type ToolUser } from "./config.ts";
+import { intentSkill, type AgentConfig, type ToolSpec, type ToolUser } from "./config.ts";
 import type { AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge, type SearchHit } from "./search.ts";
@@ -32,6 +32,8 @@ export interface RunInput {
   onStep?: (step: AiStep) => void;
   /** Use tools' mock responses (evals). */
   mockTools?: boolean;
+  /** AI-29: a test chat's safe mode: calls it returns true for are answered, not made (tools.ts `pretend`). */
+  pretend?: (spec: ToolSpec) => boolean;
   timezone?: string;
   /** Evals use 0 so a diff reflects the config change, not sampling noise. */
   temperature?: number;
@@ -109,6 +111,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
   const tools: ToolSet = httpTools(toolSpecs, {
     secrets,
     mock: Boolean(input.mockTools),
+    ...(input.pretend ? { pretend: input.pretend } : {}),
     onAction,
     ...(input.onStep ? { onStep: input.onStep } : {}),
     user: input.user ?? null,

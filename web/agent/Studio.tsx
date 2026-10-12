@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { ChevronLeftIcon, CodeIcon, InfoIcon, SparkleIcon, TrashIcon } from "../components/icons.tsx";
+import { ChatIcon, ChevronLeftIcon, CodeIcon, InfoIcon, SparkleIcon, TrashIcon } from "../components/icons.tsx";
 import { changeOf, go, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
@@ -10,7 +10,7 @@ import type { AgentConfig } from "./useAgentConfig.ts";
 // Code, and Details for widgets); right: what the item looks like (a widget's preview, an action's or
 // a procedure's form), which follows every change made on the left.
 
-export type StudioPaneId = "ai" | "code" | "details";
+export type StudioPaneId = "ai" | "test" | "code" | "details";
 
 export interface StudioPane {
   id: StudioPaneId;
@@ -18,7 +18,7 @@ export interface StudioPane {
   content: ReactNode;
 }
 
-const ICONS: Record<StudioPaneId, ReactNode> = { ai: <SparkleIcon />, code: <CodeIcon />, details: <InfoIcon /> };
+const ICONS: Record<StudioPaneId, ReactNode> = { ai: <SparkleIcon />, test: <ChatIcon />, code: <CodeIcon />, details: <InfoIcon /> };
 
 // The tab last used, for this visit (moving between items, or between widgets and actions, keeps it).
 let lastPane: StudioPaneId | null = null;

@@ -1957,3 +1957,25 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
 .agent-use-buttons li > span:first-child { flex: 1 1 220px; }
 .agent-use-buttons code { font-family: var(--font-mono); font-size: 12px; }
 .agent-use-buttons .agent-use-state { margin-left: 0; }
+/* AI-29: a task's test chat. */
+.tchat-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 16px 0; font-size: 12.5px; }
+.tchat-switch { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); }
+.tchat-switch strong { color: oklch(0.6 0.16 45); font-weight: 600; }
+.tchat-settings { margin: 6px 16px 0; font-size: 12.5px; color: var(--muted-foreground); }
+.tchat-settings summary { cursor: pointer; }
+.tchat-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 8px 0 4px; }
+.tchat-fields label { display: grid; gap: 4px; }
+.tchat-ai { gap: 6px; }
+.tchat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tchat-card { max-width: 360px; }
+.tchat-step { color: var(--muted-foreground); font-size: 12.5px; }
+.tchat-step[data-done]::before { content: "✓ "; }
+.tchat-note { padding: 6px 10px; border-radius: 8px; background: var(--muted); font-size: 12.5px; line-height: 18px; }
+.tchat-note code { font-family: var(--font-mono); font-size: 12px; }
+.tchat-handoff { background: color-mix(in oklab, oklch(0.78 0.15 75) 16%, var(--card)); }
+.tchat-sources { color: var(--muted-foreground); font-size: 12px; }
+.tchat-calls { font-size: 12px; color: var(--muted-foreground); }
+.tchat-calls summary { cursor: pointer; }
+.tchat-call { padding: 4px 0; }
+.tchat-call pre { margin: 4px 0 0; max-height: 140px; overflow: auto; padding: 6px 8px; border-radius: 6px; background: var(--muted); font-family: var(--font-mono); font-size: 11.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tchat-ended { margin: 0 16px 16px; padding: 10px 12px; border-radius: 12px; background: var(--muted); font-size: 13px; color: var(--muted-foreground); }

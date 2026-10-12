@@ -16,6 +16,9 @@ import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { readJson, text } from "../lib/validate.ts";
 import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
 import { runTool } from "../ai/tools.ts";
+import { runTestChat } from "../ai/test-chat.ts";
+import { MAX_TEST_MESSAGE, MAX_TEST_TURNS, type TestChatEvent, type TestReply, type TestTurn } from "../../shared/test-chat.ts";
+import type { SeenPageAction } from "../../shared/actions.ts";
 import type { ToolUser } from "../ai/config.ts";
 import { MAX_DESK_SECRETS, MAX_SECRET_VALUE, SECRET_NAME } from "../../shared/action-setup.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
@@ -152,9 +155,82 @@ agent.get("/workspaces/:id/agent/page-actions", async (c) => {
 
 /** AI-25: a "Try it" result kept for the page, at most (the AI reads a shortened `output` anyway). */
 const MAX_TRY_RESULT = 200_000;
+/** AI-29: a test chat sent back with each message, at most (its cards count). */
+const MAX_TEST_BODY = 400_000;
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const strings = (v: unknown): Record<string, string> =>
   isObject(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "").map(([k, s]) => [k, s.slice(0, MAX_SECRET_VALUE)])) : {};
+
+/** AI-25 / AI-29: a test customer the admin typed (for {user.*}), or null. */
+function testCustomer(value: unknown): ToolUser | null {
+  if (!isObject(value)) return null;
+  const fields = strings(value);
+  return { id: fields.id ?? "test-customer", email: fields.email ?? null, name: fields.name ?? null, attributes: strings(value.attributes), secrets: strings(value.secrets) };
+}
+
+/** AI-29: the test chat's turns from the body: customer messages and earlier replies (their cards too). */
+function readTestTurns(value: unknown): TestTurn[] {
+  if (!Array.isArray(value) || !value.length) throw new HttpError(400, "invalid_field", "turns is the test chat so far.");
+  if (JSON.stringify(value).length > MAX_TEST_BODY) throw new HttpError(400, "too_long", "This test chat is too long. Reset it and start again.");
+  const turns = value.slice(-MAX_TEST_TURNS).map((t): TestTurn => {
+    if (isObject(t) && t.role === "customer" && typeof t.text === "string") return { role: "customer", text: t.text.slice(0, MAX_TEST_MESSAGE) };
+    if (isObject(t) && t.role === "ai" && isObject(t.reply)) {
+      const r = t.reply;
+      return {
+        role: "ai",
+        reply: {
+          text: typeof r.text === "string" ? r.text.slice(0, 8000) : "",
+          ...(typeof r.handoff === "string" ? { handoff: r.handoff } : {}),
+          widgets: Array.isArray(r.widgets) ? (r.widgets.filter((w) => isObject(w) && typeof w.name === "string" && isObject(w.root)).slice(0, 6) as unknown as TestReply["widgets"]) : [],
+          calls: [],
+          ...(isObject(r.pageAction) && typeof r.pageAction.name === "string" ? { pageAction: { name: r.pageAction.name, input: isObject(r.pageAction.input) ? r.pageAction.input : {} } } : {}),
+        },
+      };
+    }
+    throw new HttpError(400, "invalid_field", "Each turn is { role: customer, text } or { role: ai, reply }.");
+  });
+  if (turns.at(-1)?.role !== "customer") throw new HttpError(400, "invalid_field", "The last turn must be the customer's message.");
+  return turns;
+}
+
+// AI-29: one reply in a task page's test chat, from the draft (shared/test-chat.ts). Body: { files,
+// turns, real?, customer?, page? }. Streams TestChatEvents, one JSON object a line. Nothing is stored; the tokens
+// count toward the month's usage. Safe unless `real: true`: changes (POST) are answered, not made.
+agent.post("/workspaces/:id/agent/test-chat", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const body = await readJson(c.req);
+  const files = readFiles(body);
+  const turns = readTestTurns(body.turns);
+  const page = typeof body.page === "string" && body.page.startsWith("/") ? body.page.slice(0, 300) : null;
+  const { config } = parseConfig(files);
+  const [settings, workspace, seen] = await Promise.all([
+    loadAiSettings(c.env, workspaceId),
+    c.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(workspaceId).first<{ name: string }>(),
+    c.env.WORKSPACE_HUB.getByName(workspaceId).pageActions() as Promise<SeenPageAction[]>,
+  ]);
+  let model;
+  try {
+    model = createModel(c.env, workspaceId, settings, "answer");
+  } catch (error) {
+    if (error instanceof AiUnavailableError) throw new HttpError(400, "ai_unavailable", error.message);
+    throw error;
+  }
+  const encoder = new TextEncoder();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const emit = (event: TestChatEvent) => void writer.write(encoder.encode(`${JSON.stringify(event)}\n`)).catch(() => {});
+  c.executionCtx.waitUntil(
+    runTestChat(
+      { env: c.env, workspaceId, workspaceName: workspace?.name ?? "this company", model, config, turns, real: body.real === true, user: testCustomer(body.customer), page, seen: seen.slice(0, 60) },
+      emit,
+    )
+      .then((usage) => recordUsage(c.env, workspaceId, usage))
+      .catch((error: unknown) => emit({ type: "error", message: (error as Error).message || "The AI couldn't answer." }))
+      .finally(() => writer.close().catch(() => {})),
+  );
+  return new Response(readable, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
+});
 
 // AI-25: "Try it" on an action's page: the draft's version of the action, called once for real with
 // the inputs the admin typed (and, for {user.*}, a test customer they typed). Same request, keys and
@@ -173,17 +249,7 @@ agent.post("/workspaces/:id/agent/try-action", async (c) => {
     throw new HttpError(400, "invalid_config", problem ? `Fix this first: ${problem.message}` : "There's no action with this name in the draft.");
   }
   const input = isObject(body.input) ? body.input : {};
-  const raw = isObject(body.customer) ? body.customer : null;
-  const fields = strings(raw);
-  const customer: ToolUser | null = raw
-    ? {
-        id: fields.id ?? "test-customer",
-        email: fields.email ?? null,
-        name: fields.name ?? null,
-        attributes: strings(raw.attributes),
-        secrets: strings(raw.secrets),
-      }
-    : null;
+  const customer = testCustomer(body.customer);
   const secrets = await loadToolSecrets(c.env, workspaceId);
   const { action, result } = await runTool(spec, input, { secrets, user: customer, widgets: config.widgets }, "wtry");
   const keep = result !== undefined && JSON.stringify(result).length <= MAX_TRY_RESULT;

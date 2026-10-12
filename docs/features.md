@@ -123,6 +123,7 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | AI-26 | New action from a sentence: say what the AI should do and paste a curl command from your API docs (or notes); the desk reads the request and keeps any key out of the file, the action's AI writes the description and the customer's details, and Try it starts with the command's values | v1 | shipped | **Shipped 2026-10-12 (D-66).** Onboarding, after AI-25 |
 | AI-27 | Tasks: Procedures renamed Tasks, each task's page shows what it uses (actions set up or not, what they show, Try it, Create it for a missing one), its AI chat edits the steps and their actions together (and creates new ones), and New task starts from when / what / an optional curl command | v1 | shipped | **Shipped 2026-10-12 (D-67).** Onboarding: one place per job instead of three pages |
 | AI-28 | A task's page shows the cards it uses (an action's card, cards the AI fills in) and what each button does: runs a desk action, runs an action on your website (seen there or not), or is handled by your site's own code | v1 | shipped | **Shipped 2026-10-12 (D-68).** For tasks that only show a card and act on the customer's site |
+| AI-29 | Test a task: a Test tab on each task's page to chat as a customer with the unsaved draft, nothing stored; look-ups real, changes pretended unless "Use my real systems"; optional test customer and page; Save as a test | v1 | shipped | **Shipped 2026-10-12 (D-69).** Test before going live, without real conversations or real changes |
 
 ## K — Knowledge base
 
