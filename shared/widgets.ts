@@ -902,3 +902,19 @@ export function widgetActionLine(label: string, meta: WidgetActionMeta): string 
 
 /** The body of an AI message that only showed cards (the inbox preview; the widget hides it). */
 export const WIDGET_ONLY_BODY = "Here's what I found:";
+
+/** D-76: a widget still waiting on the visitor: unused, with a button or field that does something (not just a link or Close). */
+export function widgetWaiting(widget: MessageWidget): boolean {
+  if (widget.used) return false;
+  return widgetActions(widget.root).some((a) => a.action.type !== OPEN_URL && a.action.type !== DISMISS && !(a.item && widget.items?.[a.item]));
+}
+
+/**
+ * D-76: the island shows one open widget per exchange (the visitor's message and the replies to it):
+ * the one the visitor opened from a chip, else the newest still waiting on them, else the newest.
+ * Null when there's at most one (nothing to choose).
+ */
+export function pickOpenWidget<T extends { widget: MessageWidget }>(widgets: T[], picked: string | null): T | null {
+  if (widgets.length < 2) return null;
+  return widgets.find((c) => c.widget.id === picked) ?? widgets.findLast((c) => widgetWaiting(c.widget)) ?? widgets.at(-1)!;
+}

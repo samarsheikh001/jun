@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { actionToolResult, resultShape, sanitizeActions, type MessageAction } from "./actions.ts";
-import { cardControls, cardFromShape, matchWidgetAction, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, parseWidgetFile, renderWidget, toolActionInput, WIDGET_SHOWN_NOTE, WidgetError } from "./widgets.ts";
+import { cardControls, cardFromShape, matchWidgetAction, pickOpenWidget, widgetWaiting, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, parseWidgetFile, renderWidget, toolActionInput, WIDGET_SHOWN_NOTE, WidgetError } from "./widgets.ts";
 import { widgetPageButtons } from "./agent-links.ts";
 
 const cart = {
@@ -107,4 +107,27 @@ test("AI-28: a card's controls and what each one does", () => {
     { label: "Docs", does: { kind: "link" } },
     { label: "Close", does: { kind: "dismiss" } },
   ]);
+});
+
+test("D-76: the island opens one widget: picked, else the newest still waiting, else the newest", () => {
+  const card = (id: string, action?: string, used = false) => ({
+    widget: {
+      id,
+      name: id,
+      root: { type: "Card", children: action ? [{ type: "Button", label: "Go", onClickAction: { type: action, payload: action === "open_url" ? { url: "https://x.io" } : {} } }] : [] },
+      ...(used ? { used: { label: "Go", at: 1 } } : {}),
+    } as never,
+  });
+  const plan = card("plan", "tool:add_seats");
+  const quote = card("quote", "page:search_prices");
+  const usage = card("usage", "open_url");
+  const done = card("done", "tool:add_seats", true);
+  assert.equal(pickOpenWidget([plan], null), null);
+  // The newest waiting one wins over a newer one that only has a link.
+  assert.equal(pickOpenWidget([plan, quote, usage], null), quote);
+  // Nothing waiting (used, or link only): the newest.
+  assert.equal(pickOpenWidget([done, usage], null), usage);
+  // The visitor's pick wins.
+  assert.equal(pickOpenWidget([plan, quote, usage], "plan"), plan);
+  assert.equal(widgetWaiting(card("x").widget), false);
 });

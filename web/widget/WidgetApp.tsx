@@ -3,13 +3,13 @@ import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatR
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
-import { ACTION_ONLY_BODY } from "../../shared/actions.ts";
-import { WIDGET_ONLY_BODY, widgetSummary } from "../../shared/widgets.ts";
+import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
+import { pickOpenWidget, WIDGET_ONLY_BODY, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
 import { playChime, unlockSoundOnInteraction } from "../lib/sound.ts";
-import { AiAnswer } from "./answer.tsx";
+import { AiAnswer, RunSteps } from "./answer.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
 import { Island, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
@@ -901,6 +901,10 @@ function WidgetThread({
   // the page often answers before the server does, and a card shown again in that gap would start
   // it again (an auto action looped, re-running on the page and flooding the server with results).
   const started = useRef(new Set<string>());
+  /** A page action running on the page now (started here, or reported running). */
+  // D-76: the widget the visitor opened from a chip in the island, for the exchange it belongs to.
+  const [pickedWidget, setPickedWidget] = useState<{ exchange: string; id: string } | null>(null);
+  const actionRunning = (a: MessageAction) => Boolean(running[a.runId]) || (started.current.has(a.runId) && a.status === "pending");
   const actionResult = useRef(thread.actionResult);
   actionResult.current = thread.actionResult;
   useEffect(() => {
@@ -921,11 +925,12 @@ function WidgetThread({
     return () => window.removeEventListener("message", onMessage);
   }, []);
   // Follow-ups only while the AI is still the one answering. `cardFirst`: the island's answer view.
-  const renderAnswer = (answer: AiAnswerView, cardFirst = false) => {
+  const renderAnswer = (answer: AiAnswerView, cardFirst = false, peeks: { widget: MessageWidget; open: () => void }[] = []) => {
     const action = answer.action;
     return (
       <AiAnswer
         answer={answer}
+        peeks={peeks}
         {...(handling === "ai" ? { onFollowUp: (q: string) => void send(q, []) } : {})}
         {...(island ? { cardTheme: island.cardTheme } : {})}
         cardFirst={cardFirst}
@@ -1141,6 +1146,28 @@ function WidgetThread({
     const sending = thread.pending.length > 0 || held.length > 0 || Boolean(starting && !conversationId);
     const from = thread.messages.findLastIndex((m) => m.authorType === "visitor");
     const recent = sending ? [] : from >= 0 ? thread.messages.slice(from) : thread.messages.slice(-3);
+    // D-75: a chain of website actions is one AI message per step; the answer view keeps every step
+    // under one "N steps" header from the first (the one running included), at the first step's
+    // place. A step waiting on the customer (Confirm) and any widget stay out of it, shown as ever.
+    const chainSteps = recent.filter((m) => m.authorType === "ai" && m.meta.action && !m.meta.widgets?.length && (m.meta.action.status !== "pending" || actionRunning(m.meta.action)));
+    const anchor = chainSteps[0];
+    const shownRecent = chainSteps.length ? recent.filter((m) => m === anchor || !chainSteps.includes(m)) : recent;
+    // D-76: one open widget per exchange: the one the visitor picked, else the newest still waiting
+    // on them (a button or field not used yet), else the newest. Every other widget is a chip under it.
+    const exchange = recent[0]?.id ?? "";
+    const exchangeWidgets = shownRecent.flatMap((m) => (m.authorType === "ai" && m.meta.widgets?.length ? m.meta.widgets.map((widget) => ({ messageId: m.id, widget })) : []));
+    const openWidget = pickOpenWidget(exchangeWidgets, pickedWidget?.exchange === exchange ? pickedWidget.id : null);
+    const islandAi = (answer: AiAnswerView) => {
+      if (!openWidget || !answer.widgets?.length) return renderAnswer(answer, true);
+      if (answer.messageId !== openWidget.messageId) {
+        // Its widgets are chips under the open one; a reply that was only widgets says nothing more.
+        const body = answer.body.trim();
+        if (!body || body === WIDGET_ONLY_BODY) return null;
+        return renderAnswer({ ...answer, widgets: [] }, true);
+      }
+      const chips = exchangeWidgets.filter((c) => c !== openWidget).map((c) => ({ widget: c.widget, open: () => setPickedWidget({ exchange, id: c.widget.id }) }));
+      return renderAnswer({ ...answer, widgets: [openWidget.widget] }, true, chips);
+    };
     // No header bar: Minimize and End in the corner (on hover), the rest in IslandTop when needed.
     const controls = (
       <IslandControls
@@ -1194,7 +1221,7 @@ function WidgetThread({
               {!conversationId && openerMessage}
               {loading ? <ThreadSkeleton /> : (
                 <MessageList
-                  messages={recent}
+                  messages={shownRecent}
                   pending={[...(starting && !conversationId ? [{ clientMsgId: startingId.current, body: starting, attachments: [] }] : thread.pending), ...held]}
                   mine={(m) => m.authorType === "visitor"}
                   authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
@@ -1207,7 +1234,13 @@ function WidgetThread({
                   aiSteps={thread.aiSteps}
                   onRetry={(p) => thread.send(p.body, p.attachments, p.clientMsgId)}
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
-                  renderAi={(answer) => renderAnswer(answer, true)}
+                  renderAi={(answer) =>
+                    anchor && answer.messageId === anchor.id ? (
+                      <RunSteps actions={chainSteps.map((m) => m.meta.action!)} isRunning={actionRunning} />
+                    ) : (
+                      islandAi(answer)
+                    )
+                  }
                   follow="start"
                   ownText={pressTitle}
                 />

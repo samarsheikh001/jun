@@ -171,19 +171,19 @@ function StepRow({ step }: { step: StepLine }) {
  * while tools run, so the reply only ever grows. Labels are the admin's `status:` text, or a page
  * action's name; nothing else of a server tool reaches the visitor.
  */
-function Steps({ steps, working }: { steps: StepLine[]; working: boolean }) {
-  const [open, setOpen] = useState(true);
+function Steps({ steps, working, folded = false, head }: { steps: StepLine[]; working: boolean; folded?: boolean; head?: string }) {
+  const [open, setOpen] = useState(!folded);
   const rows = (
     <ol className="w-rows">
       {steps.map((s) => <StepRow key={s.id} step={s} />)}
     </ol>
   );
-  if (steps.length === 1) return <div className={`w-steps${working ? " working" : ""}`}>{rows}</div>;
+  if (steps.length === 1 && !folded) return <div className={`w-steps${working ? " working" : ""}`}>{rows}</div>;
   return (
     <div className={`w-steps${working ? " working" : ""}`}>
       <button type="button" className="w-steps-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <svg className="w-steps-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{chevron}</svg>
-        <span className="w-steps-count">{steps.length} steps</span>
+        <span className={`w-steps-count${working ? " w-steps-shimmer" : ""}`}>{head ?? `${steps.length} steps`}</span>
       </button>
       <div className={`w-steps-panel${open ? " open" : ""}`} inert={!open}>
         <div>{rows}</div>
@@ -212,6 +212,7 @@ export function AiAnswer({
   onWidgetChange,
   cardTheme,
   cardFirst = false,
+  peeks = [],
 }: {
   answer: AiAnswerView;
   onFollowUp?: (question: string) => void;
@@ -232,6 +233,8 @@ export function AiAnswer({
    * default) for the bar, the chat window and the island's panel.
    */
   cardFirst?: boolean;
+  /** D-76: the island's other widgets of this exchange (from earlier replies), as chips under the open one. */
+  peeks?: { widget: MessageWidget; open: () => void }[];
 }) {
   const { sources, followUps, streaming, latest, steps: toolSteps } = answer;
   const action = answer.action;
@@ -304,10 +307,13 @@ export function AiAnswer({
           tail={!done && <span className="w-caret" aria-hidden="true" />}
         />
       </div>}
-      {shownCard && widgets.length > 1 && (
+      {shownCard && (widgets.length > 1 || peeks.length > 0) && (
         <div className="w-peeks" role="group" aria-label="More cards">
           {widgets.filter((w) => w !== shownCard).map((w) => (
             <WidgetPeek key={w.id} widget={w} {...(cardTheme ? { theme: cardTheme } : {})} onOpen={() => setOpenCard(w.id)} />
+          ))}
+          {peeks.map((p) => (
+            <WidgetPeek key={p.widget.id} widget={p.widget} {...(cardTheme ? { theme: cardTheme } : {})} onOpen={p.open} />
           ))}
         </div>
       )}
@@ -367,6 +373,25 @@ export function AiAnswer({
 }
 
 /** The step row for a page action: a short title, a chip, and what it did when opened. */
+/**
+ * D-75: the island's answer view keeps a chain of website actions (one AI message per step, each
+ * with a line like "I'll set your pickup") under one "N steps" header, closed, from its first step:
+ * the header reads the running step's name while one runs. The reply it leads to (its widget, its
+ * words) shows under it as the answer. Each row opens to what it did. Undo stays in the full chat
+ * (the panel), which shows every message as it is.
+ */
+export function RunSteps({ actions, isRunning }: { actions: MessageAction[]; isRunning: (action: MessageAction) => boolean }) {
+  if (!actions.length) return null;
+  const steps = actions.map((a) => actionLine(a, isRunning(a), undefined, false, () => {}));
+  const current = steps.find((s) => s.state === "running");
+  const count = steps.length === 1 ? "1 step" : `${steps.length} steps`;
+  return (
+    <div className="w-answer w-run">
+      <Steps steps={steps} working={Boolean(current)} folded head={current ? `${current.label}… · ${count}` : count} />
+    </div>
+  );
+}
+
 function actionLine(action: MessageAction, running: boolean, controls: ActionControls | undefined, undoing: boolean, undo: () => void): StepLine {
   const line: StepLine = { id: action.runId, label: actionTitle(action.name), state: running ? "running" : "done" };
   const chip = actionChip(action);

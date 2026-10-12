@@ -378,6 +378,8 @@
 .ck-peek:hover { background: var(--ck-surface-3); }
 .ck-peek:focus-visible { outline: 2px solid var(--ck-accent); outline-offset: 1px; }
 .ck-peek-icon { display: inline-flex; flex-shrink: 0; color: var(--ck-text-2); }
+/* D-76: a used widget's chip: a check, in the success colour. */
+.ck-peek-used .ck-peek-icon { color: var(--ck-success, #16a34a); }
 .ck-peek-icon img { width: 16px; height: 16px; border-radius: 3px; }
 .ck-peek-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ck-peek-chev { display: inline-flex; flex-shrink: 0; color: var(--ck-text-3); transition: transform 150ms, color 150ms; }

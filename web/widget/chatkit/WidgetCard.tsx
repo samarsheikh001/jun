@@ -1129,10 +1129,11 @@ function peekIcon(root: WidgetNode): ReactNode {
  * Pressing it calls `onOpen` (the host unfolds the card).
  */
 export function WidgetPeek({ widget, theme, onOpen }: { widget: MessageWidget; theme?: "light" | "dark"; onOpen: () => void }) {
-  const summary = useMemo(() => widgetSummary(widget.root), [widget.root]) || widget.name;
+  // D-76: the widget file's own one-line summary first (D-47), else a guess from the card.
+  const summary = useMemo(() => widget.summary?.trim() || widgetSummary(widget.root), [widget.summary, widget.root]) || widget.name;
   return (
-    <button type="button" className={`ck-peek${theme === "dark" ? " ck-dark" : ""}`} aria-label={`Show ${summary}`} onClick={onOpen}>
-      <span className="ck-peek-icon" aria-hidden="true">{peekIcon(widget.root)}</span>
+    <button type="button" className={`ck-peek${theme === "dark" ? " ck-dark" : ""}${widget.used ? " ck-peek-used" : ""}`} aria-label={`Show ${summary}`} onClick={onOpen}>
+      <span className="ck-peek-icon" aria-hidden="true">{widget.used ? <WidgetIcon name="check" size={14} /> : peekIcon(widget.root)}</span>
       <span className="ck-peek-text">{summary}</span>
       <span className="ck-peek-chev" aria-hidden="true"><WidgetIcon name="chevron-right" size={14} /></span>
     </button>
