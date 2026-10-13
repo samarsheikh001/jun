@@ -30,7 +30,7 @@ Then open the Worker's URL, enter the token and create a passkey (fingerprint, f
 
 > **Already have a Jun Desk in this Cloudflare account?** Give the second one its own database, bucket and queue names on the button's form (e.g. `jun-trial`, `jun-trial-files`, `jun-trial-crawl`). With the default names the new Worker binds to the existing `jun-desk` database, `jun-desk-files` bucket and `jun-desk-crawl` queue, so it shares the first desk's conversations and files.
 
-> **If the build stops at "could not push contents of source repo to destination repo",** Cloudflare created your repo with only `README.md` and `wrangler.jsonc` and couldn't copy the rest ([workers-sdk#14553](https://github.com/cloudflare/workers-sdk/issues/14553), a known issue on Cloudflare's side). Use the command line below instead, or push this repo's code into the repo it created, keeping its `wrangler.jsonc`.
+> **If the build stops at "could not push contents of source repo to destination repo",** Cloudflare created your repo with only `README.md` and `wrangler.jsonc` and couldn't copy the rest. GitHub refused the copy: its push protection blocks a push that contains something shaped like a key. Jun's own files no longer carry any (a test's fake Stripe key did), so this should only happen with a fork that adds one ([workers-sdk#14553](https://github.com/cloudflare/workers-sdk/issues/14553) reports the same message). Use the command line below instead, or push the code into the repo it created, keeping its `wrangler.jsonc`; `git push` prints which file GitHub objects to.
 
 Prefer the command line? Clone the repo, then `npm install`, `npx wrangler secret put SETUP_TOKEN` and `npm run build && npm run deploy`.
 
