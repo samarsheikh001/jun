@@ -1279,7 +1279,8 @@ function WidgetThread({
         {shown === "answer" && cardOnly && (
           <div className="i-answer i-card">
             <IslandTop who={null} view={{ label: "Show chat", run: () => setRunOpened(exchange) }} exit={exitButton} />
-            <div className="i-body" role="log">
+            {/* A card taller than the island opens at its bottom, where its buttons are. */}
+            <div className="i-body" role="log" ref={scrollCardOnce}>
               {confirmMsg
                 ? renderAnswer({ body: "", sources: [], followUps: [], streaming: false, latest: true, steps: [], action: confirmMsg.meta.action!, createdAt: confirmMsg.createdAt, messageId: confirmMsg.id }, true)
                 : waitingWidget && renderAnswer(
@@ -1440,6 +1441,15 @@ function WidgetThread({
       <Badge />
     </>
   );
+}
+
+/** D-80: a card taller than the island opens scrolled to its bottom (its buttons), once per card view. */
+const scrolledCards = new WeakSet<HTMLElement>();
+function scrollCardOnce(el: HTMLElement | null) {
+  if (!el || scrolledCards.has(el)) return;
+  scrolledCards.add(el);
+  // After the card has drawn and the island has sized itself.
+  setTimeout(() => el.scrollTo({ top: el.scrollHeight }), 120);
 }
 
 /** Message-shaped placeholders: the visitor's bubble, a reply's lines, and again. */
