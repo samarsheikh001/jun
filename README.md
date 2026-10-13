@@ -28,6 +28,10 @@ Then open the Worker's URL, enter the token and create a passkey (fingerprint, f
 
 > **Use the Workers Paid plan ($5/month) for the AI.** Cloudflare's Free plan gives a Worker 10 ms of CPU per request; reading an AI model's streamed answer takes far more (we measured 0.3–1 s for one widget edit), so on Free, AI replies and the Agent page's AI chats fail now and then with Cloudflare's error 1102. Paid allows 30 s by default. Everything else (inbox, widget, visitors) runs on Free. See [Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
 
+> **Already have a Jun Desk in this Cloudflare account?** Give the second one its own database, bucket and queue names on the button's form (e.g. `jun-trial`, `jun-trial-files`, `jun-trial-crawl`). With the default names the new Worker binds to the existing `jun-desk` database, `jun-desk-files` bucket and `jun-desk-crawl` queue, so it shares the first desk's conversations and files.
+
+> **If the build stops at "could not push contents of source repo to destination repo",** Cloudflare created your repo with only `README.md` and `wrangler.jsonc` and couldn't copy the rest ([workers-sdk#14553](https://github.com/cloudflare/workers-sdk/issues/14553), a known issue on Cloudflare's side). Use the command line below instead, or push this repo's code into the repo it created, keeping its `wrangler.jsonc`.
+
 Prefer the command line? Clone the repo, then `npm install`, `npx wrangler secret put SETUP_TOKEN` and `npm run build && npm run deploy`.
 
 > Passkeys belong to the hostname you create them on. If you move the desk to a custom domain later, sign in on the old URL and add a passkey on the new one, or use `/recover` with the setup token.
