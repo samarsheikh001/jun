@@ -758,3 +758,9 @@ html.island.island-dark {
 .w-act-ghost:disabled { opacity: 0.6; cursor: default; }
 .w-act-error { color: var(--error); font-size: 12.5px; }
 .i-body .w-act { background: var(--surface); }
+
+/* D-77: the island keeps the question to two lines; the run line spins while it goes; a Confirm's inputs sit small under its words. */
+.i-answer .i-body .msg.own .bubble { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.w-answer .w-steps-head .w-step-spin { width: 11px; height: 11px; }
+.w-answer .w-steps.working .w-steps-head .w-steps-chev { display: none; }
+.w-act-inputs { margin: 2px 0 0; color: var(--text-soft); font-size: 12px; line-height: 1.5; }

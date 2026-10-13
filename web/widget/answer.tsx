@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
-import { ACTION_ONLY_BODY, actionChip, actionStatusText, actionSummary, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, actionChip, actionStatusLine, actionStatusText, actionSummary, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { Markdown } from "../components/Markdown.tsx";
@@ -182,6 +182,7 @@ function Steps({ steps, working, folded = false, head }: { steps: StepLine[]; wo
   return (
     <div className={`w-steps${working ? " working" : ""}`}>
       <button type="button" className="w-steps-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {working && head && <span className="w-step-spin" role="img" aria-label="In progress" />}
         <svg className="w-steps-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{chevron}</svg>
         <span className={`w-steps-count${working ? " w-steps-shimmer" : ""}`}>{head ?? `${steps.length} steps`}</span>
       </button>
@@ -380,14 +381,19 @@ export function AiAnswer({
  * words) shows under it as the answer. Each row opens to what it did. Undo stays in the full chat
  * (the panel), which shows every message as it is.
  */
-export function RunSteps({ actions, isRunning }: { actions: MessageAction[]; isRunning: (action: MessageAction) => boolean }) {
-  if (!actions.length) return null;
-  const steps = actions.map((a) => actionLine(a, isRunning(a), undefined, false, () => {}));
-  const current = steps.find((s) => s.state === "running");
-  const count = steps.length === 1 ? "1 step" : `${steps.length} steps`;
+export function RunSteps({ actions, isRunning, busy = false }: { actions: MessageAction[]; isRunning: (action: MessageAction) => boolean; busy?: boolean }) {
+  // D-77: a step that failed and then worked (the AI tried again) shows only as it ended.
+  const shown = actions.filter((a, i) => !(a.status === "error" && actions.slice(i + 1).some((b) => b.name === a.name && b.status === "ok")));
+  if (!shown.length) return null;
+  const steps = shown.map((a) => actionLine(a, isRunning(a), undefined, false, () => {}));
+  const at = shown.findIndex((a) => isRunning(a));
+  // D-77: while the run goes, one line that changes in place: the step running now, else the latest
+  // (the AI is choosing the next one), and which step it is.
+  const live = at >= 0 ? at : shown.length - 1;
+  const head = at >= 0 || busy ? `${actionStatusLine(shown[live]!)}… · step ${live + 1}` : steps.length === 1 ? "1 step" : `${steps.length} steps`;
   return (
     <div className="w-answer w-run">
-      <Steps steps={steps} working={Boolean(current)} folded head={current ? `${current.label}… · ${count}` : count} />
+      <Steps steps={steps} working={at >= 0 || busy} folded head={head} />
     </div>
   );
 }

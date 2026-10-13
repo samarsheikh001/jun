@@ -39,6 +39,8 @@ export interface PageAction {
   visible: boolean;
   /** W-31: the desk widget the page asked to show the result as (`registerAction({ widget })`). */
   widget?: string;
+  /** D-77: what the customer sees while it runs ("Setting your pickup"): the desk's line, else the site's (`registerAction({ status })`). */
+  statusLine?: string;
 }
 
 export type ActionStatus = "pending" | "ok" | "error" | "cancelled" | "gone" | "undone";
@@ -70,6 +72,8 @@ export interface MessageAction {
   card?: string;
   /** W-32: a card's `page:<name>` button offered it, not the AI: its result gets no AI turn. */
   pressed?: true;
+  /** D-77: the line the customer sees while it runs (else one made from its name, `actionStatusLine`). */
+  statusLine?: string;
 }
 
 /** The body of an AI message that only proposed an action (the model wrote no sentence); the widget hides it. */
@@ -146,8 +150,12 @@ function riskFrom(raw: Record<string, unknown>): ActionRisk {
  * D-74: the desk's own setting for how a website action runs (website-actions.yaml: name → auto,
  * confirm or human), over what the site asked for. Actions it doesn't name keep the site's.
  */
-export function withRiskOverrides(actions: PageAction[], overrides: Record<string, ActionRisk>): PageAction[] {
-  return actions.map((a) => (overrides[a.name] && overrides[a.name] !== a.risk ? { ...a, risk: overrides[a.name]! } : a));
+export function withRiskOverrides(actions: PageAction[], overrides: Record<string, ActionRisk>, statusLines: Record<string, string> = {}): PageAction[] {
+  return actions.map((a) => {
+    const risk = overrides[a.name] ?? a.risk;
+    const statusLine = statusLines[a.name] ?? a.statusLine;
+    return risk === a.risk && statusLine === a.statusLine ? a : { ...a, risk, ...(statusLine ? { statusLine } : {}) };
+  });
 }
 
 /** The model's tool name for a page action: pa_ + a safe slug of the registered name. */
@@ -198,7 +206,8 @@ export function sanitizeActions(raw: unknown): PageAction[] {
     }
     const widget = typeof item.widget === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(item.widget) ? item.widget : null;
     byId.delete(id);
-    byId.set(id, { id, name, description, params, required, risk: riskFrom(item), context, visible: item.visible === true, ...(widget ? { widget } : {}) });
+    const statusLine = clean(item.status, MAX_STATUS_LINE);
+    byId.set(id, { id, name, description, params, required, risk: riskFrom(item), context, visible: item.visible === true, ...(widget ? { widget } : {}), ...(statusLine ? { statusLine } : {}) });
   }
 
   const taken = new Set<string>();
@@ -344,6 +353,27 @@ export function actionSummary(action: Pick<MessageAction, "description" | "input
   return inputs.length ? `${action.description} · ${inputs.join(" · ")}` : action.description;
 }
 
+/** D-77: a status line's length, at most. */
+export const MAX_STATUS_LINE = 60;
+/** Short verbs whose -ing form doubles the last letter. */
+const DOUBLES = new Set(["set", "get", "put", "run", "stop", "ship", "plan", "drop", "log", "map", "tag", "pin", "top"]);
+/** Words customers know as capitals. */
+const CAPS = new Set(["csv", "pdf", "url", "id", "api", "sms", "faq", "vat", "eta", "otp"]);
+
+/**
+ * D-77: what the customer sees while a website action runs: its own line (the desk's or the site's),
+ * else one made from its name, verb first: `set_pickup` → "Setting pickup", `export_csv` → "Exporting CSV".
+ */
+export function actionStatusLine(action: { name: string; statusLine?: string }): string {
+  if (action.statusLine) return action.statusLine;
+  const words = action.name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\s-]+/g, " ").trim().toLowerCase().split(" ").filter(Boolean);
+  if (!words.length) return "Working on it";
+  const [verb, ...rest] = words as [string, ...string[]];
+  const ing = DOUBLES.has(verb) ? `${verb}${verb.at(-1)}ing` : verb.endsWith("ie") ? `${verb.slice(0, -2)}ying` : /[^aeiou]e$/.test(verb) && verb !== "be" ? `${verb.slice(0, -1)}ing` : `${verb}ing`;
+  const line = [ing, ...rest.map((w) => (CAPS.has(w) ? w.toUpperCase() : w))].join(" ");
+  return (line[0]!.toUpperCase() + line.slice(1)).slice(0, MAX_STATUS_LINE);
+}
+
 /** A step row's short title from the registered name: `search_places` → "Search places". */
 export function actionTitle(name: string): string {
   const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\s-]+/g, " ").trim().toLowerCase();
@@ -410,6 +440,8 @@ export interface SeenPageAction {
   shape?: Record<string, unknown>;
   /** D-74: how the site asked for it to run (its WebMCP annotations or `risk`), before any desk override. */
   risk?: ActionRisk;
+  /** D-77: the site's own line while it runs (`registerAction({ status })`). */
+  statusLine?: string;
   seenAt: number;
 }
 

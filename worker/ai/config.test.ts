@@ -490,3 +490,23 @@ test("D-74: website-actions.yaml sets how each website action runs, over the sit
   assert.deepEqual(withRiskOverrides(actions, config.websiteActionRisk).map((a) => [a.name, a.risk]), [["set_pickup", "auto"], ["get_form", "auto"], ["refund", "human"]]);
   assert.deepEqual(parseConfig({ ...defaultFiles(), "website-actions.yaml": "- a\n" }).issues.map((i) => i.path), ["website-actions.yaml"]);
 });
+
+test("D-77: website-actions.yaml can give each action the line the customer sees while it runs", async () => {
+  const { withRiskOverrides, sanitizeActions, actionStatusLine } = await import("../../shared/actions.ts");
+  const files = { ...defaultFiles(), "website-actions.yaml": "set_pickup:\n  run: auto\n  status: Setting your pickup\nselect_vehicle:\n  status: Choosing your car\nbad:\n  status: ''\n  speed: fast\n" };
+  const { config, issues } = parseConfig(files);
+  assert.deepEqual(config.websiteActionRisk, { set_pickup: "auto" });
+  assert.deepEqual(config.websiteActionStatus, { set_pickup: "Setting your pickup", select_vehicle: "Choosing your car" });
+  assert.equal(issues.filter((i) => i.path === "website-actions.yaml").length, 2);
+  const actions = sanitizeActions([
+    { name: "set_pickup", description: "Sets the pickup." },
+    { name: "export_csv", description: "Exports.", status: "Preparing your file" },
+    { name: "get_booking_form", description: "Reads the form." },
+  ]);
+  const out = withRiskOverrides(actions, config.websiteActionRisk, config.websiteActionStatus);
+  assert.deepEqual(out.map((a) => actionStatusLine(a)), ["Setting your pickup", "Preparing your file", "Getting booking form"]);
+  assert.equal(actionStatusLine({ name: "export_csv" }), "Exporting CSV");
+  assert.equal(actionStatusLine({ name: "select_vehicle" }), "Selecting vehicle");
+  assert.equal(actionStatusLine({ name: "upgradePlan" }), "Upgrading plan");
+  assert.equal(actionStatusLine({ name: "show_usage" }), "Showing usage");
+});

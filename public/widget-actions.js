@@ -103,7 +103,7 @@
   }
   function describe(id, t) {
     var ctx = typeof t.context == "function" ? safe(t.context) : t.context;
-    return { id: id, name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, risk: t.risk, context: ctx, widget: typeof t.widget == "string" ? t.widget : void 0, visible: safe(function () { return inView(t); }, false) };
+    return { id: id, name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations, risk: t.risk, context: ctx, widget: typeof t.widget == "string" ? t.widget : void 0, status: typeof t.status == "string" ? t.status : void 0, visible: safe(function () { return inView(t); }, false) };
   }
   // The current list (ours first, what's on screen before the rest, then the page's own WebMCP
   // tools), to `cb`; never the functions.

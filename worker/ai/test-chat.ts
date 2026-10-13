@@ -144,7 +144,7 @@ async function runPress(input: RunTestInput, press: TestPress, pageActions: Page
 }
 
 export async function runTestChat(input: RunTestInput, emit: (event: TestChatEvent) => void): Promise<{ inputTokens: number; outputTokens: number }> {
-  const allActions = withRiskOverrides(seenAsPageActions(input.seen), input.config.websiteActionRisk);
+  const allActions = withRiskOverrides(seenAsPageActions(input.seen), input.config.websiteActionRisk, input.config.websiteActionStatus);
   // AI-30: the last turn may be a button's press.
   const last = input.turns.at(-1);
   let pressRun: { tool: NonNullable<TestPress["tool"]>; call: TestCall; widget: MessageWidget | null } | null = null;

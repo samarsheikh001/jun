@@ -490,8 +490,9 @@ export class Conversation extends DurableObject<Env> {
     const name = PAGE_ACTION_BUTTON.exec(meta.type)?.[1];
     if (!name) return null;
     const raw = sent !== undefined ? sanitizeActions(sent) : ((await this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY)) ?? []);
-    // D-74: a website action the desk says a person does still hands off when a button runs it.
-    const list = withRiskOverrides(raw, (await loadAgentConfig(this.env, ref.workspaceId)).websiteActionRisk);
+    // D-74: a website action the desk says a person does still hands off when a button runs it (D-77: with the desk's line).
+    const desk = await loadAgentConfig(this.env, ref.workspaceId);
+    const list = withRiskOverrides(raw, desk.websiteActionRisk, desk.websiteActionStatus);
     const action = list.find((a) => a.id === name) ?? list.find((a) => a.name === name);
     if (!action) return { error: "This page doesn't offer that right now." };
     const input = toolActionInput({ type: meta.type, ...(meta.payload !== undefined ? { payload: meta.payload } : {}) }, meta.values ?? {}, action.params);
@@ -837,7 +838,7 @@ export class Conversation extends DurableObject<Env> {
         user,
         intent: intent?.intent ?? null,
         // D-74: the desk's own setting for each website action wins over the site's.
-        pageActions: rankActions(withRiskOverrides(pageActions ?? [], config.websiteActionRisk), visitor.body),
+        pageActions: rankActions(withRiskOverrides(pageActions ?? [], config.websiteActionRisk, config.websiteActionStatus), visitor.body),
         pagePath: technical.pagePath,
         followUp: followUp ? { name: followUp.name, status: followUp.status as "ok" | "error", result: followUp.result, ...(followUp.card ? { card: true } : {}) } : null,
         shownWidgets: pending.length,
@@ -1114,7 +1115,7 @@ export class Conversation extends DurableObject<Env> {
 
   /** W-31: the Agent page lists the website actions seen on the customer's site (and picks their cards). */
   async #notePageActions(ref: ConversationRef, actions: PageAction[]): Promise<void> {
-    const seen = actions.map((a) => ({ name: a.name, description: a.description, params: Object.keys(a.params), risk: a.risk, ...(a.widget ? { widget: a.widget } : {}) }));
+    const seen = actions.map((a) => ({ name: a.name, description: a.description, params: Object.keys(a.params), risk: a.risk, ...(a.widget ? { widget: a.widget } : {}), ...(a.statusLine ? { statusLine: a.statusLine } : {}) }));
     const key = JSON.stringify(seen);
     if (!seen.length || key === this.#notedActions) return;
     this.#notedActions = key;
@@ -1143,6 +1144,7 @@ export class Conversation extends DurableObject<Env> {
       result: null,
       canUndo: false,
       ...(action.widget ? { widget: action.widget } : {}),
+      ...(action.statusLine ? { statusLine: action.statusLine } : {}),
     };
   }
 

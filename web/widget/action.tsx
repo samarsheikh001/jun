@@ -132,7 +132,9 @@ export function ActionCard({
   } else if (ready) {
     body = (
       <>
-        <p className="w-act-summary">{actionSummary(action)}</p>
+        {/* D-77: what it does in its own words; what it'll use, small under it. */}
+        <p className="w-act-summary">{action.description}</p>
+        {actionSummary({ description: "", input: action.input }) && <p className="w-act-inputs">{actionSummary({ description: "", input: action.input }).replace(/^ · /, "").replace(/^(\w)/, (c) => c.toUpperCase())}</p>}
         <div className="w-act-row">
           <button type="button" className="w-act-btn" onClick={run}>{action.risk === "auto" ? "Run" : "Confirm"}</button>
           <button type="button" className="w-act-ghost" onClick={onCancel}>Cancel</button>

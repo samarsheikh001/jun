@@ -110,29 +110,41 @@ export interface AgentConfig {
   widgets: WidgetSpec[];
   /** D-74: website-actions.yaml: how each action on the customer's site runs, over the site's own setting. */
   websiteActionRisk: Record<string, "auto" | "confirm" | "human">;
+  /** D-77: website-actions.yaml: the line the customer sees while each one runs (`status:`). */
+  websiteActionStatus: Record<string, string>;
 }
 
-/** D-74: website-actions.yaml, a map of action name → auto, confirm or human. */
-function parseWebsiteActions(path: string, text: string, issues: ConfigIssue[]): AgentConfig["websiteActionRisk"] {
+/**
+ * D-74 / D-77: website-actions.yaml, a map of action name → how it runs (auto, confirm or human), or
+ * a map with `run:` and `status:` (the line the customer sees while it runs, ≤ 60 characters).
+ */
+function parseWebsiteActions(path: string, text: string, issues: ConfigIssue[]): { risk: AgentConfig["websiteActionRisk"]; status: AgentConfig["websiteActionStatus"] } {
   const data = yaml(path, text, issues);
-  const out: AgentConfig["websiteActionRisk"] = {};
-  if (data === undefined || data === null) return out;
+  const risk: AgentConfig["websiteActionRisk"] = {};
+  const status: AgentConfig["websiteActionStatus"] = {};
+  if (data === undefined || data === null) return { risk, status };
   if (!isRecord(data)) {
-    issues.push({ path, message: "website-actions.yaml is a map of action name: auto, confirm or human." });
-    return out;
+    issues.push({ path, message: "website-actions.yaml is a map of action name: auto, confirm or human (or run: and status:)." });
+    return { risk, status };
   }
+  const RUN = "use auto (runs without asking), confirm (the customer confirms first) or human (a person does it)";
   for (const [name, value] of Object.entries(data)) {
     if (!/^[\w.-]{1,64}$/.test(name)) {
       issues.push({ path, message: `${name}: not a website action's name.` });
       continue;
     }
-    if (!ACTION_RISKS.includes(value as (typeof ACTION_RISKS)[number])) {
-      issues.push({ path, message: `${name}: use auto (runs without asking), confirm (the customer confirms first) or human (a person does it).` });
-      continue;
+    const entry = isRecord(value) ? value : { run: value };
+    unknownKeys(path, entry, ["run", "status"], issues, `${name}: `);
+    if (entry.run !== undefined) {
+      if (ACTION_RISKS.includes(entry.run as (typeof ACTION_RISKS)[number])) risk[name] = entry.run as (typeof ACTION_RISKS)[number];
+      else issues.push({ path, message: `${name}: ${RUN}.` });
     }
-    out[name] = value as (typeof ACTION_RISKS)[number];
+    if (entry.status !== undefined) {
+      if (typeof entry.status === "string" && entry.status.trim() && entry.status.trim().length <= 60) status[name] = entry.status.trim();
+      else issues.push({ path, message: `${name}: status is one short line (at most 60 characters), like "Setting your pickup".` });
+    }
   }
-  return out;
+  return { risk, status };
 }
 
 export interface ConfigIssue {
@@ -165,7 +177,7 @@ const SKILL_PATH = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
 const TOOL_PATH = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
 const EVAL_PATH = /^evals\/([a-zA-Z0-9_-]+)\.ya?ml$/;
 const WIDGET_PATH = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
-/** D-74: how each action on the customer's website runs, set on the desk. */
+/** D-74 / D-77: how each action on the customer's website runs, and its line, set on the desk. */
 export const WEBSITE_ACTIONS_PATH = "website-actions.yaml";
 const ACTION_RISKS = ["auto", "confirm", "human"] as const;
 export const MAX_WIDGETS = 20;
@@ -593,13 +605,16 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     evals: [],
     widgets: [],
     websiteActionRisk: {},
+    websiteActionStatus: {},
   };
   for (const path of paths) {
     const text = files[path]!;
     let m: RegExpExecArray | null;
     if (path === "AGENTS.md" || path === "README.md") continue;
     if (path === WEBSITE_ACTIONS_PATH) {
-      config.websiteActionRisk = parseWebsiteActions(path, text, issues);
+      const parsed = parseWebsiteActions(path, text, issues);
+      config.websiteActionRisk = parsed.risk;
+      config.websiteActionStatus = parsed.status;
       continue;
     }
     if ((m = SKILL_PATH.exec(path))) {

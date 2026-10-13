@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.ts";
-import type { SeenPageAction } from "../../shared/actions.ts";
+import { actionStatusLine, type SeenPageAction } from "../../shared/actions.ts";
+import { Input } from "@/components/ui/input.tsx";
 import { cardFromShape } from "../../shared/widgets.ts";
 import { widgetPageButtons } from "../../shared/agent-links.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -112,18 +113,42 @@ const RISK_LABEL: Record<Risk, string> = { auto: "Runs without asking", confirm:
 
 /** The desk's setting for each website action (from website-actions.yaml). */
 export function riskOverrides(draft: Record<string, string>): Record<string, Risk> {
+  return Object.fromEntries(Object.entries(siteSettings(draft)).flatMap(([name, s]) => (s.run ? [[name, s.run]] : [])));
+}
+
+const isRisk = (v: unknown): v is Risk => v === "auto" || v === "confirm" || v === "human";
+
+/** D-74 / D-77: the desk's settings per website action: how it runs and the line shown while it does. */
+function siteSettings(draft: Record<string, string>): Record<string, { run?: Risk; status?: string }> {
   const data = draft[RISK_FILE] === undefined ? null : readYaml(draft[RISK_FILE]!);
   if (typeof data !== "object" || data === null || Array.isArray(data)) return {};
-  return Object.fromEntries(Object.entries(data as Record<string, unknown>).filter((e): e is [string, Risk] => e[1] === "auto" || e[1] === "confirm" || e[1] === "human"));
+  const out: Record<string, { run?: Risk; status?: string }> = {};
+  for (const [name, v] of Object.entries(data as Record<string, unknown>)) {
+    if (isRisk(v)) out[name] = { run: v };
+    else if (v && typeof v === "object" && !Array.isArray(v)) {
+      const e = v as Record<string, unknown>;
+      out[name] = { ...(isRisk(e.run) ? { run: e.run } : {}), ...(typeof e.status === "string" && e.status ? { status: e.status } : {}) };
+    }
+  }
+  return out;
+}
+
+/** One action's settings written back: the short form (`name: auto`) unless it has a line too; nothing left, no entry (and no file). */
+function setSetting(cfg: AgentConfig, name: string, next: { run?: Risk | null; status?: string | null }): void {
+  const current = siteSettings(cfg.draft)[name] ?? {};
+  const run = next.run === undefined ? current.run : next.run ?? undefined;
+  // Kept as typed (a trailing space is the next word's start); the desk trims it when it reads the file.
+  const status = next.status === undefined ? current.status : next.status || undefined;
+  const value = status?.trim() ?{ ...(run ? { run } : {}), status } : run ?? "";
+  const text = cfg.draft[RISK_FILE] ?? RISK_HEADER;
+  const written = editYaml(text.trim() ? text : RISK_HEADER, { op: "set", path: [name], value });
+  const left = readYaml(written);
+  cfg.setFile(RISK_FILE, left && typeof left === "object" && Object.keys(left).length ? written : undefined);
 }
 
 /** Sets (or with null, clears) the desk's setting for one website action. */
 function setRisk(cfg: AgentConfig, name: string, risk: Risk | null): void {
-  const text = cfg.draft[RISK_FILE] ?? RISK_HEADER;
-  const next = editYaml(text.trim() ? text : RISK_HEADER, { op: "set", path: [name], value: risk ?? "" });
-  // Nothing left but the header: no file.
-  const left = readYaml(next);
-  cfg.setFile(RISK_FILE, left && typeof left === "object" && Object.keys(left).length ? next : undefined);
+  setSetting(cfg, name, { run: risk });
 }
 
 /** /agent/actions: the actions on the customer's website, each with the card its result shows as. */
@@ -131,6 +156,7 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
   const seen = useSeenPageActions(cfg);
   const widgets = widgetNames(cfg.draft);
   const risks = riskOverrides(cfg.draft);
+  const settings = siteSettings(cfg.draft);
   return (
     <section className="agent-site-actions" aria-labelledby="site-actions-h">
       <div className="agent-site-actions-head">
@@ -165,6 +191,18 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                       <NativeSelectOption key={r} value={r}>{RISK_LABEL[r]}</NativeSelectOption>
                     ))}
                   </NativeSelect>
+                </label>
+                <label className="agent-site-card">
+                  <span>While it runs, the customer sees</span>
+                  <Input
+                    aria-label={`While ${humanize(a.name)} runs, the customer sees`}
+                    className="h-8"
+                    value={settings[a.name]?.status ?? ""}
+                    readOnly={!canEdit}
+                    maxLength={60}
+                    placeholder={actionStatusLine({ name: a.name, ...(a.statusLine ? { statusLine: a.statusLine } : {}) })}
+                    onChange={(e) => setSetting(cfg, a.name, { status: e.target.value || null })}
+                  />
                 </label>
                 <label className="agent-site-card">
                   <span>Show what it returns as</span>

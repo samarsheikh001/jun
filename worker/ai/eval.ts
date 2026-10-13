@@ -90,7 +90,7 @@ function answer(ctx: EvalContext, config: AgentConfig, history: Message[], techn
 async function runCase(ctx: EvalContext, c: EvalCase): Promise<RunResult> {
   const history: Message[] = [];
   // AI-21: the case's page actions go through the same sanitizer as the loader's list.
-  const pageActions = withRiskOverrides(sanitizeActions((c.actions ?? []).map((a) => ({ ...a, id: a.key ? `${a.name}#${a.key}` : a.name }))), ctx.candidate.websiteActionRisk);
+  const pageActions = withRiskOverrides(sanitizeActions((c.actions ?? []).map((a) => ({ ...a, id: a.key ? `${a.name}#${a.key}` : a.name }))), ctx.candidate.websiteActionRisk, ctx.candidate.websiteActionStatus);
   const mocks = new Map((c.actions ?? []).map((a) => [a.name, a.mock]));
   let result: RunResult | null = null;
   for (const [i, body] of c.messages.entries()) {

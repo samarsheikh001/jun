@@ -1151,6 +1151,14 @@ function WidgetThread({
     // place. A step waiting on the customer (Confirm) and any widget stay out of it, shown as ever.
     const chainSteps = recent.filter((m) => m.authorType === "ai" && m.meta.action && !m.meta.widgets?.length && (m.meta.action.status !== "pending" || actionRunning(m.meta.action)));
     const anchor = chainSteps[0];
+    // D-77: while the run goes, its line says what's happening; the loader (and its timer) would repeat it.
+    // Its words while the AI writes ("I'll set your pickup") would show, then go when the step lands: the
+    // line covers them, and the reply that ends the run shows once it's saved.
+    // A step that just ended and is the newest message gets a follow-up turn (`continued` once taken):
+    // between the two the run is still going, not done.
+    const lastStep = recent.at(-1)?.meta.action;
+    const followUpDue = Boolean(lastStep && recent.at(-1) === chainSteps.at(-1) && (lastStep.status === "ok" || lastStep.status === "error") && !lastStep.continued && !lastStep.pressed && Date.now() - recent.at(-1)!.createdAt < 60_000);
+    const runBusy = Boolean(anchor) && (thread.aiThinking || awaitingAi || Boolean(thread.aiStream) || followUpDue || chainSteps.some((m) => actionRunning(m.meta.action!)));
     const shownRecent = chainSteps.length ? recent.filter((m) => m === anchor || !chainSteps.includes(m)) : recent;
     // D-76: one open widget per exchange: the one the visitor picked, else the newest still waiting
     // on them (a button or field not used yet), else the newest. Every other widget is a chip under it.
@@ -1227,8 +1235,8 @@ function WidgetThread({
                   authorLabel={(m) => (m.authorType === "visitor" ? "You" : m.authorType === "ai" ? "AI assistant" : m.authorName ?? "Support")}
                   otherReadSeq={0}
                   typing={thread.typing}
-                  aiStream={thread.aiStream}
-                  aiThinking={thread.aiThinking || awaitingAi}
+                  aiStream={runBusy ? undefined : thread.aiStream}
+                  aiThinking={(thread.aiThinking || awaitingAi) && !runBusy}
                   aiTurn={thread.aiTurn}
                   pendingAuthor="You"
                   aiSteps={thread.aiSteps}
@@ -1236,7 +1244,7 @@ function WidgetThread({
                   onDismiss={(p) => thread.dismissPending(p.clientMsgId)}
                   renderAi={(answer) =>
                     anchor && answer.messageId === anchor.id ? (
-                      <RunSteps actions={chainSteps.map((m) => m.meta.action!)} isRunning={actionRunning} />
+                      <RunSteps actions={chainSteps.map((m) => m.meta.action!)} isRunning={actionRunning} busy={runBusy} />
                     ) : (
                       islandAi(answer)
                     )
