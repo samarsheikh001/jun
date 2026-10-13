@@ -2,7 +2,7 @@
 
 An open-source support desk for B2B SaaS where the AI already knows what broke. The widget on your site notices the failed request or JavaScript error your customer just hit, so when they write "I can't pay my invoice", the AI can answer "your payment request failed with a server error at 14:02, I've flagged it to the team" instead of asking which browser they use. It runs entirely in your own Cloudflare account.
 
-> **Status: v1 release candidate.** Everything below works and is tested end to end. Expect rough edges; [issues](https://github.com/samarsheikh001/jun-desk-2/issues) welcome.
+> **Status: v1 release candidate.** Everything below works and is tested end to end. Expect rough edges; [issues](https://github.com/samarsheikh001/jun/issues) welcome.
 
 What you get:
 
@@ -18,7 +18,7 @@ What you get:
 
 ## Deploy
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/samarsheikh001/jun-desk-2)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/samarsheikh001/jun)
 
 The button copies this repo into your GitHub account, creates the Worker, a D1 database, an R2 bucket, a Queue and the Durable Objects, and asks for one secret:
 
@@ -37,7 +37,7 @@ Prefer the command line? Clone the repo, then `npm install`, `npx wrangler secre
 Pull the new version into your copy of the repo and run `npm run deploy`:
 
 ```sh
-git pull https://github.com/samarsheikh001/jun-desk-2 main
+git pull https://github.com/samarsheikh001/jun main
 npm install && npm run build && npm run deploy
 ```
 

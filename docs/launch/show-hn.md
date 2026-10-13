@@ -6,7 +6,7 @@ Edit before posting; numbers below are real as of 2026-10-05.
 
 **Title:** Show HN: Jun Desk – open-source support desk whose AI sees the error your customer just hit
 
-**URL:** https://github.com/samarsheikh001/jun-desk-2
+**URL:** https://github.com/samarsheikh001/jun
 
 **Text:**
 

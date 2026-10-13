@@ -23,7 +23,7 @@ const MAX_PAGE_CHUNKS = 200;
 export const MAX_FILE_CHUNKS = 1000;
 const MAX_DEPTH = 3;
 const MAX_PAGE_BYTES = 2_000_000;
-const USER_AGENT = "JunDeskBot/0.1 (+https://github.com/samarsheikh001/jun-desk-2)";
+const USER_AGENT = "JunDeskBot/0.1 (+https://github.com/samarsheikh001/jun)";
 const SKIP_EXTENSIONS = /\.(png|jpe?g|gif|webp|svg|ico|pdf|zip|gz|mp4|mp3|webm|woff2?|ttf|css|js|json|xml|txt|csv)$/i;
 
 interface SourceRow {
