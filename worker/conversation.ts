@@ -756,6 +756,8 @@ export class Conversation extends DurableObject<Env> {
     if (!visitor) return false;
     // W-27: a card's press its action's widget_done line already answered.
     if (visitor.meta.widgetAction?.tool?.done) return false;
+    // A teammate answered it (then handed back to the AI): the AI waits for the visitor's next message.
+    if (history.slice(visitorAt + 1).some((m) => m.authorType === "agent")) return false;
     const replyKey = `ai:${visitor.seq}`;
     const chain = history.slice(visitorAt + 1).filter((m) => m.authorType === "ai" && (m.clientMsgId === replyKey || m.clientMsgId.startsWith(`${replyKey}.`))).length;
     // AI-21: after a page action ran (or failed), the AI gets one follow-up turn: the next step of

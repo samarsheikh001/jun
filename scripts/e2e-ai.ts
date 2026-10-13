@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
+import { JOB_DEFAULTS } from "../worker/ai/models.ts";
 
 const AI_TIMEOUT = 120_000;
 const agent = new Client();
@@ -161,7 +162,12 @@ await step("AI-16: per-job models are validated and reported with the model each
   const before = await aiSettings();
   workspaceModel = before.effectiveModels.answer;
   assert.deepEqual(before.settings.models, {});
-  assert.ok(Object.values(before.effectiveModels).every((m) => m === workspaceModel), JSON.stringify(before.effectiveModels));
+  // Every job runs on the workspace model, except a job with its own default for the provider
+  // (JOB_DEFAULTS: the Agent page's `editor` on ChatGPT/OpenAI).
+  const defaults = JOB_DEFAULTS[before.settings.provider as keyof typeof JOB_DEFAULTS] ?? {};
+  for (const [job, model] of Object.entries(before.effectiveModels)) {
+    assert.equal(model, defaults[job as keyof typeof defaults] ?? workspaceModel, `${job}: ${JSON.stringify(before.effectiveModels)}`);
+  }
   for (const models of [{ triage: "x" }, { nudge: "has spaces" }, { nudge: "x".repeat(101) }, { nudge: 5 }, ["nudge"]]) {
     const res = await putAi({ models });
     assert.equal(res.status, 400, JSON.stringify(models));
