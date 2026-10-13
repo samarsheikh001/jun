@@ -1240,7 +1240,8 @@ function WidgetThread({
     const cardName = confirmMsg?.meta.action
       ? confirmMsg.meta.action.description || actionTitle(confirmMsg.meta.action.name)
       : waitingWidget
-        ? (waitingWidget.widget.summary?.replace(/\s+/g, " ").trim() || widgetSummary(waitingWidget.widget.root, 40) || "A card")
+        ? // Its title only ("Get a ride", not "Get a ride · Scheduled pickup"): the line must fit with "tap to finish".
+          ((waitingWidget.widget.summary?.replace(/\s+/g, " ").trim() || widgetSummary(waitingWidget.widget.root, 40) || "A card").split(" · ")[0]!)
         : "";
     const waitingLine = activeCard && cardName ? `${cardName.length > 40 ? `${cardName.slice(0, 39).trimEnd()}…` : cardName} · tap to finish` : null;
     waitingCard.current = {
