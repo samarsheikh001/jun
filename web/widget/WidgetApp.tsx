@@ -4,12 +4,13 @@ import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
-import { pickOpenWidget, WIDGET_ONLY_BODY, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
+import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
 import { playChime, unlockSoundOnInteraction } from "../lib/sound.ts";
-import { AiAnswer, RunSteps } from "./answer.tsx";
+import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
+import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
 import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
 import { Island, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
@@ -821,17 +822,8 @@ function WidgetThread({
   // Messages go out in the order they were written: each waits for the one before it (each first
   // asks the page for its context, and those replies can come back in any order).
   const flushing = useRef<Promise<void>>(Promise.resolve());
-  /**
-   * The island: a card's button was pressed and its answer hasn't come yet. Until the pressed
-   * message is saved (then its meta.widgetAction says so) this is the only sign of it.
-   */
-  const [pressed, setPressed] = useState(false);
-  useEffect(() => {
-    if (lastMessage && (lastMessage.authorType !== "visitor" || pressAnswered)) setPressed(false);
-  }, [lastMessage?.id, pressAnswered]); // eslint-disable-line react-hooks/exhaustive-deps
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
-    setPressed(false);
     if (conversationId ? holding.current > 0 : creating.current) {
       holding.current++;
       setHeld((h) => [...h, { clientMsgId: crypto.randomUUID(), body, attachments }]);
@@ -901,9 +893,33 @@ function WidgetThread({
   // the page often answers before the server does, and a card shown again in that gap would start
   // it again (an auto action looped, re-running on the page and flooding the server with results).
   const started = useRef(new Set<string>());
+  const startAction = (action: MessageAction, input: Record<string, unknown>) => {
+    if (started.current.has(action.runId)) return;
+    started.current.add(action.runId);
+    setRunning((r) => ({ ...r, [action.runId]: true }));
+    postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
+  };
+  // D-78: an action that runs without asking starts here, not from its card: in the island a run
+  // stays a line and the card isn't drawn. Only the newest message, once, and only live (as the card did).
+  const autoAction = lastMessage?.authorType === "ai" ? lastMessage.meta.action : undefined;
+  const autoNow = Boolean(autoAction && autoAction.status === "pending" && autoAction.risk === "auto" && !autoAction.missing.length && Date.now() - lastMessage!.createdAt < AUTO_RUN_WITHIN_MS);
+  useEffect(() => {
+    if (autoNow && autoAction) startAction(autoAction, autoAction.input);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoNow, autoAction?.runId]);
   /** A page action running on the page now (started here, or reported running). */
   // D-76: the widget the visitor opened from a chip in the island, for the exchange it belongs to.
   const [pickedWidget, setPickedWidget] = useState<{ exchange: string; id: string } | null>(null);
+  // D-78: the exchange whose run the visitor opened (tapped the run's line); else a run stays a line.
+  const [runOpened, setRunOpened] = useState<string | null>(null);
+  // D-78: how the latest run ended, read after render: a short reply that needs nothing back folds the island.
+  const runEnd = useRef<{ busy: boolean; fold: (() => void) | null }>({ busy: false, fold: null });
+  const runWasBusy = useRef(false);
+  useEffect(() => {
+    const { busy, fold } = runEnd.current;
+    if (runWasBusy.current && !busy && fold) fold();
+    runWasBusy.current = busy;
+  });
   const actionRunning = (a: MessageAction) => Boolean(running[a.runId]) || (started.current.has(a.runId) && a.status === "pending");
   const actionResult = useRef(thread.actionResult);
   actionResult.current = thread.actionResult;
@@ -935,7 +951,6 @@ function WidgetThread({
         {...(island ? { cardTheme: island.cardTheme } : {})}
         cardFirst={cardFirst}
         onWidgetAction={(messageId, widget, event) => {
-          if (island) setPressed(true);
           // W-09: in order with anything typed before it, with the page's context like a typed message.
           const outcome = new Promise<{ ok: boolean; message?: string }>((resolve) => {
             flushing.current = flushing.current.then(async () => {
@@ -944,11 +959,8 @@ function WidgetThread({
               resolve(thread.sendWidgetAction(event.label, { messageId, widgetId: widget.id, action: event.action, values: event.values, ...(event.item ? { item: event.item } : {}) }, context, actions));
             });
           });
-          // W-27: a refused press (the action's widget_failed line) ends the wait here; the card says why.
-          return outcome.then((r) => {
-            if (!r.ok) setPressed(false);
-            return r;
-          });
+          // W-27: a refused press (the action's widget_failed line) comes back here; the card says why.
+          return outcome;
         }}
         // D-51: ChatKit's handler "client" goes to the host page (the loader's widgetAction event).
         onWidgetClient={(event) => postToHost({ type: "jun:widget", action: { ...event.action, values: event.values, widget: event.widget } })}
@@ -958,12 +970,7 @@ function WidgetThread({
               controls: {
                 running: Boolean(running[action.runId]) || (started.current.has(action.runId) && action.status === "pending"),
                 onInput: (input: Record<string, unknown>) => thread.actionInput(action.runId, input),
-                onRun: (input: Record<string, unknown>) => {
-                  if (started.current.has(action.runId)) return;
-                  started.current.add(action.runId);
-                  setRunning((r) => ({ ...r, [action.runId]: true }));
-                  postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
-                },
+                onRun: (input: Record<string, unknown>) => startAction(action, input),
                 onCancel: () => thread.actionResult(action.runId, "cancelled"),
                 onUndo: () => postToHost({ type: "jun:undo", runId: action.runId }),
                 ...(undoErrors[action.runId] ? { undoError: undoErrors[action.runId] } : {}),
@@ -1195,24 +1202,40 @@ function WidgetThread({
     ) : null;
     const row = <IslandRow logoUrl={island.logoUrl}>{composer}</IslandRow>;
     const live = Boolean(thread.aiStream?.text);
-    // The status-line shape only before the first reply: once there is one, a follow-up keeps the
-    // answer shape (its question, the typing dots or tool steps, then the reply streaming in place),
-    // so the island doesn't collapse to a line and grow back, which reads as the widget blinking.
-    // A card's button press is different: the card is the answer, so the island shrinks to the line
-    // ("Adding seats…") and grows back with the new card. Never for an intent with an exit button
-    // (D-37: the line has no room for it, and it must stay on screen).
+    // While the AI thinks, the island is its one line ("Thinking…", a tool step's label), a follow-up
+    // too (D-78: the island stays small until there's something to read), and grows with the reply.
+    // Never for an intent with an exit button (D-37: the line has no room for it, and it must stay on screen).
     const answered = thread.messages.some((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
-    const widgetTurn = pressed || Boolean(lastMessage?.authorType === "visitor" && lastMessage.meta.widgetAction);
-    const shown: IslandState = state === "answer" && thinking && !loading && (!answered || widgetTurn) && !exitLabel ? "thinking" : state;
+    // D-78: a run of website actions stays the one-line island (its live line) unless the visitor
+    // opens it, or something needs them: a Confirm, a widget waiting on them.
+    const pendingAction = thread.messages.some((m) => m.authorType === "ai" && m.meta.action?.status === "pending" && m.meta.action.risk !== "auto" && !actionRunning(m.meta.action));
+    // An action that runs without asking counts from the moment it arrives, before the page starts it.
+    const autoNext = recent.filter((m) => m.authorType === "ai" && m.meta.action?.status === "pending" && m.meta.action.risk === "auto" && !m.meta.action.missing.length && !actionRunning(m.meta.action) && Date.now() - m.createdAt < AUTO_RUN_WITHIN_MS);
+    const runPill = state === "answer" && (runBusy || autoNext.length > 0) && !pendingAction && !exchangeWidgets.some((c) => widgetWaiting(c.widget)) && runOpened !== exchange && !exitLabel && !loading;
+    const runLabel = runPill ? runLine([...chainSteps, ...autoNext].map((m) => m.meta.action!), actionRunning, true).now : null;
+    // When the run ends with a short reply that asks nothing (one line, no widget, no question), the
+    // island folds to its pill, which shows that reply; a longer one or a question opens as ever.
+    const reply = recent.at(-1);
+    const shortDone = Boolean(anchor && reply && reply.authorType === "ai" && !reply.meta.action && !reply.meta.widgets?.length && reply.body.length <= 80 && !reply.body.includes("?"));
+    runEnd.current = { busy: runPill, fold: shortDone && open && handling === "ai" && runOpened !== exchange ? close : null };
+    // A reply starts in the line: the island grows once it outgrows one line. The few words a model
+    // says before calling an action ("I'll open your usage chart") then never open the card.
+    const streamText = thread.aiStream?.text.replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim() ?? "";
+    const streamLine = state === "answer" && !runPill && streamText && streamText.length <= 60 && !thread.aiStream!.text.includes("\n") && runOpened !== exchange && !exitLabel && !loading ? streamText : null;
+    const shown: IslandState = runPill || streamLine ? "thinking" : state === "answer" && thinking && !loading && !exitLabel && runOpened !== exchange ? "thinking" : state;
     // It folds itself once an answer is done and has had time to be read (8 s plus its reading
     // time, at most 30 s), never while anything waits on the visitor or the AI, nor in an intent's
     // or a teammate's chat (useAutoFold has the rest: in use, or scrolled down).
     const actionWaiting = thread.messages.some((m) => m.authorType === "ai" && m.meta.action?.status === "pending");
     const settled = !thinking && !awaitingAi && !thread.aiThinking && !thread.aiStream && !sending && !running && !actionWaiting && !loading && !error;
     const autoFold = open && shown === "answer" && conversationId && !intent && handling === "ai" && answered && settled ? close : null;
+    // D-79: a one-line pill hugs its line: the working line, and the folded chat's reply (or an unread
+    // teammate reply); the resting pill with its typed-out suggestions keeps its width.
+    const folded = restSummary(thread.messages);
+    const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || (conversationId && folded)));
     return (
-      <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold}>
-        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={restSummary(thread.messages)} chat={Boolean(conversationId)} onOpen={() => island.setOpen(true)} />}
+      <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
+        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} onOpen={() => island.setOpen(true)} />}
         {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (
           <div className="i-open">
@@ -1221,7 +1244,7 @@ function WidgetThread({
             {row}
           </div>
         )}
-        {shown === "thinking" && <StatusLine logoUrl={island.logoUrl} label={running?.label ?? "Thinking…"} />}
+        {shown === "thinking" && <StatusLine logoUrl={island.logoUrl} label={runLabel ?? streamLine ?? running?.label ?? "Thinking…"} onOpen={runLabel ? () => setRunOpened(exchange) : undefined} />}
         {shown === "answer" && (
           <div className="i-answer">
             <IslandTop who={null} view={earlier ? { label: "Earlier", run: () => setShowAll(true) } : null} exit={exitButton} />

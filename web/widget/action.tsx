@@ -9,7 +9,7 @@ import { actionSummary, checkInput, type ActionParam, type MessageAction } from 
 // page (widget-actions.js); this card only talks to it through WidgetApp.
 
 /** An `auto` action proposed longer ago than this isn't run by itself (a reload, not a live reply). */
-const AUTO_RUN_WITHIN_MS = 30_000;
+export const AUTO_RUN_WITHIN_MS = 30_000;
 /** Up to this many choices are buttons; more become a select. */
 const CHIP_LIMIT = 6;
 

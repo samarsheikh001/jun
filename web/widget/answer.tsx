@@ -381,19 +381,26 @@ export function AiAnswer({
  * words) shows under it as the answer. Each row opens to what it did. Undo stays in the full chat
  * (the panel), which shows every message as it is.
  */
-export function RunSteps({ actions, isRunning, busy = false }: { actions: MessageAction[]; isRunning: (action: MessageAction) => boolean; busy?: boolean }) {
-  // D-77: a step that failed and then worked (the AI tried again) shows only as it ended.
+/** D-77: a run's steps as shown (a step that failed and then worked on a retry only as it ended) and its one line. */
+export function runLine(actions: MessageAction[], isRunning: (action: MessageAction) => boolean, busy: boolean): { shown: MessageAction[]; head: string; now: string; working: boolean } {
   const shown = actions.filter((a, i) => !(a.status === "error" && actions.slice(i + 1).some((b) => b.name === a.name && b.status === "ok")));
-  if (!shown.length) return null;
-  const steps = shown.map((a) => actionLine(a, isRunning(a), undefined, false, () => {}));
   const at = shown.findIndex((a) => isRunning(a));
-  // D-77: while the run goes, one line that changes in place: the step running now, else the latest
+  // While the run goes, one line that changes in place: the step running now, else the latest
   // (the AI is choosing the next one), and which step it is.
   const live = at >= 0 ? at : shown.length - 1;
-  const head = at >= 0 || busy ? `${actionStatusLine(shown[live]!)}… · step ${live + 1}` : steps.length === 1 ? "1 step" : `${steps.length} steps`;
+  const working = at >= 0 || busy;
+  const now = shown.length ? `${actionStatusLine(shown[live]!)}…` : "Working on it…";
+  const head = working && shown.length ? `${now} · step ${live + 1}` : shown.length === 1 ? "1 step" : `${shown.length} steps`;
+  return { shown, head, now, working };
+}
+
+export function RunSteps({ actions, isRunning, busy = false }: { actions: MessageAction[]; isRunning: (action: MessageAction) => boolean; busy?: boolean }) {
+  const { shown, head, working } = runLine(actions, isRunning, busy);
+  if (!shown.length) return null;
+  const steps = shown.map((a) => actionLine(a, isRunning(a), undefined, false, () => {}));
   return (
     <div className="w-answer w-run">
-      <Steps steps={steps} working={at >= 0 || busy} folded head={head} />
+      <Steps steps={steps} working={working} folded head={head} />
     </div>
   );
 }

@@ -764,3 +764,11 @@ html.island.island-dark {
 .w-answer .w-steps-head .w-step-spin { width: 11px; height: 11px; }
 .w-answer .w-steps.working .w-steps-head .w-steps-chev { display: none; }
 .w-act-inputs { margin: 2px 0 0; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+/* D-78: a run's line opens to its steps. */
+.i-status-btn { width: 100%; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background 0.15s; }
+.i-status-btn:hover { background: var(--hover); }
+.island-dark .i-status-btn:hover { background: #161618; }
+.i-status-btn:focus-visible { outline-offset: -4px; border-radius: 28px; }
+/* D-79: a one-line pill hugs its line (the box springs to the measured width). */
+.i-hug .i-rest, .i-hug .i-status { width: 100%; }
+.i-hug .i-rest-text { flex: 1 1 auto; }

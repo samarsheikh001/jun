@@ -29,6 +29,9 @@ export type IslandState = "rest" | "nudge" | "open" | "thinking" | "answer" | "p
 
 /** Each state's width; phones cap every width at the frame minus 24px. */
 const WIDTHS: Record<IslandState, number> = { rest: 360, nudge: 440, open: 660, thinking: 420, answer: 560, panel: 660 };
+/** D-79: a one-line pill that hugs its text stays within these. */
+const HUG_MIN = 240;
+const HUG_MAX = 480;
 /** Room around the island kept visible for its shadow (which `.i-shell` keeps well inside it). */
 const GLOW = 32;
 /** The island's distance from the bottom of the viewport (matches `.i-root`'s padding). */
@@ -129,9 +132,10 @@ function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) |
  * The morphing container. New content is drawn off to the side at the state's width and measured;
  * the shell then springs to that exact size (measure, then move). A key per state swaps the content,
  * rising into place from the pill's row with a short fade and un-blur. `autoFold`: set while a
- * finished answer may fold itself (see useAutoFold).
+ * finished answer may fold itself (see useAutoFold). `hug` (D-79): a one-line pill (the working line,
+ * the folded reply) is as wide as its line, within HUG_MIN..HUG_MAX, and springs as the line changes.
  */
-export function Island({ state, live, neon, onOpen, autoFold = null, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; children: ReactNode }) {
+export function Island({ state, live, neon, onOpen, autoFold = null, hug = false, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   useAutoFold(boxRef, autoFold);
@@ -149,24 +153,30 @@ export function Island({ state, live, neon, onOpen, autoFold = null, children }:
     return () => document.removeEventListener("keydown", onKey);
   }, [state, onOpen]);
   const [measured, setMeasured] = useState(56);
+  const [measuredW, setMeasuredW] = useState(HUG_MAX);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
     const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  const w = Math.min(WIDTHS[state], viewport.w - 24);
+  const hugMax = Math.min(HUG_MAX, viewport.w - 24);
+  const w = hug ? Math.min(Math.max(measuredW, HUG_MIN), hugMax) : Math.min(WIDTHS[state], viewport.w - 24);
   // The panel fills what it's given; everything else is as tall as its content.
   const panelHeight = Math.max(240, Math.min(560, viewport.h - edge(viewport.w) - GLOW));
   useEffect(() => {
     const el = content.current;
     if (!el || state === "panel") return;
-    const measure = () => setMeasured(Math.ceil(el.getBoundingClientRect().height));
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setMeasured(Math.ceil(r.height));
+      if (hug) setMeasuredW(Math.ceil(r.width));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [state]);
+  }, [state, hug]);
   // An answer grows to fit (a card and its sentence) up to 720px, leaving the top of the page in
   // view; the panel's height when the screen is short. Only taller answers scroll.
   const answerMax = Math.max(panelHeight, Math.min(720, viewport.h - edge(viewport.w) - GLOW - 48));
@@ -191,11 +201,11 @@ export function Island({ state, live, neon, onOpen, autoFold = null, children }:
   return (
     <div className="i-root">
       {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
-      <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}`} style={{ width: w, height: h }}>
+      <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}`} style={{ width: w, height: h }}>
         {neon && <div className="i-glow" aria-hidden="true" />}
         {neon && <div className="i-ring" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">
-          <div key={state} className="i-view" ref={content} style={{ width: w, ...(state === "panel" ? { height: panelHeight } : state === "answer" ? { maxHeight: answerMax } : {}) }}>
+          <div key={state} className="i-view" ref={content} style={{ ...(hug ? { width: "max-content", minWidth: HUG_MIN, maxWidth: hugMax } : { width: w }), ...(state === "panel" ? { height: panelHeight } : state === "answer" ? { maxHeight: answerMax } : {}) }}>
             {children}
           </div>
         </div>
@@ -242,7 +252,17 @@ export function NudgeLine({ logoUrl, text, from, onAsk, onDismiss }: { logoUrl: 
 }
 
 /** Thinking: one specific line, the running tool step's label when there is one. */
-export function StatusLine({ logoUrl, label }: { logoUrl: string | null; label: string }) {
+export function StatusLine({ logoUrl, label, onOpen }: { logoUrl: string | null; label: string; onOpen?: () => void }) {
+  // D-78: a run's line opens to its steps and the chat.
+  if (onOpen) {
+    return (
+      <button type="button" className="i-status i-status-btn" aria-label={`${label} Show the steps`} onClick={onOpen}>
+        <Mark logoUrl={logoUrl} pulse />
+        <span className="i-status-text" role="status">{label}</span>
+        <span className="i-up" aria-hidden="true">{chevron(CHEVRON_UP)}</span>
+      </button>
+    );
+  }
   return (
     <div className="i-status" role="status">
       <Mark logoUrl={logoUrl} pulse />
