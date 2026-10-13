@@ -2,7 +2,7 @@
 
 An open-source, AI-first customer support desk for B2B SaaS, deployable to your own Cloudflare account in one click: an embeddable website widget, live visitor tracking, an AI agent that answers and takes actions, and a real-time inbox for human agents. Think Intercom/Fin, Chatbase, Crisp — rebuilt for 2026.
 
-## Current phase: v1 launch prep (M0–M7 deployed; M8: wizard, upgrade check and S-08 issues built). Launch later; until then ChatGPT sign-in is always on for the owner's desk (D-27), to be re-gated before launch (checklist in `docs/build-plan.md` M8)
+## Current phase: v1 launch prep (M0–M7 deployed; M8: wizard, upgrade check and S-08 issues built). No production launch for now (D-81); ChatGPT sign-in stays always on for the owner's desk (D-27), re-gating it is backlog (checklist in `docs/build-plan.md` M8)
 
 Plan: `docs/build-plan.md`. Build milestone by milestone; keep the Deploy button working at every step.
 
@@ -71,7 +71,7 @@ Realtime conventions: clients ping every 30 s (auto-answered, works while hibern
 
 Worker conventions: throw `HttpError` for expected failures (rendered as `{ error: { code, message } }`); non-GET API requests must be JSON (CSRF guard in `worker/index.ts`); IDs are prefixed random strings (`newId("usr")`), timestamps are epoch ms; secrets/tokens are stored only as SHA-256 hashes.
 
-**Sign in with ChatGPT is always available for now (D-27), on the owner's desk before launch.** Locally it returns to the dev server on 127.0.0.1; on the deployed desk it ends on a 127.0.0.1 page whose address is pasted back into Settings. Fresh installs still default to Workers AI until an admin signs in. Before launch it must be re-gated (local dev or an explicit opt-in) and the default must stay Workers AI or an API key, since OpenAI's terms cover plan usage for your own use, not serving the public. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
+**Sign in with ChatGPT is always available for now (D-27), on the owner's desk before launch.** Locally it returns to the dev server on 127.0.0.1; on the deployed desk it ends on a 127.0.0.1 page whose address is pasted back into Settings. Fresh installs still default to Workers AI until an admin signs in. Re-gating is backlog (D-81, no production launch for now); if the desk is ever launched for others it must be re-gated (local dev or an explicit opt-in) and the default must stay Workers AI or an API key, since OpenAI's terms cover plan usage for your own use, not serving the public. Use only OpenAI's documented flow, never the Codex `backend-api` workaround.
 
 ## Docs map
 
