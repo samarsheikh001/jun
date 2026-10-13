@@ -3,7 +3,8 @@ import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatR
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
-import { ACTION_ONLY_BODY, actionTitle, type MessageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
+import { actionWaits, restSummary, waitingCardLine } from "../../shared/island.ts";
 import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
@@ -916,12 +917,13 @@ function WidgetThread({
   const runEnd = useRef<{ busy: boolean; fold: (() => void) | null }>({ busy: false, fold: null });
   const runWasBusy = useRef(false);
   // D-80: the card waiting on the visitor, read after render: a new one opens a collapsed island.
-  const waitingCard = useRef<{ key: string | null; fresh: boolean; open: (() => void) | null }>({ key: null, fresh: false, open: null });
-  const seenCard = useRef<string | null | undefined>(undefined);
+  const waitingCard = useRef<{ key: string | null; fresh: boolean; loaded: boolean; open: (() => void) | null }>({ key: null, fresh: false, loaded: false, open: null });
+  const seenCard = useRef<{ key: string | null; loaded: boolean } | undefined>(undefined);
   useEffect(() => {
-    const { key, fresh, open: openIt } = waitingCard.current;
-    if (seenCard.current !== undefined && key && key !== seenCard.current && fresh && openIt) openIt();
-    seenCard.current = key;
+    const { key, fresh, loaded, open: openIt } = waitingCard.current;
+    // Only a card that arrives while the chat is already on screen: not one found as its messages load.
+    if (seenCard.current?.loaded && key && key !== seenCard.current.key && fresh && openIt) openIt();
+    seenCard.current = { key, loaded };
   });
   useEffect(() => {
     const { busy, fold } = runEnd.current;
@@ -1228,7 +1230,7 @@ function WidgetThread({
     // D-80: the one card waiting on the visitor (a Confirm or missing details, else the open widget
     // while it still waits). The island is then that card, whole, over its row: no question, steps or
     // words around it ("Show chat" has them), and it never folds itself away while the card waits.
-    const confirmMsg = recent.findLast((m) => m.authorType === "ai" && m.meta.action?.status === "pending" && !actionRunning(m.meta.action) && (m.meta.action.risk !== "auto" || m.meta.action.missing.length > 0));
+    const confirmMsg = recent.findLast((m) => m.authorType === "ai" && actionWaits(m.meta.action) && !actionRunning(m.meta.action));
     const shownWidget = openWidget ?? (exchangeWidgets.length === 1 ? exchangeWidgets[0]! : null);
     const waitingWidget = shownWidget && widgetWaiting(shownWidget.widget) ? shownWidget : null;
     const activeCard = Boolean(confirmMsg || waitingWidget);
@@ -1237,16 +1239,13 @@ function WidgetThread({
     // while the island is collapsed opens it (that's when the visitor is needed). Not for an old one
     // found on load.
     const cardMsg = confirmMsg ?? (waitingWidget ? recent.find((m) => m.id === waitingWidget.messageId) : undefined);
-    const cardName = confirmMsg?.meta.action
-      ? confirmMsg.meta.action.description || actionTitle(confirmMsg.meta.action.name)
-      : waitingWidget
-        ? // Its title only ("Get a ride", not "Get a ride · Scheduled pickup"): the line must fit with "tap to finish".
-          ((waitingWidget.widget.summary?.replace(/\s+/g, " ").trim() || widgetSummary(waitingWidget.widget.root, 40) || "A card").split(" · ")[0]!)
-        : "";
-    const waitingLine = activeCard && cardName ? `${cardName.length > 40 ? `${cardName.slice(0, 39).trimEnd()}…` : cardName} · tap to finish` : null;
+    // Before this chat's messages load (a page load with the island folded), the server's line stands in.
+    const serverLine = thread.messages.length ? null : (summary?.islandLine ?? null);
+    const waitingLine = confirmMsg?.meta.action ? waitingCardLine({ action: confirmMsg.meta.action }) : waitingWidget ? waitingCardLine({ widget: waitingWidget.widget }) : serverLine?.waiting ? serverLine.text : null;
     waitingCard.current = {
       key: activeCard && cardMsg ? `${cardMsg.id}:${waitingWidget?.widget.id ?? "action"}` : null,
       fresh: Boolean(cardMsg && Date.now() - cardMsg.createdAt < 60_000),
+      loaded: thread.messages.length > 0,
       open: !open && conversationId && handling === "ai" ? () => island.setOpen(true) : null,
     };
     runEnd.current = { busy: runPill, fold: shortDone && !activeCard && open && handling === "ai" && runOpened !== exchange ? close : null };
@@ -1263,7 +1262,7 @@ function WidgetThread({
     const autoFold = open && shown === "answer" && conversationId && !intent && handling === "ai" && answered && settled ? close : null;
     // D-79: a one-line pill hugs its line: the working line, and the folded chat's reply (or an unread
     // teammate reply); the resting pill with its typed-out suggestions keeps its width.
-    const folded = restSummary(thread.messages);
+    const folded = restSummary(thread.messages) ?? (serverLine && !serverLine.waiting ? serverLine.text : null);
     const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || waitingLine || (conversationId && folded)));
     return (
       <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
@@ -1493,27 +1492,6 @@ function useIslandState({ island, open, hasChat, conversationId, opener, intent,
   return { state, showAll, setShowAll, dismissNudge: () => setNudgeShown(false) };
 }
 
-/**
- * D-39: the folded island's line for its chat, like a live activity: the last reply's first card
- * in a few words (the widget file's own `summary` line, D-47, else a guess from the card: "Team
- * plan · active"), else the reply's first sentence without its [n] markers; at most 60
- * characters. Null when there's no reply to sum up.
- */
-function restSummary(messages: Message[], max = 60): string | null {
-  const last = messages.findLast((m) => (m.authorType === "ai" || m.authorType === "agent") && !m.internal);
-  if (!last) return null;
-  const clip = (line: string) => (line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line);
-  const card = last.meta.widgets?.[0];
-  const own = card?.summary?.replace(/\s+/g, " ").trim();
-  if (own) return clip(own);
-  const fromCard = card ? widgetSummary(card.root, max) : "";
-  if (fromCard) return fromCard;
-  if (last.body === ACTION_ONLY_BODY || last.body === WIDGET_ONLY_BODY) return null;
-  const text = last.body.replace(/\s*\[\d{1,2}\]/g, "").replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim();
-  const sentence = /^.+?[.!?](?=\s|$)/.exec(text)?.[0] ?? text;
-  if (!sentence) return null;
-  return clip(sentence);
-}
 
 /**
  * The island's title for a card's button press: the stored body is only the button's label

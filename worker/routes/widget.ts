@@ -20,6 +20,7 @@ import { storeUpload } from "./files.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { loadAgentConfig } from "../ai/config-store.ts";
 import { intentSkill } from "../ai/config.ts";
+import { islandLine } from "../../shared/island.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
 // random token their browser keeps (sent as `X-Visitor-Token`, or as the second
@@ -322,7 +323,12 @@ widget.get("/widget/:key/conversations", async (c) => {
   const rows = await c.env.DB.prepare(`${SUMMARY_SELECT} WHERE c.contact_id = ? AND c.inbox_id = ? ORDER BY c.last_message_at DESC LIMIT 50`)
     .bind(contactId, inbox.inboxId)
     .all<SummaryRow>();
-  return c.json({ conversations: rows.results.map((r) => forVisitor(toSummary(r))) });
+  const conversations = rows.results.map((r) => forVisitor(toSummary(r)));
+  // D-80: the folded island's line for the ongoing chat (a waiting card, else the last reply), so it
+  // shows on a page load without the widget fetching the history. Only its latest messages are read.
+  const ongoing = conversations.find((s) => s.status !== "resolved");
+  if (ongoing) ongoing.islandLine = islandLine(await loadMessages(c.env.DB, ongoing.id, { limit: 30, includeInternal: false }), Date.now());
+  return c.json({ conversations });
 });
 
 // Starts a conversation with its first message. With `inviteId` (V-07), the agent's invite

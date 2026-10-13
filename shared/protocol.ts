@@ -3,6 +3,7 @@
 
 import type { ActionStatus, MessageAction } from "./actions.ts";
 import type { ConversationIntent } from "./intents.ts";
+import type { IslandLine } from "./island.ts";
 import type { NotificationPayload } from "./notifications.ts";
 import type { MessageWidget, WidgetActionMeta } from "./widgets.ts";
 
@@ -109,6 +110,8 @@ export interface ConversationSummary {
   csat: { rating: CsatRating | null; ratedThisRound: boolean };
   /** AI-20: the intent the host app opened the chat with (null otherwise). Agents only; always null for visitors. */
   intent: ConversationIntent | null;
+  /** D-80: visitors only, on the widget's list, for the ongoing chat: the folded island's line (a waiting card, else the last reply), so it shows before the messages load. */
+  islandLine?: IslandLine | null;
 }
 
 /** Messages a client sends on a conversation socket. */
