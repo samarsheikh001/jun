@@ -772,3 +772,11 @@ html.island.island-dark {
 /* D-79: a one-line pill hugs its line (the box springs to the measured width). */
 .i-hug .i-rest, .i-hug .i-status { width: 100%; }
 .i-hug .i-rest-text { flex: 1 1 auto; }
+/* D-80: the island as the one card waiting on the visitor, over its row. */
+.i-card .i-body { padding: 4px 20px 6px; }
+.i-card .i-top { padding-top: 10px; }
+@media (max-width: 480px) { .i-card .i-body { padding-left: 16px; padding-right: 16px; } }
+/* D-80: collapsed with a card still waiting: a small accent dot and a brighter line. */
+.i-wait-dot { width: 6px; height: 6px; flex: none; margin-right: -4px; border-radius: 50%; background: #ff9f0a; animation: i-pulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .i-wait-dot { animation: none; } }
+.i-rest-wait .i-rest-text { color: var(--text); }

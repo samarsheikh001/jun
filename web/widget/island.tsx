@@ -225,12 +225,14 @@ export function Mark({ logoUrl, pulse = false }: { logoUrl: string | null; pulse
  * Folded with a chat, `summary` (its last answer in a few words) stands in for the typewriter; an
  * unread teammate reply still wins.
  */
-export function RestPill({ logoUrl, suggestions, placeholder, unread, summary = null, chat = false, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; summary?: string | null; chat?: boolean; onOpen: () => void }) {
-  const line = unread ?? (chat ? summary : null);
+export function RestPill({ logoUrl, suggestions, placeholder, unread, summary = null, chat = false, waiting = null, onOpen }: { logoUrl: string | null; suggestions: string[]; placeholder: string; unread: string | null; summary?: string | null; chat?: boolean; waiting?: string | null; onOpen: () => void }) {
+  // D-80: a card still waiting on the visitor wins over the reply's summary: what it is, and a nudge.
+  const line = unread ?? waiting ?? (chat ? summary : null);
   return (
-    <button type="button" className="i-rest" aria-label={unread ?? (chat ? (summary ? `Open the chat: ${summary}` : "Open the chat") : "Ask this page anything")} onClick={onOpen}>
+    <button type="button" className={`i-rest${waiting && !unread ? " i-rest-wait" : ""}`} aria-label={unread ?? (waiting ? `Open: ${waiting}` : chat ? (summary ? `Open the chat: ${summary}` : "Open the chat") : "Ask this page anything")} onClick={onOpen}>
       <Mark logoUrl={logoUrl} pulse={Boolean(unread)} />
-      {line ? <span className={`i-rest-text${unread ? "" : " i-rest-sum"}`}>{line}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
+      {waiting && !unread && <span className="i-wait-dot" aria-hidden="true" />}
+      {line ? <span className={`i-rest-text${unread || waiting ? "" : " i-rest-sum"}`}>{line}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
       {chat ? <span className="i-up" aria-hidden="true">{chevron(CHEVRON_UP)}</span> : <kbd className="i-kbd" aria-hidden="true">/</kbd>}
     </button>
   );

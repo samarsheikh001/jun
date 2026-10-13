@@ -3,7 +3,7 @@ import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatR
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
-import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, actionTitle, type MessageAction } from "../../shared/actions.ts";
 import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
@@ -915,6 +915,14 @@ function WidgetThread({
   // D-78: how the latest run ended, read after render: a short reply that needs nothing back folds the island.
   const runEnd = useRef<{ busy: boolean; fold: (() => void) | null }>({ busy: false, fold: null });
   const runWasBusy = useRef(false);
+  // D-80: the card waiting on the visitor, read after render: a new one opens a collapsed island.
+  const waitingCard = useRef<{ key: string | null; fresh: boolean; open: (() => void) | null }>({ key: null, fresh: false, open: null });
+  const seenCard = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const { key, fresh, open: openIt } = waitingCard.current;
+    if (seenCard.current !== undefined && key && key !== seenCard.current && fresh && openIt) openIt();
+    seenCard.current = key;
+  });
   useEffect(() => {
     const { busy, fold } = runEnd.current;
     if (runWasBusy.current && !busy && fold) fold();
@@ -1217,7 +1225,30 @@ function WidgetThread({
     // island folds to its pill, which shows that reply; a longer one or a question opens as ever.
     const reply = recent.at(-1);
     const shortDone = Boolean(anchor && reply && reply.authorType === "ai" && !reply.meta.action && !reply.meta.widgets?.length && reply.body.length <= 80 && !reply.body.includes("?"));
-    runEnd.current = { busy: runPill, fold: shortDone && open && handling === "ai" && runOpened !== exchange ? close : null };
+    // D-80: the one card waiting on the visitor (a Confirm or missing details, else the open widget
+    // while it still waits). The island is then that card, whole, over its row: no question, steps or
+    // words around it ("Show chat" has them), and it never folds itself away while the card waits.
+    const confirmMsg = recent.findLast((m) => m.authorType === "ai" && m.meta.action?.status === "pending" && !actionRunning(m.meta.action) && (m.meta.action.risk !== "auto" || m.meta.action.missing.length > 0));
+    const shownWidget = openWidget ?? (exchangeWidgets.length === 1 ? exchangeWidgets[0]! : null);
+    const waitingWidget = shownWidget && widgetWaiting(shownWidget.widget) ? shownWidget : null;
+    const activeCard = Boolean(confirmMsg || waitingWidget);
+    const cardOnly = activeCard && runOpened !== exchange && !loading && !sending;
+    // Collapsed, the pill says a card waits ("Confirm ride · tap to finish"); a card that arrives
+    // while the island is collapsed opens it (that's when the visitor is needed). Not for an old one
+    // found on load.
+    const cardMsg = confirmMsg ?? (waitingWidget ? recent.find((m) => m.id === waitingWidget.messageId) : undefined);
+    const cardName = confirmMsg?.meta.action
+      ? confirmMsg.meta.action.description || actionTitle(confirmMsg.meta.action.name)
+      : waitingWidget
+        ? (waitingWidget.widget.summary?.replace(/\s+/g, " ").trim() || widgetSummary(waitingWidget.widget.root, 40) || "A card")
+        : "";
+    const waitingLine = activeCard && cardName ? `${cardName.length > 40 ? `${cardName.slice(0, 39).trimEnd()}…` : cardName} · tap to finish` : null;
+    waitingCard.current = {
+      key: activeCard && cardMsg ? `${cardMsg.id}:${waitingWidget?.widget.id ?? "action"}` : null,
+      fresh: Boolean(cardMsg && Date.now() - cardMsg.createdAt < 60_000),
+      open: !open && conversationId && handling === "ai" ? () => island.setOpen(true) : null,
+    };
+    runEnd.current = { busy: runPill, fold: shortDone && !activeCard && open && handling === "ai" && runOpened !== exchange ? close : null };
     // A reply starts in the line: the island grows once it outgrows one line. The few words a model
     // says before calling an action ("I'll open your usage chart") then never open the card.
     const streamText = thread.aiStream?.text.replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim() ?? "";
@@ -1227,15 +1258,15 @@ function WidgetThread({
     // time, at most 30 s), never while anything waits on the visitor or the AI, nor in an intent's
     // or a teammate's chat (useAutoFold has the rest: in use, or scrolled down).
     const actionWaiting = thread.messages.some((m) => m.authorType === "ai" && m.meta.action?.status === "pending");
-    const settled = !thinking && !awaitingAi && !thread.aiThinking && !thread.aiStream && !sending && !running && !actionWaiting && !loading && !error;
+    const settled = !thinking && !awaitingAi && !thread.aiThinking && !thread.aiStream && !sending && !running && !actionWaiting && !activeCard && !loading && !error;
     const autoFold = open && shown === "answer" && conversationId && !intent && handling === "ai" && answered && settled ? close : null;
     // D-79: a one-line pill hugs its line: the working line, and the folded chat's reply (or an unread
     // teammate reply); the resting pill with its typed-out suggestions keeps its width.
     const folded = restSummary(thread.messages);
-    const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || (conversationId && folded)));
+    const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || waitingLine || (conversationId && folded)));
     return (
       <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
-        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} onOpen={() => island.setOpen(true)} />}
+        {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} waiting={waitingLine} onOpen={() => island.setOpen(true)} />}
         {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (
           <div className="i-open">
@@ -1245,7 +1276,24 @@ function WidgetThread({
           </div>
         )}
         {shown === "thinking" && <StatusLine logoUrl={island.logoUrl} label={runLabel ?? streamLine ?? running?.label ?? "Thinking…"} onOpen={runLabel ? () => setRunOpened(exchange) : undefined} />}
-        {shown === "answer" && (
+        {shown === "answer" && cardOnly && (
+          <div className="i-answer i-card">
+            <IslandTop who={null} view={{ label: "Show chat", run: () => setRunOpened(exchange) }} exit={exitButton} />
+            <div className="i-body" role="log">
+              {confirmMsg
+                ? renderAnswer({ body: "", sources: [], followUps: [], streaming: false, latest: true, steps: [], action: confirmMsg.meta.action!, createdAt: confirmMsg.createdAt, messageId: confirmMsg.id }, true)
+                : waitingWidget && renderAnswer(
+                    { body: "", sources: [], followUps: [], streaming: false, latest: true, steps: [], widgets: [waitingWidget.widget], messageId: waitingWidget.messageId },
+                    true,
+                    exchangeWidgets.filter((c) => c !== waitingWidget).map((c) => ({ widget: c.widget, open: () => setPickedWidget({ exchange, id: c.widget.id }) })),
+                  )}
+              {error && <p className="i-error" role="alert">{error}</p>}
+            </div>
+            {row}
+            {controls}
+          </div>
+        )}
+        {shown === "answer" && !cardOnly && (
           <div className="i-answer">
             <IslandTop who={null} view={earlier ? { label: "Earlier", run: () => setShowAll(true) } : null} exit={exitButton} />
             <div className="i-body" role="log">
