@@ -147,9 +147,10 @@ html.mini[data-morph^="pill"]::view-transition-old(jun-composer), html.mini[data
 @keyframes w-vt-in { from { opacity: 0; } }
 
 /* The visitor's earlier conversations (the reference had one chat at a time): suggestion-list type, button rows. */
-.w-home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
-.w-history { flex: 1; padding: 20px 16px 16px; }
-.w-history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.w-home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.w-history { flex: 1; min-width: 0; padding: 20px 16px 16px; }
+/* minmax(0, 1fr): a grid column grows to its longest preview otherwise, and the list scrolled sideways. */
+.w-history ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .w-shell .w-conv { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; text-align: left; }
 .w-conv-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .w-conv-preview { font-size: 13px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
