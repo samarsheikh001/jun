@@ -375,6 +375,9 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
     setError(null);
     api<{ report: MetricsReport }>(`/workspaces/${workspaceId}/metrics?days=${days}&tz=${encodeURIComponent(timezone)}`).then(
       (r) => {
+        // The same days as the copy already on screen: keep that series, so the chart doesn't redraw.
+        const shown = reportCache.get(`${workspaceId}:${days}`)?.conversations.series;
+        if (shown && JSON.stringify(shown) === JSON.stringify(r.report.conversations.series)) r.report.conversations.series = shown;
         reportCache.set(`${workspaceId}:${days}`, r.report);
         if (current) setReport(r.report);
       },
