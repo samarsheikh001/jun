@@ -2,7 +2,7 @@
 // version here and in package.json together (shared/version.test.ts checks they match); pushing
 // the tag makes the GitHub Release that installs update to (.github/workflows/update-jun.yml).
 
-export const JUN_VERSION = "0.1.2";
+export const JUN_VERSION = "0.1.3";
 
 /** The GitHub repo releases come from. */
 export const JUN_UPSTREAM = "samarsheikh001/jun";
