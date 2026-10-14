@@ -1,3 +1,4 @@
+import { memo, type ComponentType } from "react";
 import type { MetricsReport } from "../../shared/metrics.ts";
 import { Bar } from "@/components/dither-kit/bar.tsx";
 import { BarChart } from "@/components/dither-kit/bar-chart.tsx";
@@ -17,8 +18,17 @@ import { DONUT_SLICES, SLICE_COLORS } from "./topic-colors.ts";
 // A-01 / A-02: the Dashboard's other Dither Kit charts (share donuts, topics radar, page and team bars),
 // lazy-loaded with DayChart so only the Dashboard pays for motion + d3.
 
+/**
+ * Each chart redraws only when its data really changes. The Dashboard re-renders on every hover of
+ * the day chart (it shows the hovered day) and builds these props afresh (`.map`), and Dither Kit
+ * replays its entrance animation for new data: the Conversations sparkline went blank and redrew
+ * on each mouse move. The props are small, so comparing them by value is cheap.
+ */
+const sameProps = (a: object, b: object) => JSON.stringify(a) === JSON.stringify(b);
+const byValue = <P extends object>(chart: ComponentType<P>) => memo(chart, sameProps);
+
 /** The Conversations headline's sparkline: chats per day. */
-export function KpiSpark({ data }: { data: number[] }) {
+function KpiSparkChart({ data }: { data: number[] }) {
   return (
     <div className="dither kpi-spark">
       <Sparkline data={data} color="blue" bloom="low" animate />
@@ -32,7 +42,7 @@ type Topic = MetricsReport["topics"]["list"][number];
  * Share of a whole per item (topics, handoff reasons): the first DONUT_SLICES in colour, the rest
  * one grey slice. Config keys are slice ids, since names can be anything.
  */
-export function ShareDonut({ items, total, otherLabel }: { items: { name: string; count: number }[]; total: number; otherLabel: string }) {
+function ShareDonutChart({ items, total, otherLabel }: { items: { name: string; count: number }[]; total: number; otherLabel: string }) {
   const top = items.slice(0, DONUT_SLICES);
   const other = total - top.reduce((s, t) => s + t.count, 0);
   const data = [
@@ -55,7 +65,7 @@ export function ShareDonut({ items, total, otherLabel }: { items: { name: string
 const PAGE_CONFIG: ChartConfig = { chats: { label: "Chats", color: "blue" } };
 
 /** Chats started per page; `label` is short enough for the axis, `page` the full one for the tooltip. */
-export function PageBars({ pages }: { pages: { label: string; page: string; chats: number }[] }) {
+function PageBarsChart({ pages }: { pages: { label: string; page: string; chats: number }[] }) {
   return (
     <div className="dither dither-bars short">
       <BarChart data={pages} config={PAGE_CONFIG} bloom="low" margins={{ top: 12 }}>
@@ -75,7 +85,7 @@ const RADAR_CONFIG: ChartConfig = {
 };
 
 /** Each topic is an axis: how many chats it brings, and how many of them the AI resolved alone. Needs 3+ topics. */
-export function TopicRadar({ topics, showAi }: { topics: Topic[]; showAi: boolean }) {
+function TopicRadarChart({ topics, showAi }: { topics: Topic[]; showAi: boolean }) {
   const data = topics.slice(0, 6).map((t) => ({ topic: t.name, chats: t.count, aiResolved: t.aiResolved }));
   return (
     <div className="dither dither-radar">
@@ -95,7 +105,7 @@ const TEAM_CONFIG: ChartConfig = {
 };
 
 /** Replies and conversations per teammate who replied in the period (most first, up to 8). */
-export function TeamBars({ teammates }: { teammates: MetricsReport["teammates"] }) {
+function TeamBarsChart({ teammates }: { teammates: MetricsReport["teammates"] }) {
   const data = teammates
     .filter((t) => t.replies > 0)
     .slice(0, 8)
@@ -114,3 +124,9 @@ export function TeamBars({ teammates }: { teammates: MetricsReport["teammates"] 
     </div>
   );
 }
+
+export const KpiSpark = byValue(KpiSparkChart);
+export const ShareDonut = byValue(ShareDonutChart);
+export const PageBars = byValue(PageBarsChart);
+export const TopicRadar = byValue(TopicRadarChart);
+export const TeamBars = byValue(TeamBarsChart);
