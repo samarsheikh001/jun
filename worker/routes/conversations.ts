@@ -5,13 +5,12 @@ import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
-import { applyAppearance } from "../../shared/appearance.ts";
-import { parseHours } from "../../shared/hours.ts";
-import { parseAssignment } from "../../shared/inbox.ts";
 import { notifyTeam } from "../lib/notify.ts";
-import { parseOpeners } from "../../shared/openers.ts";
 import { newId } from "../lib/crypto.ts";
-import { normalizeDomains } from "../lib/origins.ts";
+import { applyInboxPatch } from "../lib/inbox-settings.ts";
+import { recordDeskChange } from "../lib/desk.ts";
+import { deskFromSettings } from "../ai/desk-file.ts";
+import { loadAiSettings } from "../ai/providers.ts";
 import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 import { storeUpload } from "./files.ts";
@@ -65,46 +64,19 @@ conversations.patch("/workspaces/:id/inbox", async (c) => {
   const inbox = await c.env.DB.prepare("SELECT id, settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ id: string; settings: string }>();
   if (!inbox) throw new HttpError(404, "not_found", "No widget inbox.");
   const settings = JSON.parse(inbox.settings) as Record<string, unknown>;
-  if (typeof body.proactive === "boolean") settings.proactive = body.proactive;
-  // W-12: ask visitors to rate resolved conversations (on unless turned off).
-  if (typeof body.csat === "boolean") settings.csat = body.csat;
-  // W-04 appearance.
+  const before = deskFromSettings(settings, await loadAiSettings(c.env, workspaceId));
+  const next = structuredClone(settings);
+  // Proactive help, CSAT, appearance, hours, assignment, openers, allowed websites: the same checks as desk.yaml.
   try {
-    applyAppearance(settings, body);
+    applyInboxPatch(next, body, () => newId("op"));
   } catch (error) {
     throw new HttpError(400, "invalid_field", (error as Error).message);
   }
-  // I-10 business hours.
-  if (body.hours !== undefined) {
-    try {
-      settings.hours = parseHours(body.hours);
-    } catch (error) {
-      throw new HttpError(400, "invalid_field", (error as Error).message);
-    }
-  }
-  // I-02: who new chats that need a person go to.
-  if (body.assignment !== undefined) {
-    try {
-      settings.assignment = parseAssignment(body.assignment);
-    } catch (error) {
-      throw new HttpError(400, "invalid_field", (error as Error).message);
-    }
-  }
-  // P-01 page openers: the whole list at once.
-  if (body.openers !== undefined) {
-    try {
-      settings.openers = parseOpeners(body.openers, () => newId("op"));
-    } catch (error) {
-      throw new HttpError(400, "invalid_field", (error as Error).message);
-    }
-  }
-  if (body.allowedDomains !== undefined) {
-    const { domains, invalid } = normalizeDomains(body.allowedDomains);
-    if (invalid.length) throw new HttpError(400, "invalid_field", `Not a domain: ${invalid.join(", ")}. Use e.g. acme.com or *.acme.com.`);
-    settings.allowedDomains = domains;
-  }
-  await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(settings), inbox.id).run();
-  return c.json({ settings });
+  await c.env.DB.prepare("UPDATE inboxes SET settings = ? WHERE id = ?").bind(JSON.stringify(next), inbox.id).run();
+  // D-84: the change goes into desk.yaml too, as a new agent config version.
+  const message = body.hours !== undefined ? "Business hours" : body.assignment !== undefined ? "Assignment" : "Chat widget settings";
+  await recordDeskChange(c.env, workspaceId, c.get("user").id, message, before);
+  return c.json({ settings: next });
 });
 
 // W-15: suggested questions drafted from the knowledge base (owners/admins). Not saved: the

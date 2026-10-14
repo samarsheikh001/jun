@@ -5,7 +5,7 @@ import { agentLinks } from "./agent-links.ts";
 const widget = (template: string) => JSON.stringify({ version: "1.0", template });
 
 const files = {
-  "AGENTS.md": "---\n---\nBe kind.\n",
+  "instructions.md": "---\n---\nBe kind.\n",
   "actions/add_seats.yaml": "description: Add seats\nwidget: seats_added   # shown after\nurl: https://x.test\n",
   "actions/seat_quote.yaml": "description: Quote\nwidget: \"seat_quote\"\n",
   "actions/lookup_order.yaml": "description: Look up\n# widget: order\n",

@@ -143,13 +143,58 @@ npm run jun -- push support-agent -m "Refund window is now 30 days"
 
 | File | What |
 |---|---|
-| `AGENTS.md` | Tone and rules. Frontmatter: `maxReplies`, `handoffTopics` |
+| `instructions.md` | Tone and rules. Frontmatter: `maxReplies`, `handoffTopics` |
 | `tasks/<name>.md` | Tasks (procedures) in plain language: a `description` frontmatter saying when one applies, then the steps. The file name is the task's name |
 | `actions/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`). `status:` is the one line the customer sees while it runs ("Checking your order"; default "Looking that up"); they never see the tool's name, inputs or results |
 | `tests/<name>.yaml` | A customer message and what a good reply does: outcome, tools called, or criteria |
 | `website-actions.yaml` | How each action on your website runs, over what your site asked for: `auto` (without asking), `confirm` (the customer confirms first) or `human` (a person does it), and optionally the line shown while it runs (`set_pickup: { run: auto, status: "Setting your pickup" }`). Set it under Actions → On your website |
+| `desk.yaml` | The desk's settings: the AI's switches (`ai`), the chat widget (`chat`), business hours (`hours`) and assignment (`inbox`). See below |
+
+`jun pull` and `jun init` also write `AGENTS.md` (a guide to these files for coding AIs: open the folder in Claude Code, Codex or Cursor and ask for a change, then `eval` and `push`), `CLAUDE.md` (`@AGENTS.md`) and `README.md`. They're generated and never pushed.
 
 Every save is a version you can restore, and every tool call is logged next to the conversation. In CI, set `JUN_DESK_URL` and `JUN_DESK_TOKEN` and run `jun eval --fail-on-change`.
+
+### Desk settings as code (`desk.yaml`)
+
+`desk.yaml` holds the desk's settings that are plain choices, so a whole desk can be set up from git, or copied to another desk with `jun pull` and `jun push`. `jun pull` writes it from the desk's current settings; saving it (push, the Agent page's Code view, or Code on the Chat widget page) changes them, and changes made on the settings pages are written back into it (as new versions, keeping your comments). A key or section you leave out is left as it is on the desk.
+
+```yaml
+ai:
+  enabled: true
+  model: default            # or a model id; default = the provider's default
+  models: { editor: gpt-6-astra }   # optional: a model per job
+  monthlyReplyCap: 2000     # 0 = no limit
+chat:                       # the chat widget (the Chat widget page)
+  name: Acme                # "" = your workspace's name
+  color: "#5b4cff"
+  launcher: island          # island | bar | card | button
+  island: { surface: dark, glow: true }
+  button: logo              # logo | text
+  theme: auto               # auto | light | dark
+  rounding: 16              # 0 to 24
+  position: right
+  sound: true
+  greeting: Hi! How can we help?
+  replyTime: Usually replies in a few minutes
+  placeholder: Ask anything…
+  suggestedQuestions: [How much does it cost?, How do I invite my team?]
+  askForRating: true        # "How did we do?" when a chat is resolved
+  allowedWebsites: [acme.com, "*.acme.com"]   # [] = any website
+  offerHelpOnErrors: true
+  openers:                  # after: seconds on the page; no message = the AI writes it
+    - page: /pricing
+      after: 20
+      hint: help choosing a plan
+hours:
+  enabled: true
+  timeZone: Europe/London
+  days: { monday: "09:00-17:30", friday: "09:00-16:00" }   # days not listed are closed
+  awayMessage: Thanks! We're away and will reply here {when}.
+inbox:
+  assignment: { mode: round_robin, capacity: 5 }   # manual | round_robin; 0 = no limit
+```
+
+Not in the file: logos (upload them on the Chat widget page), keys and secrets (identity secret, issue-tracker tokens, action keys, the OpenAI key, ChatGPT sign-in), the AI provider itself, team members and invites, notification preferences, knowledge sources and the install snippet.
 
 ## Develop
 

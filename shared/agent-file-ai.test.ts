@@ -6,7 +6,7 @@ test("agent file AI: only actions and procedures, with their names", () => {
   assert.deepEqual(agentFileKind("actions/add_seats.yaml"), { kind: "action", name: "add_seats" });
   assert.deepEqual(agentFileKind("actions/lookup.yml"), { kind: "action", name: "lookup" });
   assert.deepEqual(agentFileKind("tasks/change-plan.md"), { kind: "procedure", name: "change-plan" });
-  for (const path of ["AGENTS.md", "widgets/order.widget", "tests/basic.yaml", "actions/../x.yaml", "tasks/x/README.md"]) {
+  for (const path of ["instructions.md", "widgets/order.widget", "tests/basic.yaml", "actions/../x.yaml", "tasks/x/README.md"]) {
     assert.equal(agentFileKind(path), null, path);
   }
 });

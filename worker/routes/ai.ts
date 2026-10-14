@@ -9,6 +9,8 @@ import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
 import { newId } from "../lib/crypto.ts";
 import { readJson, text } from "../lib/validate.ts";
+import { deskOf, loadDeskState, recordDeskChange, writeAiSettings } from "../lib/desk.ts";
+import { readModel, readReplyCap } from "../ai/desk-file.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 
 async function memberRole(c: AppContext, workspaceId: string): Promise<Role> {
@@ -64,9 +66,14 @@ ai.put("/workspaces/:id/ai", async (c) => {
   const body = await readJson(c.req);
   const provider = String(body.provider ?? "workers-ai") as ProviderId;
   if (!PROVIDERS.includes(provider)) throw new HttpError(400, "invalid_field", "Unknown provider.");
-  const cap = Number(body.monthlyReplyCap ?? 2000);
-  if (!Number.isInteger(cap) || cap < 0 || cap > 1_000_000) throw new HttpError(400, "invalid_field", "Monthly cap must be a whole number.");
-  const model = typeof body.model === "string" && body.model.trim() ? body.model.trim().slice(0, 100) : null;
+  let cap: number;
+  let model: string | null;
+  try {
+    cap = readReplyCap(Number(body.monthlyReplyCap ?? 2000));
+    model = readModel(body.model);
+  } catch (error) {
+    throw new HttpError(400, "invalid_field", (error as Error).message);
+  }
   // AI-16: per-job models; kept unless sent.
   let models: JobModels | undefined;
   try {
@@ -75,18 +82,13 @@ ai.put("/workspaces/:id/ai", async (c) => {
     if (error instanceof InvalidModelsError) throw new HttpError(400, "invalid_field", error.message);
     throw error;
   }
-  const current = typeof body.instructions === "string" && models ? null : await loadAiSettings(c.env, workspaceId);
-  // Guidance now lives in the agent config (AGENTS.md); the old field is kept unless sent.
-  const instructions = typeof body.instructions === "string" ? body.instructions.slice(0, 4000) : current!.instructions;
-  models ??= current!.models;
-
-  await c.env.DB.prepare(
-    `INSERT INTO ai_settings (workspace_id, enabled, provider, model, models, instructions, monthly_reply_cap, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (workspace_id) DO UPDATE SET enabled = excluded.enabled, provider = excluded.provider, model = excluded.model, models = excluded.models,
-       instructions = excluded.instructions, monthly_reply_cap = excluded.monthly_reply_cap, updated_at = excluded.updated_at`,
-  )
-    .bind(workspaceId, body.enabled ? 1 : 0, provider, model, JSON.stringify(models), instructions, cap, Date.now())
-    .run();
+  const state = await loadDeskState(c.env, workspaceId);
+  const before = deskOf(state);
+  // Guidance now lives in the agent config (instructions.md); the old field is kept unless sent.
+  const instructions = typeof body.instructions === "string" ? body.instructions.slice(0, 4000) : state.ai.instructions;
+  await writeAiSettings(c.env, workspaceId, { enabled: Boolean(body.enabled), provider, model, models: models ?? state.ai.models, instructions, monthlyReplyCap: cap });
+  // D-84: the change goes into desk.yaml too (the provider isn't in the file).
+  await recordDeskChange(c.env, workspaceId, c.get("user").id, "AI settings", before);
   return c.json({ settings: await loadAiSettings(c.env, workspaceId) });
 });
 
@@ -240,6 +242,7 @@ async function finishChatGPTSignIn(env: Env, params: URLSearchParams, workspaceI
   if (!response.id_token) throw new Error("No id_token in the token response.");
   await oauth.verifyIdToken(response.id_token, { clientId, nonce: stateRow.nonce });
   const creds: ChatGPTCredentials = { hostId: existing.hostId, clientId, tokens: tokensFromResponse(response) };
+  const before = deskOf(await loadDeskState(env, stateRow.workspace_id));
   await env.DB.batch([
     env.DB.prepare("UPDATE dev_chatgpt SET credentials = ? WHERE workspace_id = ?").bind(JSON.stringify(creds), stateRow.workspace_id),
     env.DB.prepare(
@@ -248,6 +251,8 @@ async function finishChatGPTSignIn(env: Env, params: URLSearchParams, workspaceI
     ).bind(stateRow.workspace_id, Date.now()),
   ]);
   await env.WORKSPACE_HUB.getByName(stateRow.workspace_id).resetChatGPT();
+  // D-84: a first sign-in turns the AI on; desk.yaml says so too.
+  await recordDeskChange(env, stateRow.workspace_id, null, "AI turned on (ChatGPT sign-in)", before);
   return stateRow.return_to;
 }
 

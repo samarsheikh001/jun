@@ -11,17 +11,37 @@ import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { previewChime } from "../lib/sound.ts";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
+import { setCodeView, useCodeView } from "../agent/parts.tsx";
+import { DeskCode } from "./DeskCode.tsx";
 
 // The Widget page: Look (/appearance) and Install (/appearance/install). /widget itself is the chat
 // iframe the Worker serves, so the page keeps its old address.
 export function WidgetPage({ workspaceId, workspaceName, canEdit, tab }: { workspaceId: string; workspaceName: string; canEdit: boolean; tab: "look" | "install" }) {
+  // D-84: Form / Code, the same remembered switch as the Agent pages. Code is desk.yaml.
+  const code = useCodeView();
   return (
     <PageTabs
       title="Chat widget"
       value={tab}
       className="widget-page"
+      actions={
+        tab === "look" && (
+          <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
+            <TabsList className="kb-tabs agent-view-switch" aria-label="View">
+              <TabsTrigger value="form">Form</TabsTrigger>
+              <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )
+      }
       tabs={[
-        { value: "look", label: "Look", path: "/appearance", content: <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} /> },
+        {
+          value: "look",
+          label: "Look",
+          path: "/appearance",
+          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
+        },
         {
           value: "install",
           label: "Install",

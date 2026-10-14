@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
+import { GUIDE_FILES, GUIDE_MARKER } from "./guide.ts";
 import { TEMPLATE } from "./template.ts";
 
 // `jun` commands for a deployed desk: login, init, pull, push, eval (support agent as code).
@@ -81,15 +82,30 @@ export async function login(url: string, token: string): Promise<DeskLogin> {
   return result;
 }
 
-const CONFIG_PATH = /^(AGENTS\.md|README\.md|website-actions\.yaml|tasks\/[^/]+\.md|actions\/[^/]+\.ya?ml|tests\/[^/]+\.ya?ml|widgets\/[^/]+\.widget)$/;
+// D-84: desk.yaml holds the desk's settings (chat widget, AI switches, hours, assignment).
+// D-85: the persona is instructions.md; AGENTS.md, CLAUDE.md and README.md are the generated guide.
+const INSTRUCTIONS = "instructions.md";
+const CONFIG_PATH = /^(instructions\.md|desk\.yaml|website-actions\.yaml|tasks\/[^/]+\.md|actions\/[^/]+\.ya?ml|tests\/[^/]+\.ya?ml|widgets\/[^/]+\.widget)$/;
 /** D-83: the layout before the rename. Still read (the desk stores it in the new layout); `jun pull` moves it. */
 const OLD_CONFIG_PATH = /^(skills\/[^/]+\/SKILL\.md|tools\/[^/]+\.ya?ml|evals\/[^/]+\.ya?ml)$/;
 const OLD_FOLDERS = ["skills", "tools", "evals"];
+/** D-85: written by `jun pull` / `jun init` for people and coding AIs; never sent. */
+const GUIDE_PATHS = Object.keys(GUIDE_FILES);
+/** A guide file `jun pull` wrote, or the README `jun init` wrote before D-85. */
+const isGenerated = (text: string) => {
+  const start = text.replace(/\r\n/g, "\n").trimStart();
+  return start.startsWith(GUIDE_MARKER) || start.startsWith("# Support agent\n\nThis folder is your Jun support agent, as code.");
+};
 
-/** Reads the config files under `dir` (paths with forward slashes). Other files are skipped. */
-export async function readFolder(dir: string): Promise<{ files: Record<string, string>; skipped: string[] }> {
+/**
+ * Reads the config files under `dir` (paths with forward slashes). Other files are skipped; the
+ * guide files quietly. D-85: an AGENTS.md with no instructions.md that isn't the generated guide is
+ * the persona from before the rename: it's read as instructions.md (`oldPersona`).
+ */
+export async function readFolder(dir: string): Promise<{ files: Record<string, string>; skipped: string[]; oldPersona: boolean }> {
   const files: Record<string, string> = {};
   const skipped: string[] = [];
+  let agents: string | undefined;
   async function walk(current: string): Promise<void> {
     for (const entry of await readdir(current, { withFileTypes: true })) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
@@ -98,12 +114,15 @@ export async function readFolder(dir: string): Promise<{ files: Record<string, s
       else {
         const path = relative(dir, full).split(sep).join("/");
         if (CONFIG_PATH.test(path) || OLD_CONFIG_PATH.test(path)) files[path] = await readFile(full, "utf8");
-        else skipped.push(path);
+        else if (path === "AGENTS.md") agents = await readFile(full, "utf8");
+        else if (!GUIDE_PATHS.includes(path)) skipped.push(path);
       }
     }
   }
   await walk(dir);
-  return { files, skipped };
+  const oldPersona = agents !== undefined && !(INSTRUCTIONS in files) && !agents.trimStart().startsWith(GUIDE_MARKER);
+  if (oldPersona) files[INSTRUCTIONS] = agents!;
+  return { files, skipped, oldPersona };
 }
 
 async function rmdirIfEmpty(path: string): Promise<void> {
@@ -128,12 +147,13 @@ function printIssues(issues: Issue[]): void {
 export async function init(dir: string): Promise<void> {
   const existing = await readdir(dir).catch(() => []);
   if (existing.length) throw new Error(`${dir} isn't empty. Use \`jun pull ${dir}\` to download your desk's config instead.`);
-  for (const [path, text] of Object.entries(TEMPLATE)) {
+  const all = { ...TEMPLATE, ...GUIDE_FILES };
+  for (const [path, text] of Object.entries(all)) {
     await mkdir(dirname(join(dir, path)), { recursive: true });
     await writeFile(join(dir, path), text);
   }
-  console.log(`Created ${dir}/ with ${Object.keys(TEMPLATE).length} files:`);
-  for (const path of Object.keys(TEMPLATE)) console.log(`  ${path}`);
+  console.log(`Created ${dir}/ with ${Object.keys(all).length} files:`);
+  for (const path of Object.keys(all)) console.log(`  ${path}${GUIDE_PATHS.includes(path) ? "  (guide, rewritten by jun pull)" : ""}`);
   console.log(`\nNext: edit them, then \`jun eval ${dir}\` and \`jun push ${dir}\`.`);
 }
 
@@ -141,12 +161,23 @@ export async function pull(dir: string): Promise<void> {
   const desk = await loadLogin();
   const config = await api<{ version: number | null; files: Record<string, string> }>(desk, `/workspaces/${desk.workspaceId}/agent`);
   // Remove config files that no longer exist on the desk; leave anything else alone.
-  const { files: local } = await readFolder(dir).catch(() => ({ files: {} as Record<string, string> }));
-  for (const path of Object.keys(local)) if (!(path in config.files)) await rm(join(dir, path));
+  const { files: local, oldPersona } = await readFolder(dir).catch(() => ({ files: {} as Record<string, string>, oldPersona: false }));
+  for (const path of Object.keys(local)) if (!(path in config.files)) await rm(join(dir, path), { force: true });
   for (const [path, text] of Object.entries(config.files)) {
     await mkdir(dirname(join(dir, path)), { recursive: true });
     await writeFile(join(dir, path), text);
   }
+  // D-85: the guide for people and coding AIs, rewritten every time (it isn't config). A file of
+  // that name someone wrote themselves stays (an old persona AGENTS.md is in instructions.md now).
+  const kept: string[] = [];
+  for (const [path, text] of Object.entries(GUIDE_FILES)) {
+    const current = await readFile(join(dir, path), "utf8").catch(() => null);
+    const own = current !== null && !isGenerated(current) && !(path === "AGENTS.md" && oldPersona);
+    if (own) kept.push(path);
+    else await writeFile(join(dir, path), text);
+  }
+  if (kept.length) console.log(`Kept your own ${kept.join(", ")} (not generated by jun pull; delete ${kept.length === 1 ? "it" : "them"} to get the guide).`);
+  if (oldPersona) console.log("Moved the persona from AGENTS.md to instructions.md. AGENTS.md is now a guide to these files for coding AIs (Claude Code, Codex, Cursor…).");
   // D-83: files in the old layout were just replaced by the new one; drop the folders they leave empty.
   if (Object.keys(local).some((p) => OLD_CONFIG_PATH.test(p))) {
     const skills = await readdir(join(dir, "skills")).catch(() => [] as string[]);
@@ -155,14 +186,15 @@ export async function pull(dir: string): Promise<void> {
     console.log("Moved the folder to the current layout: tasks/<name>.md, actions/, tests/ (was skills/<name>/SKILL.md, tools/, evals/).");
   }
   await writeVersion(dir, config.version);
-  console.log(`Pulled ${Object.keys(config.files).length} files (${config.version === null ? "built-in default config" : `version ${config.version}`}) from ${desk.workspaceName} into ${dir}/.`);
+  console.log(`Pulled ${Object.keys(config.files).length} config files (${config.version === null ? "built-in default config" : `version ${config.version}`}) from ${desk.workspaceName} into ${dir}/.`);
 }
 
 export async function push(dir: string, options: { message?: string; force?: boolean }): Promise<void> {
   const desk = await loadLogin();
-  const { files, skipped } = await readFolder(dir);
-  if (!files["AGENTS.md"]) throw new Error(`${dir}/AGENTS.md not found. Run \`jun init ${dir}\` or \`jun pull ${dir}\` first.`);
+  const { files, skipped, oldPersona } = await readFolder(dir);
+  if (!files[INSTRUCTIONS]) throw new Error(`${dir}/instructions.md not found. Run \`jun init ${dir}\` or \`jun pull ${dir}\` first.`);
   for (const path of skipped) console.warn(`  (skipped ${path}: not a config file)`);
+  if (oldPersona) console.warn(`  AGENTS.md is the old name of instructions.md: pushed as instructions.md. Run \`jun pull ${dir}\` after pushing to rename it.`);
   if (Object.keys(files).some((p) => OLD_CONFIG_PATH.test(p))) {
     console.warn(`  This folder uses the old layout (skills/<name>/SKILL.md, tools/, evals/); the desk stores it as tasks/<name>.md, actions/, tests/. Run \`jun pull ${dir}\` after pushing to move the files.`);
   }
@@ -210,7 +242,7 @@ const tools = (v: ReplyView) => (v.tools.length ? ` [${v.tools.join(", ")}]` : "
 export async function evaluate(dir: string, options: { sample?: number; mockTools?: boolean; cases?: boolean; replay?: boolean; json?: boolean; failOnChange?: boolean }): Promise<void> {
   const desk = await loadLogin();
   const { files } = await readFolder(dir);
-  if (!files["AGENTS.md"]) throw new Error(`${dir}/AGENTS.md not found.`);
+  if (!files[INSTRUCTIONS]) throw new Error(`${dir}/instructions.md not found.`);
   const response = await fetch(`${desk.url}/api/workspaces/${desk.workspaceId}/agent/eval`, {
     method: "POST",
     headers: { authorization: `Bearer ${desk.token}`, "content-type": "application/json" },

@@ -12,22 +12,26 @@ import { CodeEditor, EVAL, Field, FilePicker, Problems, SKILL, TextList, TOOL, U
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { MentionText, useMentionActions } from "./MentionText.tsx";
 
-// /agent: AGENTS.md as a page to write on (the body: how the AI talks) beside a panel with when it
+// /agent: instructions.md as a page to write on (the body: how the AI talks) beside a panel with when it
 // hands over (the frontmatter's maxReplies and handoffTopics) and which model answers. In Code:
-// AGENTS.md as text, and any file of no other kind (a README.md) beside it.
+// instructions.md as text, and any file of no other kind (desk.yaml: D-84) beside it.
 
-const PATH = "AGENTS.md";
+const PATH = "instructions.md";
 const DEFAULT_MAX_REPLIES = 8;
 
-export function InstructionsView({ cfg, canEdit, workspaceId }: { cfg: AgentConfig; canEdit: boolean; workspaceId: string }) {
+export function InstructionsView({ cfg, canEdit, workspaceId, file = null }: { cfg: AgentConfig; canEdit: boolean; workspaceId: string; file?: string | null }) {
   const code = useCodeView();
-  if (code) return <InstructionsCode cfg={cfg} canEdit={canEdit} />;
+  if (code) return <InstructionsCode cfg={cfg} canEdit={canEdit} file={file} />;
   return <InstructionsForm cfg={cfg} canEdit={canEdit} workspaceId={workspaceId} />;
 }
 
-function InstructionsCode({ cfg, canEdit }: { cfg: AgentConfig; canEdit: boolean }) {
+function InstructionsCode({ cfg, canEdit, file }: { cfg: AgentConfig; canEdit: boolean; file: string | null }) {
   const others = Object.keys(cfg.draft).filter((p) => p !== PATH && ![SKILL, TOOL, WIDGET, EVAL].some((re) => re.test(p))).sort();
-  const [picked, setPicked] = useState(PATH);
+  const [picked, setPicked] = useState(file ?? PATH);
+  // A link to a file (/agent/desk.yaml) picks it.
+  useEffect(() => {
+    if (file) setPicked(file);
+  }, [file]);
   const path = picked in cfg.draft ? picked : PATH;
   return (
     <section className="agent-form agent-code">

@@ -1,43 +1,8 @@
-// Starter files for `jun init`. Keep AGENTS.md in sync with DEFAULT_AGENTS_MD in worker/ai/config.ts.
+// Starter files for `jun init` (beside the generated guide, guide.ts). Keep instructions.md in sync with
+// DEFAULT_INSTRUCTIONS_MD in worker/ai/config.ts.
 
 export const TEMPLATE: Record<string, string> = {
-  "README.md": `# Support agent
-
-This folder is your Jun support agent, as code. Edit it like any other code: in a branch, reviewed in a pull request.
-
-| File | What it does |
-|---|---|
-| \`AGENTS.md\` | Persona, tone and rules. Frontmatter sets guardrails (\`maxReplies\`, \`handoffTopics\`). |
-| \`tasks/<name>.md\` | Tasks: procedures in plain language ("refund requests: first…"). \`description\` says when one applies. With \`intent:\`, your app can open a chat straight into it (see below). |
-| \`actions/<name>.yaml\` | HTTP lookups the AI may call (order status, plan, usage…). |
-| \`tests/<name>.yaml\` | Test cases: a customer message and what a good reply does. |
-| \`widgets/<name>.widget\` | Cards an action's result is shown as (OpenAI's ChatKit widget format). Design one in ChatKit Studio (widgets.chatkit.studio) and download it, then add \`widget: <name>\` to the action. |
-
-\`\`\`sh
-jun eval .        # run the test cases and replay recent real conversations against these files
-jun push . -m "…" # make it live (the dashboard shows each version)
-jun pull .        # bring dashboard edits back here
-\`\`\`
-
-To add an action, copy \`actions/lookup_order.yaml.example\` to \`actions/lookup_order.yaml\`, point it at your API,
-and set its secret on the Worker: \`npx wrangler secret put JUN_SECRET_ACME_API_KEY\`.
-To show its result as a card, also copy \`widgets/order.widget.example\` to \`widgets/order.widget\` and
-uncomment \`widget: order\` in the action. A card's buttons send the customer's choice back to the AI.
-
-## Intents: open a chat for a purpose
-
-\`tasks/cancellation.md\` is an example. Your app's "Cancel subscription" button calls
-
-\`\`\`js
-JunDesk.open({ intent: "cancel", onExit: () => { location.href = "/billing/cancel"; } });
-\`\`\`
-
-The chat starts with the task's \`opening\` and \`replies\` (no AI needed), the AI follows the task, and
-the \`exit\` button ("Cancel anyway") stays on screen: one click closes the chat and calls \`onExit\`.
-Offers come only from your task and actions: copy \`actions/apply_save_offer.yaml.example\` to
-\`actions/apply_save_offer.yaml\` to let the AI apply one after the customer says yes.
-`,
-  "AGENTS.md": `---
+  "instructions.md": `---
 # Guardrails. Remove a line to use the default.
 maxReplies: 8            # AI replies per conversation before a person takes over
 handoffTopics:           # always hand these to a person

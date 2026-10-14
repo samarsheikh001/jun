@@ -31,7 +31,7 @@ export const INLINE_SKILLS_MAX_CHARS = 8000;
 
 export interface PromptOptions {
   workspaceName: string;
-  /** AGENTS.md body. */
+  /** instructions.md body. */
   persona: string;
   handoffTopics?: string[];
   skills?: Skill[];

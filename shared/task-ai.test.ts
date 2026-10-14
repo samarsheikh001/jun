@@ -18,13 +18,13 @@ description: The customer asks where their order is.
 description: Finds an order.
 url: https://api.acme.com/orders/{orderNumber}
 </file>
-<file path="AGENTS.md">
+<file path="instructions.md">
 nope
 </file>`;
   const edit = parseTaskEdit(answer, PROC)!;
   assert.equal(edit.reply, "Added the lookup and the steps.");
   assert.deepEqual(Object.keys(edit.files), [PROC, "actions/look_up_order.yaml"]);
-  assert.deepEqual(edit.ignored, ["AGENTS.md"]);
+  assert.deepEqual(edit.ignored, ["instructions.md"]);
   assert.match(edit.files["actions/look_up_order.yaml"]!, /\{orderNumber\}\n$/);
   assert.equal(parseTaskEdit("no tags here", PROC), null);
 });

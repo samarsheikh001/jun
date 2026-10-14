@@ -19,14 +19,17 @@ const HELP = `jun — Jun developer CLI
 Support agent as code (talks to your deployed desk):
   jun login <desk-url> [--token jun_…]   Connect to a desk with an API token (Settings → API tokens)
   jun init [dir]                         Start a config folder (default: support-agent)
-  jun pull [dir]                         Download the desk's live agent config
-  jun push [dir] [-m "message"]          Validate and make the folder's config live (--force overwrites dashboard edits)
+  jun pull [dir]                         Download the desk's live agent config, and its settings as desk.yaml
+  jun push [dir] [-m "message"]          Validate and make the folder's config live (--force overwrites dashboard edits);
+                                         a desk.yaml changes the desk's settings (keys left out stay as they are)
   jun eval [dir]                         Run tests/*.yaml and replay recent conversations against the folder's config
       --sample <n>       conversations to replay (default 20, 0 to skip)
       --mock-tools       use each action's mock: response instead of calling it
       --no-cases         skip tests/*.yaml          --json   one JSON event per line
       --fail-on-change   exit 1 if any replayed answer changes (for CI)
   In CI, set JUN_DESK_URL and JUN_DESK_TOKEN instead of running jun login.
+  The persona is instructions.md. init and pull also write AGENTS.md (a guide to the files for coding AIs),
+  CLAUDE.md (@AGENTS.md) and README.md: generated, never pushed.
 
 Local LLM (development):
   jun login chatgpt [--no-browser]   Sign in with ChatGPT (dev only: uses your own plan)

@@ -37,7 +37,7 @@ export const JOB_DEFAULTS: Record<ProviderId, JobModels> = {
   "workers-ai": {},
 };
 
-const MODEL_ID = /^[\w.:/@-]{1,100}$/;
+export const MODEL_ID = /^[\w.:/@-]{1,100}$/;
 
 export class InvalidModelsError extends Error {}
 

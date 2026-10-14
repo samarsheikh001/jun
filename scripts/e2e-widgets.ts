@@ -30,7 +30,7 @@ const template = [
 const widgetFile = JSON.stringify({ version: "1.0", name: "Plan", template, sample: { args: { plan: "Pro", status: "active", renews_on: "Nov 3" } } });
 
 const files = {
-  "AGENTS.md": "# How to talk to customers\n\n- Be brief.\n- When the customer asks about their plan or subscription, call plan_status.\n- When they press a button on a card, confirm in one sentence what happens next.\n",
+  "instructions.md": "# How to talk to customers\n\n- Be brief.\n- When the customer asks about their plan or subscription, call plan_status.\n- When they press a button on a card, confirm in one sentence what happens next.\n",
   "actions/plan_status.yaml": [
     "description: The customer's current plan, its status and renewal date.",
     "status: Checking your plan",
@@ -148,7 +148,7 @@ const dresses = [
 const cart = '{"type":"Card","size":"sm","children":[{"type":"Row","children":[{"type":"Icon","name":"check-circle-filled","color":"success"},{"type":"Text","value":{{ ("Added " ~ json.sku ~ " to your cart") | tojson }}}]}]}';
 const shopFiles = {
   ...files,
-  "AGENTS.md": `${files["AGENTS.md"]}- When the customer asks to see dresses or products, call find_dresses.\n`,
+  "instructions.md": `${files["instructions.md"]}- When the customer asks to see dresses or products, call find_dresses.\n`,
   "actions/find_dresses.yaml": [
     "description: The dresses in the shop, with prices.",
     "status: Finding dresses",
@@ -238,7 +238,7 @@ const quote = [
 ].join("");
 const quoteFiles = {
   ...files,
-  "AGENTS.md": `${files["AGENTS.md"]}- When the customer asks what seats cost, call seat_quote.\n`,
+  "instructions.md": `${files["instructions.md"]}- When the customer asks what seats cost, call seat_quote.\n`,
   "actions/seat_quote.yaml": ["description: A price quote for a number of seats.", "status: Getting a quote", "method: POST", "url: https://httpbin.org/anything", "input:", "  seats: { type: integer }", "pick: [json]", "widget: seat_quote", ""].join("\n"),
   "widgets/seat_quote.widget": JSON.stringify({ version: "1.0", name: "Seat quote", template: quote, sample: { json: { seats: 5 } } }),
 };
@@ -296,7 +296,7 @@ const demo = [
 ].join("");
 const demoFiles = {
   ...files,
-  "AGENTS.md": `${files["AGENTS.md"]}- When the customer wants to talk to sales or book a demo, call sales_form.\n`,
+  "instructions.md": `${files["instructions.md"]}- When the customer wants to talk to sales or book a demo, call sales_form.\n`,
   "actions/sales_form.yaml": ["description: Shows the customer a form to book a demo with sales.", "status: Opening the form", "url: https://httpbin.org/anything", "widget: demo", ""].join("\n"),
   "actions/book_demo.yaml": [
     "description: Books a demo with sales.",

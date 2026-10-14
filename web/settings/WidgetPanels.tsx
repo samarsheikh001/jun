@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
+import { DeskFileNote } from "../components/DeskFileNote.tsx";
 
 // I-10 business hours (Settings → Inbox). The widget's look (W-04) is on the Widget page's Look tab.
 
@@ -109,6 +110,7 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
           <span>Away message <span className="muted">({"{when}"} becomes e.g. "on Monday at 09:00 (London time)")</span></span>
           <Textarea rows={2} value={away} onChange={(e) => setAway(e.target.value)} maxLength={500} disabled={!canEdit} />
         </label>
+        <DeskFileNote />
         {error && <p className="error small">{error}</p>}
         {canEdit && <div className="row"><Button disabled={busy}>Save</Button>{saved && <span className="muted small">Saved ✓</span>}</div>}
       </form>

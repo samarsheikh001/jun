@@ -55,7 +55,7 @@ test("identity tokens are rejected when forged, expired, unsigned or incomplete"
 
 test("tools can use the verified customer, and refuse when nobody is signed in", () => {
   const { config, issues } = parseConfig({
-    "AGENTS.md": "x",
+    "instructions.md": "x",
     "actions/my_account.yaml": "description: The signed-in customer's account.\nurl: https://api.acme.test/accounts/{user.id}\nquery:\n  plan: '{user.plan}'\n",
     "actions/bad.yaml": "description: d\nurl: https://x.test/{user.}",
   });

@@ -942,6 +942,16 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .agent-run-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .agent-versions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .agent-versions li { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.agent-version-files code { font-size: 12px; }
+/* D-84: "Also in desk.yaml · View code" under settings that the file holds. */
+.desk-file-note { margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
+.desk-file-note code { font-size: 12px; }
+.desk-file-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.desk-file-note a:hover { color: var(--foreground); }
+/* D-84: the Chat widget page in Code: desk.yaml, saved as a new agent config version. */
+.desk-code { flex: 1; min-height: 0; overflow: auto; }
+.desk-code-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.desk-code-skeleton { min-height: max(320px, calc(100dvh - 300px)); }
 /* Agent page, plain views (Instructions, Tasks, Actions, Widgets, Tests): a list and a form. */
 .page-tabs-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .agent-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }

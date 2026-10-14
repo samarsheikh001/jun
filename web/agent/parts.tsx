@@ -32,8 +32,13 @@ export const TOOL = /^actions\/([a-z][a-z0-9_]*)\.ya?ml$/;
 export const WIDGET = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
 export const EVAL = /^tests\/([a-zA-Z0-9_-]+)\.ya?ml$/;
 
+/** D-84: the desk's settings as a file; its Code view is on the Instructions page, opened at it. */
+export const DESK_FILE = "desk.yaml";
+export const DESK_FILE_ROUTE = "/agent/desk.yaml";
+
 /** The page a file is edited on (as a form, or in Code). Files of no known kind are under Instructions. */
 export function routeFor(path: string): string {
+  if (path === DESK_FILE) return DESK_FILE_ROUTE;
   const skill = SKILL.exec(path)?.[1];
   if (skill) return `/agent/tasks/${skill}`;
   const tool = TOOL.exec(path)?.[1];
@@ -378,7 +383,7 @@ export function SaveBar({ cfg, canEdit }: { cfg: AgentConfig; canEdit: boolean }
             <span className="error small agent-savebar-text">
               {issues.length === 1 ? "1 problem" : `${issues.length} problems`} to fix before saving:{" "}
               {[...new Set(issues.map((i) => i.path))].slice(0, 3).map((p) => (
-                <button key={p} type="button" className="link-button" onClick={() => go(routeFor(p))}>{labelFor(p)}</button>
+                <button key={p} type="button" className="link-button" onClick={() => { if (p === DESK_FILE) setCodeView(true); go(routeFor(p)); }}>{labelFor(p)}</button>
               ))}
             </span>
           ) : (
@@ -398,7 +403,7 @@ export function SaveBar({ cfg, canEdit }: { cfg: AgentConfig; canEdit: boolean }
 
 /** A file as people know it on this page: "Instructions", "Cancellation"… */
 export function labelFor(path: string): string {
-  if (path === "AGENTS.md") return "Instructions";
+  if (path === "instructions.md") return "Instructions";
   const skill = SKILL.exec(path)?.[1];
   if (skill) return humanize(skill);
   const tool = TOOL.exec(path)?.[1];
@@ -407,5 +412,6 @@ export function labelFor(path: string): string {
   if (widget) return `${humanize(widget)} widget`;
   if (EVAL.test(path)) return "Tests";
   if (path === "website-actions.yaml") return "Website actions";
+  if (path === DESK_FILE) return "Desk settings";
   return path || "Config";
 }

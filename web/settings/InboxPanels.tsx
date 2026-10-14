@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
+import { DeskFileNote } from "../components/DeskFileNote.tsx";
 
 interface SavedReplyRow { id: string; title: string; body: string }
 interface TagRow { id: string; name: string; conversations: number }
@@ -258,6 +259,7 @@ export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string;
           </SettingRow>
         )}
         {mode === "round_robin" && <p className="muted">If nobody's online or everyone is at the limit, the chat stays in Unassigned. Assigning someone by hand always wins.</p>}
+        <DeskFileNote />
         {error && <p className="error small">{error}</p>}
         {canEdit && (
           <div className="row">

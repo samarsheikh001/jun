@@ -67,12 +67,12 @@ if (mode === "seed") {
     assert.equal(res.status, 200, JSON.stringify(res.json));
     assert.ok(res.json.conversations.some((c: { id: string }) => c.id === seeded.conversationId));
   });
-  await step("upgraded desk: knowledge still searchable; the old AI guidance became AGENTS.md", async () => {
+  await step("upgraded desk: knowledge still searchable; the old AI guidance became instructions.md", async () => {
     const hits = (await agent.call(`/workspaces/${seeded.workspaceId}/knowledge/search`, { body: { query: "how fast do orders ship" } })).json.hits;
     assert.ok(hits.some((h: { text: string }) => /2 business days/.test(h.text)), JSON.stringify(hits));
     const config = (await agent.call(`/workspaces/${seeded.workspaceId}/agent`)).json;
     assert.equal(config.version, null, "never saved: built from the old settings");
-    assert.match(config.files["AGENTS.md"], /Sign every answer with: Team Northwind\./);
+    assert.match(config.files["instructions.md"], /Sign every answer with: Team Northwind\./);
     assert.deepEqual(config.issues, []);
   });
   await step("upgraded desk: new features work on old data (AI turn, onboarding, visitors)", async () => {

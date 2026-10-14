@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { parseConfig, withCurrentPaths, type ConfigFiles } from "../ai/config.ts";
 import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "../ai/config-store.ts";
+import { DESK_PATH } from "../ai/desk-file.ts";
+import { applySavedDesk, generatedDeskFile } from "../lib/desk.ts";
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
 import { WIDGET_EDIT_MAX_TOKENS, WIDGET_EDIT_PROMPT, WidgetEditError, widgetEditMessage } from "../ai/widget-edit.ts";
@@ -286,7 +288,14 @@ agent.get("/workspaces/:id/agent", async (c) => {
   const v = c.req.query("version");
   const stored = await loadConfigFiles(c.env, workspaceId, v ? Number(v) : undefined);
   if (v && stored.version === null) throw new HttpError(404, "not_found", `No version ${v}.`);
-  return c.json({ version: stored.version, files: stored.files, ...summary(stored.files), versions: await listVersions(c.env, workspaceId) });
+  // D-84: a desk whose config has no desk.yaml yet gets one written from its current settings
+  // (`generated`: not saved; the dashboard leaves it out of a save while it's unchanged).
+  const generated: string[] = [];
+  if (!v && !(DESK_PATH in stored.files)) {
+    stored.files[DESK_PATH] = await generatedDeskFile(c.env, workspaceId);
+    generated.push(DESK_PATH);
+  }
+  return c.json({ version: stored.version, files: stored.files, generated, ...summary(stored.files), versions: await listVersions(c.env, workspaceId) });
 });
 
 agent.post("/workspaces/:id/agent/validate", async (c) => {
@@ -311,7 +320,14 @@ agent.put("/workspaces/:id/agent", async (c) => {
       userId: c.get("user").id,
     });
     if (result.version === null) return c.json({ error: { code: "invalid_config", message: "The config has errors.", issues: result.issues } }, 400);
-    return c.json({ version: result.version, ...summary(files) });
+    // D-84: what the saved desk.yaml changed goes live on the desk (owners and admins only, as above).
+    try {
+      await applySavedDesk(c.env, workspaceId, result.previous, result.files);
+    } catch (error) {
+      console.warn("desk.yaml saved but not applied:", (error as Error).message);
+      throw new HttpError(400, "desk_not_applied", `Version ${result.version} is saved, but desk.yaml couldn't be applied: ${(error as Error).message}`);
+    }
+    return c.json({ version: result.version, ...summary(result.files) });
   } catch (error) {
     if (error instanceof ConfigConflictError) return c.json({ error: { code: "conflict", message: error.message, current: error.current } }, 409);
     throw error;

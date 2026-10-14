@@ -9,4 +9,4 @@ We'll ask contributors to sign a CLA before we merge outside pull requests. It l
 ## Licensing of parts
 
 - Server and dashboard (`worker/`, `web/`, `packages/llm`, `packages/cli`): AGPL-3.0-only.
-- Widget loader (`public/widget.js`) and the agent-config format (`AGENTS.md`, `tasks/`, `actions/`, `widgets/`, `tests/` files and the `jun init` templates): MIT. SDKs, when they exist, will be MIT too.
+- Widget loader (`public/widget.js`) and the agent-config format (`instructions.md`, `tasks/`, `actions/`, `widgets/`, `tests/` files and the `jun init` templates): MIT. SDKs, when they exist, will be MIT too.

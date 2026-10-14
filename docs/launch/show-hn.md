@@ -33,6 +33,6 @@ First release. Deploy with the button in the README; upgrades from any earlier c
 - AI agent on Workers AI or OpenAI: answers from your docs with citations, hands off with a brief, follows procedures, calls your HTTP tools, logs every call.
 - Debug context: masked errors, failed requests and page trail for agents and the AI; AI-worded proactive help when something breaks.
 - Issues: "Create issue" drafts a GitHub or Linear issue from the conversation and the debug context; the agent edits and files it, and the conversation keeps the link.
-- Agent as code: AGENTS.md, tasks, actions, widgets and tests in git; `jun pull/push/eval`; versions and restore in the dashboard.
+- Agent as code: instructions.md, tasks, actions, widgets and tests in git; `jun pull/push/eval`; versions and restore in the dashboard.
 - Inbox: real-time, assignment, AI takeover, notes with @mentions, saved replies, tags, contact sidebar, live visitors, agent-started chats, identity verification.
 - Reports: conversations per day, AI resolution and handoff rates with the top handoff reasons, first-response times, CSAT with recent 👎 comments, and a per-teammate table.

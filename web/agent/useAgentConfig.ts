@@ -18,11 +18,15 @@ export interface Version {
   source: "dashboard" | "cli";
   createdBy: string | null;
   createdAt: number;
+  /** D-84: the files this version changed (null for versions from before this was kept). */
+  changed: string[] | null;
 }
 
 export interface AgentState {
   version: number | null;
   files: Files;
+  /** D-84: files written for this load, not saved yet (desk.yaml from the desk's settings). */
+  generated?: string[];
   issues: Issue[];
   summary: { skills: string[]; tools: string[]; evals: number; maxReplies: number; handoffTopics: string[]; widgets: string[] };
   versions: Version[];
@@ -85,7 +89,9 @@ export function useAgentConfig(workspaceId: string) {
     action.run(async () => {
       if (!state) return;
       try {
-        const result = await api<{ version: number }>(base, { method: "PUT", body: { files: draft, base: state.version, force, message } });
+        // D-84: a generated file nobody changed stays out, so the settings pages keep it.
+        const files = Object.fromEntries(Object.entries(draft).filter(([path, text]) => !(state.generated?.includes(path) && state.files[path] === text)));
+        const result = await api<{ version: number }>(base, { method: "PUT", body: { files, base: state.version, force, message } });
         setMessage("");
         setSaved(result.version);
         setTimeout(() => setSaved(null), 3000);
