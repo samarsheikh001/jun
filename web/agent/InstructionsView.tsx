@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
-import { editFrontmatter, readFrontmatter, setBody } from "../lib/agentFiles.ts";
+import { editFrontmatter, readFrontmatter, setBody } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Badge } from "@/components/ui/badge.tsx";

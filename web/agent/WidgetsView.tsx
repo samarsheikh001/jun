@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { readYaml } from "../lib/agentFiles.ts";
+import { readYaml, withJsonKey } from "../../shared/agent-files.ts";
 import { useThemePref } from "../lib/theme.ts";
 import { MAX_WIDGET_STATES, parseWidgetFile, previewSummary, previewWidget, renderWidget, starterWidget, widgetSchema, type WidgetNode } from "../../shared/widgets.ts";
 import { schemaFromSample, schemaParams, withDescription, withRequired, type JsonSchema } from "../../shared/widget-schema.ts";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
 import { Field as UiField, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field.tsx";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
-import type { WidgetTemplate } from "./widget-templates.ts";
+import type { WidgetTemplate } from "../../shared/widget-templates.ts";
 import { ExternalLinkIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon, TrashIcon, UploadIcon } from "../components/icons.tsx";
 import { formatTemplate } from "../../shared/widget-ai.ts";
 import { CodeArea } from "./CodeArea.tsx";
@@ -213,7 +213,7 @@ function TemplateGallery({ cfg, canEdit, query }: { cfg: AgentConfig; canEdit: b
   const [picked, setPicked] = useState<WidgetTemplate | null>(null);
   useEffect(() => {
     let live = true;
-    import("./widget-templates.ts")
+    import("../../shared/widget-templates.ts")
       .then((m) => live && setTemplates(m.WIDGET_TEMPLATES))
       .catch(() => live && setFailed(true));
     return () => {
@@ -370,12 +370,7 @@ function readFile(text: string): Record<string, unknown> | null {
 }
 
 /** The file with one key set (or removed with undefined); other keys keep their order. */
-function withKey(text: string, key: string, value: unknown): string {
-  const file = readFile(text) ?? {};
-  if (value === undefined) delete file[key];
-  else file[key] = value;
-  return `${JSON.stringify(file, null, 2)}\n`;
-}
+const withKey = withJsonKey;
 
 function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit: boolean; path: string; name: string }) {
   const text = cfg.draft[path] ?? "";

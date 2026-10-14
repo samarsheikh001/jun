@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WIDGET_TEMPLATES } from "../web/agent/widget-templates.ts";
+import { WIDGET_TEMPLATES } from "./widget-templates.ts";
 import { checkExamples, parseWidgetFile, previewWidget } from "./widgets.ts";
 
 // W-23: every template on the Widgets page's Templates tab is a working widget file.

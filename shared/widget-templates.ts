@@ -4,7 +4,7 @@
 // (Studio's demo image paths pointed at widgets.chatkit.studio), and its zod Schema as `jsonSchema`
 // (W-30: converted with zod's toJSONSchema, as Studio's download does). Names and descriptions are ours.
 // OpenAI's examples; the gallery states no licence: check before launch, like the agent guide (D-52).
-// Loaded only when the Templates tab opens.
+// The dashboard loads it only when the Templates tab opens (a lazy chunk); the MCP serves it too.
 
 export interface WidgetTemplate {
   id: string;

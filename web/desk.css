@@ -939,6 +939,9 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
 .agent-file-picker { display: flex; flex-wrap: wrap; gap: 4px; }
 .agent-view-switch [data-slot="tabs-trigger"] { padding-inline: 12px; }
 .agent-git-commands { margin: 0; padding: 12px; border-radius: var(--radius); background: var(--muted); font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+/* D-86: Settings → Developer → Connect your AI (MCP). */
+.mcp-snippet { display: grid; gap: 6px; margin-top: 12px; }
+.mcp-snippet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .agent-run-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .agent-versions { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .agent-versions li { display: grid; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }

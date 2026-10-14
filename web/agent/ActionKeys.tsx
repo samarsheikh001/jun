@@ -3,7 +3,7 @@ import { api } from "../api.ts";
 import { actionSetupProblems, secretRefs, userSecretRefs } from "../../shared/action-setup.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { readYaml } from "../lib/agentFiles.ts";
+import { readYaml } from "../../shared/agent-files.ts";
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { Field } from "./parts.tsx";
 

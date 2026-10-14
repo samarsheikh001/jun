@@ -3,7 +3,7 @@ import type { AiStep } from "../../shared/protocol.ts";
 import { MAX_TEST_MESSAGE, testCaseFrom, type TestChatEvent, type TestPress, type TestReply, type TestTurn } from "../../shared/test-chat.ts";
 import { markWidgetUsed, type MessageWidget } from "../../shared/widgets.ts";
 import { customerRefs } from "../../shared/action-try.ts";
-import { editYaml, readYaml } from "../lib/agentFiles.ts";
+import { editYaml, readYaml } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Switch } from "@/components/ui/switch.tsx";

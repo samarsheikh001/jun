@@ -72,7 +72,7 @@ async function whoami(url: string, token: string): Promise<DeskLogin> {
 
 export async function login(url: string, token: string): Promise<DeskLogin> {
   if (!/^https?:\/\//.test(url)) throw new Error("Usage: jun login https://your-desk.example.com");
-  if (!token.startsWith("jun_")) throw new Error("That doesn't look like an API token (they start with jun_). Create one in Settings → API tokens.");
+  if (!token.startsWith("jun_")) throw new Error("That doesn't look like an API token (they start with jun_). Create one in Settings → Developer → API tokens.");
   const result = await whoami(url, token);
   const path = loginPath();
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });

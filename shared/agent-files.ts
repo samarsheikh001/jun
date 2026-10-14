@@ -1,9 +1,10 @@
 import { isMap, isScalar, isSeq, parseDocument, type Document } from "yaml";
 
-// The Agent page's forms (Instructions, Tasks, Actions, Tests) read and write the same files
-// as the Code view, `jun pull` and `jun push`. Each edit changes only the field it names, through
-// yaml's Document API, so a developer's comments, key order and other keys survive a form edit.
-// A file the forms can't read (invalid YAML) is left to the Code view.
+// The Agent page's forms (Instructions, Tasks, Actions, Tests) and the MCP's typed tools (worker/mcp/)
+// read and write the same files as the Code view, `jun pull` and `jun push`. Each edit changes only
+// the field it names, through yaml's Document API, so a developer's comments, key order and other
+// keys survive a form edit. A file the forms can't read (invalid YAML) is left to the Code view.
+// Pure; shared by the dashboard and the Worker.
 
 export type Path = (string | number)[];
 
@@ -41,6 +42,8 @@ function put(doc: Document, path: Path, value: unknown, keep = false): void {
     doc.deleteIn(path);
     return;
   }
+  // A file left as `{}` (its last key removed) grows as a block map again, not `{ a: … }`.
+  if (isMap(doc.contents) && doc.contents.flow && doc.contents.items.length === 0) doc.contents.flow = false;
   const node = doc.getIn(path, true);
   if (isScalar(node) && typeof value !== "object") node.value = value;
   else if (isSeq(node) && Array.isArray(value)) node.items = value.map((v) => doc.createNode(v));
@@ -120,4 +123,18 @@ export function freshName(base: string, taken: Iterable<string>, sep = "_"): str
   const used = new Set(taken);
   if (!used.has(base)) return base;
   for (let n = 2; ; n++) if (!used.has(`${base}${sep}${n}`)) return `${base}${sep}${n}`;
+}
+
+/** A widget file (JSON) with one top-level key set, or removed when `value` is undefined. Unreadable text starts over as `{}`. */
+export function withJsonKey(text: string, key: string, value: unknown): string {
+  let file: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) file = parsed as Record<string, unknown>;
+  } catch {
+    // starts over
+  }
+  if (value === undefined) delete file[key];
+  else file[key] = value;
+  return `${JSON.stringify(file, null, 2)}\n`;
 }

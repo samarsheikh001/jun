@@ -157,7 +157,7 @@ function HistorySheet({ cfg, canEdit, open, onClose }: { cfg: AgentConfig; canEd
                     {v.changed.length > 4 && ` and ${v.changed.length - 4} more`}
                   </div>
                 )}
-                <div className="muted">{v.source === "cli" ? "Pushed from git" : "Saved"} by {v.createdBy ?? "someone"} · {ago(v.createdAt)}</div>
+                <div className="muted">{v.source === "cli" ? "Pushed from git" : v.source === "mcp" ? "Changed by an AI (MCP)" : "Saved"} by {v.createdBy ?? "someone"} · {ago(v.createdAt)}</div>
               </li>
             ))}
           </ul>

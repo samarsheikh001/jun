@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { editYaml, freshName, readYaml, type Edit } from "../lib/agentFiles.ts";
+import { editYaml, freshName, readYaml, type Edit } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Card, CardContent, CardHeader } from "@/components/ui/card.tsx";

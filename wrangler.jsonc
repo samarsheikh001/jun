@@ -12,7 +12,7 @@
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/auth/callback", "/widget"]
+    "run_worker_first": ["/api/*", "/auth/callback", "/widget", "/mcp"]
   },
 
   // Resource IDs are omitted on purpose: the Deploy to Cloudflare button and

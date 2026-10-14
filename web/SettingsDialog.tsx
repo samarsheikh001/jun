@@ -157,7 +157,7 @@ const SECTION_CARDS: Record<SectionId, (canInvite: boolean) => string[]> = {
   team: (canInvite) => ["Members", ...(canInvite ? ["Invite people"] : [])],
   notifications: () => ["This device", "Notify me when"],
   integrations: () => ["Issue trackers", "GitHub", "Linear"],
-  developer: () => ["API tokens"],
+  developer: () => ["API tokens", "Connect your AI (MCP)"],
   account: () => ["Your passkeys"],
 };
 
@@ -419,35 +419,70 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
   };
 
   return (
+    <>
+      <SettingsCard
+        title="API tokens"
+        id="api-tokens"
+        description={<>For the <code>jun</code> CLI (keep the agent in git, run evals and push changes: <code>npm run jun -- login {window.location.origin}</code> in your Jun checkout) and for your AI's MCP connection (below). A token acts as you, for this workspace's agent config only.</>}
+      >
+        {created && (
+          <div className="invite">
+            <span className="small strong">Copy it now: it won't be shown again.</span>
+            <code className="small">{created}</code>
+            <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard?.writeText(created); }}>Copy</Button>
+          </div>
+        )}
+        <form className="settings-inline-form" onSubmit={create}>
+          <Input name="name" placeholder="Token name, e.g. laptop or GitHub Actions" aria-label="Token name" required maxLength={80} />
+          <Button disabled={busy}>Create token</Button>
+        </form>
+        {error && <p className="error small">{error}</p>}
+        {tokens.length > 0 && (
+          <ul className="list">
+            {tokens.map((t) => (
+              <li key={t.id} className="row">
+                <span className="strong">{t.name}</span>
+                <span className="muted small">created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleDateString()}` : "never used"}</span>
+                <span className="spacer" />
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Revoke</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsCard>
+      <McpCard token={created} />
+    </>
+  );
+}
+
+/** D-86: the snippets that connect a person's own AI to this desk's MCP server, each with a Copy button. */
+function McpCard({ token }: { token: string | null }) {
+  const url = `${window.location.origin}/mcp`;
+  const key = token ?? "jun_…";
+  const snippets = [
+    { label: "Claude Code", text: `claude mcp add --transport http jun ${url} --header "Authorization: Bearer ${key}"` },
+    { label: "Cursor (.cursor/mcp.json)", text: JSON.stringify({ mcpServers: { jun: { url, headers: { Authorization: `Bearer ${key}` } } } }, null, 2) },
+    { label: "Codex (~/.codex/config.toml)", text: `[mcp_servers.jun]\nurl = "${url}"\nbearer_token_env_var = "JUN_DESK_TOKEN"\n\n# and in your shell: export JUN_DESK_TOKEN=${key}` },
+  ];
+  return (
     <SettingsCard
-      title="API tokens"
-      id="api-tokens"
-      description={<>For the <code>jun</code> CLI: keep the agent in git, run evals and push changes (<code>npm run jun -- login {window.location.origin}</code> in your Jun checkout). A token acts as you, for this workspace's agent config only.</>}
+      title="Connect your AI (MCP)"
+      id="mcp"
+      description={<>Let your own AI (Claude Code, Cursor, Codex, Claude Desktop…) change the support agent: tasks, actions, widgets, tests and desk settings, tested and saved as versions you can restore. No checkout or CLI. It uses an API token from above{token ? " (the one you just created is filled in below)" : ""}.</>}
     >
-      {created && (
-        <div className="invite">
-          <span className="small strong">Copy it now: it won't be shown again.</span>
-          <code className="small">{created}</code>
-          <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard?.writeText(created); }}>Copy</Button>
+      <p className="small muted">MCP address: <code>{url}</code></p>
+      {snippets.map((s) => (
+        <div key={s.label} className="mcp-snippet">
+          <div className="mcp-snippet-head">
+            <span className="small strong">{s.label}</span>
+            <Button variant="outline" size="sm" type="button" onClick={() => { void navigator.clipboard?.writeText(s.text); }}>Copy</Button>
+          </div>
+          <pre className="agent-git-commands">{s.text}</pre>
         </div>
-      )}
-      <form className="settings-inline-form" onSubmit={create}>
-        <Input name="name" placeholder="Token name, e.g. laptop or GitHub Actions" aria-label="Token name" required maxLength={80} />
-        <Button disabled={busy}>Create token</Button>
-      </form>
-      {error && <p className="error small">{error}</p>}
-      {tokens.length > 0 && (
-        <ul className="list">
-          {tokens.map((t) => (
-            <li key={t.id} className="row">
-              <span className="strong">{t.name}</span>
-              <span className="muted small">created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleDateString()}` : "never used"}</span>
-              <span className="spacer" />
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Revoke</Button>
-            </li>
-          ))}
-        </ul>
-      )}
+      ))}
+      <p className="small muted">
+        Then ask it things like "add a refund task that looks up the order with our API, test it, and make it live". <a href="https://jun-6ced7499.mintlify.app/code/mcp" target="_blank" rel="noreferrer">How it works</a>
+      </p>
     </SettingsCard>
   );
 }

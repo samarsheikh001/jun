@@ -15,7 +15,7 @@ export interface Issue {
 export interface Version {
   version: number;
   message: string;
-  source: "dashboard" | "cli";
+  source: "dashboard" | "cli" | "mcp";
   createdBy: string | null;
   createdAt: number;
   /** D-84: the files this version changed (null for versions from before this was kept). */

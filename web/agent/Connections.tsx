@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { agentLinks, widgetPageButtons } from "../../shared/agent-links.ts";
 import { parseWidgetFile, previewWidget, toolButtonInputs, widgetData, widgetSchema, type ToolButtonInputs } from "../../shared/widgets.ts";
 import { checkData } from "../../shared/widget-schema.ts";
-import { readYaml } from "../lib/agentFiles.ts";
+import { readYaml } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { PlusIcon } from "../components/icons.tsx";
 import { go, humanize } from "./parts.tsx";

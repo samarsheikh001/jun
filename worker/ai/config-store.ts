@@ -8,7 +8,8 @@ import { DESK_PATH } from "./desk-file.ts";
 export interface ConfigVersion {
   version: number;
   message: string;
-  source: "dashboard" | "cli";
+  /** D-86: "mcp", saved by a tool of the desk's MCP server (/mcp). */
+  source: "dashboard" | "cli" | "mcp";
   createdBy: string | null;
   createdAt: number;
   /** D-84: the files this version changed against the one before it (null for versions saved before this was kept). */
@@ -80,16 +81,17 @@ export async function saveConfig(
   const { issues } = parseConfig(files);
   if (issues.length) return { version: null, issues };
   const current = await env.DB.prepare(
-    "SELECT MAX(version) AS v, MAX(CASE WHEN source = 'dashboard' THEN version END) AS d FROM agent_configs WHERE workspace_id = ?",
+    "SELECT MAX(version) AS v, MAX(CASE WHEN source IN ('dashboard', 'mcp') THEN version END) AS d FROM agent_configs WHERE workspace_id = ?",
   )
     .bind(workspaceId)
     .first<{ v: number | null; d: number | null }>();
   const latest = current?.v ?? null;
   const previous = await filesAt(env, workspaceId, latest);
-  // Dashboard saves must start from the latest version (two people editing in the browser).
+  // Dashboard saves must start from the latest version (two people editing in the browser); so do
+  // MCP tools (D-86: each one reads the latest version and changes only what it must).
   // CLI pushes come from git, which is their source of truth: they only conflict with
-  // dashboard edits made since the pusher's last pull, which would otherwise be lost.
-  const conflict = input.source === "dashboard" ? latest !== input.base : current?.d != null && current.d > (input.base ?? 0);
+  // desk edits (dashboard or MCP) made since the pusher's last pull, which would otherwise be lost.
+  const conflict = input.source === "cli" ? current?.d != null && current.d > (input.base ?? 0) : latest !== input.base;
   if (!input.force && conflict) {
     // D-84: the settings pages save versions too (desk.yaml), so an open draft often starts from an
     // older one. Different files changed: merge. CLI pushes merge only desk.yaml changes.

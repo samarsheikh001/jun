@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { readYaml } from "../lib/agentFiles.ts";
+import { readYaml } from "../../shared/agent-files.ts";
 import { TOOL, humanize } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 

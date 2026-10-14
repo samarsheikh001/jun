@@ -4,6 +4,8 @@
 // on the desk (the action-secrets store). Keys in the address can't be kept (the desk sends keys in
 // headers only), so they're dropped with a note. Pure.
 
+import { stringify } from "yaml";
+
 export interface CurlKey {
   /** UPPER_SNAKE_CASE, as in {secrets.NAME}. */
   name: string;
@@ -104,6 +106,22 @@ export function curlActionName(req: Pick<CurlRequest, "method" | "url">): string
   else if (prev && !/s$/.test(last)) name = `${last.replace(/-/g, "_")}_${one(prev)}`;
   else name = `create_${one(last)}`;
   return name.replace(/[^a-z0-9_]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+}
+
+/**
+ * A new action's file (actions/<name>.yaml) from a curl command. The desk's New action leaves the
+ * description empty for its AI chat to write; the MCP passes the one its caller wrote.
+ */
+export function curlActionFile(req: CurlRequest, extra: { description?: string; status?: string } = {}): string {
+  return stringify({
+    description: extra.description ?? "",
+    status: extra.status ?? "Working on it",
+    method: req.method,
+    url: req.url,
+    ...(Object.keys(req.query).length ? { query: req.query } : {}),
+    ...(Object.keys(req.headers).length ? { headers: req.headers } : {}),
+    ...(req.body !== undefined ? { body: req.body } : {}),
+  });
 }
 
 /** Reads a curl command. Throws an Error with a plain reason when it can't. */

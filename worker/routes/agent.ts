@@ -15,6 +15,8 @@ import { MAX_EDIT_HISTORY, MAX_EDIT_MESSAGE, type WidgetEditTurn } from "../../s
 import { MAX_WIDGET_JSON } from "../../shared/widgets.ts";
 import { getSessionUser, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
+import { BAD_TOKEN_MESSAGE, hasApiToken, TOKEN_PREFIX, tokenLogin } from "../lib/api-token.ts";
+import { isObject, readTestTurns, testCustomer } from "../lib/agent-input.ts";
 import { readJson, text } from "../lib/validate.ts";
 import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
 import { runTool } from "../ai/tools.ts";
@@ -28,24 +30,16 @@ import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts"
 // Agent config as code (AI-18) and `jun eval` (AI-19). The `jun` CLI calls these with a
 // personal API token (Authorization: Bearer jun_…); the dashboard with its session cookie.
 
-const TOKEN_PREFIX = "jun_";
-
 /** Session cookie, or an API token for this workspace (tokens never work across workspaces). */
 const requireUserOrToken = createMiddleware<AppEnv & { Variables: { tokenWorkspace: string | null } }>(async (c, next) => {
   const auth = c.req.header("authorization");
-  if (auth?.startsWith(`Bearer ${TOKEN_PREFIX}`)) {
-    const hash = await sha256(auth.slice("Bearer ".length).trim());
-    const row = await c.env.DB.prepare(
-      `SELECT t.id, t.workspace_id, u.id AS user_id, u.name, u.email FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`,
-    )
-      .bind(hash)
-      .first<{ id: string; workspace_id: string; user_id: string; name: string; email: string | null }>();
-    if (!row) throw new HttpError(401, "bad_token", "This API token isn't valid. Create a new one in Settings → API tokens.");
+  if (hasApiToken(auth)) {
+    const login = await tokenLogin(c.env, auth, (p) => c.executionCtx.waitUntil(p));
+    if (!login) throw new HttpError(401, "bad_token", BAD_TOKEN_MESSAGE);
     const workspaceId = c.req.param("id");
-    if (workspaceId && workspaceId !== row.workspace_id) throw new HttpError(403, "wrong_workspace", "This API token belongs to another workspace.");
-    c.set("user", { id: row.user_id, name: row.name, email: row.email });
-    c.set("tokenWorkspace", row.workspace_id);
-    c.executionCtx.waitUntil(c.env.DB.prepare("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(Date.now(), row.id).run());
+    if (workspaceId && workspaceId !== login.workspaceId) throw new HttpError(403, "wrong_workspace", "This API token belongs to another workspace.");
+    c.set("user", login.user);
+    c.set("tokenWorkspace", login.workspaceId);
     return next();
   }
   const user = await getSessionUser(c as unknown as AppContext);
@@ -157,61 +151,6 @@ agent.get("/workspaces/:id/agent/page-actions", async (c) => {
 
 /** AI-25: a "Try it" result kept for the page, at most (the AI reads a shortened `output` anyway). */
 const MAX_TRY_RESULT = 200_000;
-/** AI-29: a test chat sent back with each message, at most (its cards count). */
-const MAX_TEST_BODY = 400_000;
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const strings = (v: unknown): Record<string, string> =>
-  isObject(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "").map(([k, s]) => [k, s.slice(0, MAX_SECRET_VALUE)])) : {};
-
-/** AI-25 / AI-29: a test customer the admin typed (for {user.*}), or null. */
-function testCustomer(value: unknown): ToolUser | null {
-  if (!isObject(value)) return null;
-  const fields = strings(value);
-  return { id: fields.id ?? "test-customer", email: fields.email ?? null, name: fields.name ?? null, attributes: strings(value.attributes), secrets: strings(value.secrets) };
-}
-
-/** AI-29: the test chat's turns from the body: customer messages and earlier replies (their cards too). */
-function readTestTurns(value: unknown): TestTurn[] {
-  if (!Array.isArray(value) || !value.length) throw new HttpError(400, "invalid_field", "turns is the test chat so far.");
-  if (JSON.stringify(value).length > MAX_TEST_BODY) throw new HttpError(400, "too_long", "This test chat is too long. Reset it and start again.");
-  const turns = value.slice(-MAX_TEST_TURNS).map((t): TestTurn => {
-    if (isObject(t) && t.role === "customer" && typeof t.text === "string") {
-      // AI-30: a card's button press: which card, the action, what was entered (checked against the card in runTestChat).
-      const p = isObject(t.press) ? t.press : null;
-      const press: TestPress | null =
-        p && typeof p.turn === "number" && typeof p.widgetId === "string" && isObject(p.action) && typeof p.action.type === "string"
-          ? {
-              turn: p.turn,
-              widgetId: p.widgetId,
-              action: { type: p.action.type, ...(p.action.payload !== undefined ? { payload: p.action.payload } : {}) },
-              values: isObject(p.values) ? (Object.fromEntries(Object.entries(p.values).filter(([, v]) => typeof v === "string" || typeof v === "boolean")) as Record<string, string | boolean>) : {},
-              ...(typeof p.item === "string" ? { item: p.item } : {}),
-              ...(isObject(p.tool) && typeof p.tool.name === "string" && (p.tool.status === "ok" || p.tool.status === "error")
-                ? { tool: { name: p.tool.name, status: p.tool.status, output: typeof p.tool.output === "string" ? p.tool.output.slice(0, 4000) : "", ...(typeof p.tool.done === "string" ? { done: p.tool.done } : {}) } }
-                : {}),
-            }
-          : null;
-      return { role: "customer", text: t.text.slice(0, MAX_TEST_MESSAGE), ...(press ? { press } : {}) };
-    }
-    if (isObject(t) && t.role === "ai" && isObject(t.reply)) {
-      const r = t.reply;
-      return {
-        role: "ai",
-        reply: {
-          text: typeof r.text === "string" ? r.text.slice(0, 8000) : "",
-          ...(typeof r.handoff === "string" ? { handoff: r.handoff } : {}),
-          widgets: Array.isArray(r.widgets) ? (r.widgets.filter((w) => isObject(w) && typeof w.name === "string" && isObject(w.root)).slice(0, 6) as unknown as TestReply["widgets"]) : [],
-          calls: [],
-          ...(isObject(r.pageAction) && typeof r.pageAction.name === "string" ? { pageAction: { name: r.pageAction.name, input: isObject(r.pageAction.input) ? r.pageAction.input : {} } } : {}),
-        },
-      };
-    }
-    throw new HttpError(400, "invalid_field", "Each turn is { role: customer, text } or { role: ai, reply }.");
-  });
-  if (turns.at(-1)?.role !== "customer") throw new HttpError(400, "invalid_field", "The last turn must be the customer's message.");
-  return turns;
-}
-
 // AI-29: one reply in a task page's test chat, from the draft (shared/test-chat.ts). Body: { files,
 // turns, real?, customer?, page? }. Streams TestChatEvents, one JSON object a line. Nothing is stored; the tokens
 // count toward the month's usage. Safe unless `real: true`: changes (POST) are answered, not made.

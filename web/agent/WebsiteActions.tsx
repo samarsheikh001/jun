@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { PlusIcon, XIcon } from "../components/icons.tsx";
 import { go, humanize, slug, WIDGET } from "./parts.tsx";
-import { editYaml, readYaml } from "../lib/agentFiles.ts";
+import { editYaml, readYaml } from "../../shared/agent-files.ts";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
 // W-31: website actions are WebMCP tools the customer's own site registers; the AI runs them in the

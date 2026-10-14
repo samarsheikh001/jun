@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { agentLinks } from "../../shared/agent-links.ts";
-import { editYaml, freshName, readYaml, type Edit } from "../lib/agentFiles.ts";
+import { editYaml, freshName, readYaml, type Edit } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Checkbox } from "@/components/ui/checkbox.tsx";
 import { Input } from "@/components/ui/input.tsx";

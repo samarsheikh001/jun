@@ -6,7 +6,7 @@ import type { SeenPageAction } from "../../shared/actions.ts";
 import { taskName } from "../../shared/action-try.ts";
 import { curlActionName } from "../../shared/curl.ts";
 import { describeError } from "../api.ts";
-import { editFrontmatter, readFrontmatter, readYaml, setBody } from "../lib/agentFiles.ts";
+import { editFrontmatter, readFrontmatter, readYaml, setBody } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";

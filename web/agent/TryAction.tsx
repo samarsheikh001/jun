@@ -3,7 +3,7 @@ import { api } from "../api.ts";
 import { cardFromResult, customerRefs, exampleData, exampleInputs, typedInput, type RequestExample } from "../../shared/action-try.ts";
 import { parseWidgetFile, renderWidget, widgetSchema, type WidgetNode } from "../../shared/widgets.ts";
 import { checkData } from "../../shared/widget-schema.ts";
-import { editYaml, readYaml } from "../lib/agentFiles.ts";
+import { editYaml, readYaml } from "../../shared/agent-files.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";

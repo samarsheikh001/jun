@@ -190,6 +190,11 @@ npm run jun -- eval support-agent
 npm run jun -- push support-agent`}</pre>
       {/* D-85 */}
       <p className="small muted">The pulled folder comes with an AGENTS.md guide to its files, so a coding AI (Claude Code, Codex, Cursor) can edit them with you.</p>
+      {/* D-86 */}
+      <p className="small muted">
+        No checkout needed: your AI can also change the agent directly over MCP (
+        <a href="/settings/developer#mcp" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#mcp"); }}>Settings → Developer → Connect your AI</a>).
+      </p>
     </SettingsCard>
   );
 }

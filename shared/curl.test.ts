@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { curlActionName, keyName, looksLikeCurl, parseCurl, shellWords } from "./curl.ts";
+import { parse } from "yaml";
+import { curlActionFile, curlActionName, keyName, looksLikeCurl, parseCurl, shellWords } from "./curl.ts";
 
 test("shellWords: quotes, escapes and line continuations", () => {
   assert.deepEqual(shellWords(`curl -H 'A: b c' \\\n  "https://x.io/a?q=1" -d "{\\"a\\":1}"`), ["curl", "-H", "A: b c", "https://x.io/a?q=1", "-d", '{"a":1}']);
@@ -56,4 +57,12 @@ test("AI-27: an action's name from its curl command", () => {
   assert.equal(curlActionName({ method: "POST", url: "https://api.acme.com/tickets" }), "create_ticket");
   assert.equal(curlActionName({ method: "GET", url: "https://api.acme.com/categories" }), "look_up_category");
   assert.equal(curlActionName({ method: "GET", url: "https://api.acme.com/" }), "look_up");
+});
+
+test("curlActionFile: the action's file, with the caller's description (the MCP) or none (the desk's AI writes it)", () => {
+  const req = parseCurl('curl https://api.acme.com/orders/1042?expand=items -H "Authorization: Bearer sk_live_abc"');
+  const file = parse(curlActionFile(req, { description: "Look up an order.", status: "Checking your order" })) as Record<string, unknown>;
+  assert.deepEqual(file, { description: "Look up an order.", status: "Checking your order", method: "GET", url: "https://api.acme.com/orders/1042", query: { expand: "items" }, headers: { Authorization: "Bearer {secrets.ACME_API_KEY}" } });
+  assert.equal((parse(curlActionFile(req)) as Record<string, unknown>).description, "");
+  assert.ok(!curlActionFile(req).includes("sk_live_abc"));
 });
