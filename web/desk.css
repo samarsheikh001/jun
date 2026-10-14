@@ -420,7 +420,8 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
   padding: 0 var(--page-x) 64px; line-height: 1.55; letter-spacing: 0.02em;
 }
 /* The page's top space is inside the sticky header, so once scrolled the title keeps it instead of
-   sitting against the top edge (the tabs stick right under the header: its height less 8px). */
+   sitting against the top edge. The tabs stick 8px into the header, over its bottom padding, so they sit
+   above it (z-index 21 > 20): under it, the header clipped the tabs' and dropdowns' tops. */
 .cv-header {
   position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
   margin: 0 calc(-1 * var(--page-x)) 18px; padding: 28px var(--page-x) 16px; background: var(--background);
@@ -428,7 +429,7 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .cv-header h1 { margin: 0 0 6px; font-size: 24px; font-weight: 525; line-height: 1.2; letter-spacing: inherit; color: var(--foreground); }
 .cv-header p { margin: 0; max-width: 620px; font-size: 14px; line-height: 1.625; color: var(--muted-foreground); }
 .cv-tabs {
-  position: sticky; top: 94px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 4px;
+  position: sticky; top: 94px; z-index: 21; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 4px;
   margin: 0 -4px 16px; padding: 4px 4px 8px; border-bottom: 1px solid var(--border); background: var(--background);
 }
 .cv-tab {
