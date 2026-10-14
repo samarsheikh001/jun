@@ -4,6 +4,7 @@ import { api, describeError } from "../api.ts";
 import { describeBrowser } from "../../shared/debug.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
+import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { globeSpots } from "../lib/globe-spots.ts";
 import { DONUT_SLICES, sliceColor } from "../reports/topic-colors.ts";
 
@@ -128,7 +129,33 @@ function InviteForm({ workspaceId, visitor, onDone }: { workspaceId: string; vis
   );
 }
 
-export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; visitors: LiveVisitor[] }) {
+/** A loading row of "Everyone on your site": the real row's cells and line boxes. */
+function VisitorRowSkeleton({ who, page }: { who: number; page: number }) {
+  return (
+    <li aria-hidden="true">
+      <Skeleton className="visitor-skel-avatar" />
+      <div className="visitor-who">
+        <div className="visitor-name"><SkelText width={who} /></div>
+        <div className="muted small"><SkelText width={who + 70} /></div>
+      </div>
+      <div className="visitor-page">
+        <div className="visitor-page-title"><SkelText width={page} /></div>
+        <code><SkelText width={page + 50} /></code>
+        <div className="muted small"><SkelText width={80} /></div>
+      </div>
+      <div className="visitor-time">
+        <span className="visitor-time-n"><SkelText width={44} /></span>
+        <span className="muted small"><SkelText width={48} /></span>
+      </div>
+      <div className="visitor-action" />
+    </li>
+  );
+}
+
+/** `visitors` is null until the hub's first list arrives: the page keeps its shape with placeholders. */
+export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: string; visitors: LiveVisitor[] | null }) {
+  const loading = live === null;
+  const visitors = live ?? [];
   const [now, setNow] = useState(Date.now());
   const [inviting, setInviting] = useState<string | null>(null);
   const [invited, setInvited] = useState<Set<string>>(new Set());
@@ -161,14 +188,16 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
         </Suspense>
         <div className="visitor-hero-stats">
           <div className="kpi-label">On your site now</div>
-          <div className="visitor-live-count">{visitors.length}</div>
+          <div className="visitor-live-count">{loading ? <SkelText width="1ch" /> : visitors.length}</div>
           <dl className="visitor-mini">
-            <div><dt className="kpi-label">Countries</dt><dd>{countries.length}</dd></div>
-            <div><dt className="kpi-label">Signed in</dt><dd>{known}</dd></div>
-            <div><dt className="kpi-label">In a chat</dt><dd>{chatting}</dd></div>
-            <div><dt className="kpi-label">Median visit</dt><dd>{medianVisit === null ? "–" : duration(medianVisit).split(" ")[0]}</dd></div>
+            <div><dt className="kpi-label">Countries</dt><dd>{loading ? <SkelText width="1ch" /> : countries.length}</dd></div>
+            <div><dt className="kpi-label">Signed in</dt><dd>{loading ? <SkelText width="1ch" /> : known}</dd></div>
+            <div><dt className="kpi-label">In a chat</dt><dd>{loading ? <SkelText width="1ch" /> : chatting}</dd></div>
+            <div><dt className="kpi-label">Median visit</dt><dd>{loading ? <SkelText width="2ch" /> : medianVisit === null ? "–" : duration(medianVisit).split(" ")[0]}</dd></div>
           </dl>
-          {countries.length > 0 ? (
+          {loading ? (
+            <p className="muted small visitor-hero-note"><SkelText width="90%" /></p>
+          ) : countries.length > 0 ? (
             <>
               <h3 className="ratings-sub">Top countries</h3>
               <ShareRows rows={countries} label={(code) => <><span className="visitor-cc">{code}</span>{countryName(code)}</>} />
@@ -195,10 +224,15 @@ export function VisitorsPage({ workspaceId, visitors }: { workspaceId: string; v
       <section className="dash-card">
         <div className="dash-card-head">
           <h2>Everyone on your site</h2>
-          <span className="dash-caption"><span className="strong">{visitors.length}</span> live</span>
+          <span className="dash-caption"><span className="strong">{loading ? <SkelText width="1ch" /> : visitors.length}</span> live</span>
         </div>
         <p className="muted small">Signed-in customers show who they are when your site sends an identity token (Settings → Install).</p>
-        {sorted.length === 0 ? (
+        {loading ? (
+          <ul className="visitor-list" aria-busy="true" aria-label="Loading visitors">
+            <VisitorRowSkeleton who={120} page={150} />
+            <VisitorRowSkeleton who={96} page={180} />
+          </ul>
+        ) : sorted.length === 0 ? (
           <div className="visitors-empty">
             <span className="visitors-empty-art" aria-hidden><span /></span>
             <p>Nobody right now. Open your site, or the demo page from Settings, in another tab to see yourself here.</p>

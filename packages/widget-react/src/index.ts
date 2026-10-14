@@ -1,6 +1,6 @@
 import { useEffect, type DependencyList, type RefObject } from "react";
 
-// AI-21 page actions (D-40): a React hook that registers a WebMCP-shaped action with the Jun Desk
+// AI-21 page actions (D-40): a React hook that registers a WebMCP-shaped action with the Jun
 // loader while the component is on screen, and removes it on unmount. The loader may not have
 // loaded yet (its script tag is async): then the hook waits for its "jundesk:ready" event.
 // No runtime dependency: plain TypeScript, React as a peer.

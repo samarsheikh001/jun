@@ -4,13 +4,13 @@ Edit before posting; numbers below are real as of 2026-10-05.
 
 ## Show HN
 
-**Title:** Show HN: Jun Desk – open-source support desk whose AI sees the error your customer just hit
+**Title:** Show HN: Jun – open-source support desk whose AI sees the error your customer just hit
 
 **URL:** https://github.com/samarsheikh001/jun
 
 **Text:**
 
-When a customer writes "I can't pay my invoice", the first few messages of most support chats are spent finding out what they actually saw. Which page, which browser, did it show an error? Jun Desk skips that part. The chat widget keeps a short, masked list of what went wrong in the visitor's browser (failed requests with their status, JavaScript errors, pages visited), so the AI's first reply can be "your payment request failed with a server error at 14:02, I've flagged it to the team", and the engineer who picks it up gets the failing request quoted in the handoff note.
+When a customer writes "I can't pay my invoice", the first few messages of most support chats are spent finding out what they actually saw. Which page, which browser, did it show an error? Jun skips that part. The chat widget keeps a short, masked list of what went wrong in the visitor's browser (failed requests with their status, JavaScript errors, pages visited), so the AI's first reply can be "your payment request failed with a server error at 14:02, I've flagged it to the team", and the engineer who picks it up gets the failing request quoted in the handoff note.
 
 It's an Intercom/Fin-style desk for B2B SaaS that you deploy to your own Cloudflare account: Workers, Durable Objects for the realtime chat, D1, R2, Queues and Workers AI. One button deploys it, and you don't need an API key, an email service or a database server; logins are passkeys.
 

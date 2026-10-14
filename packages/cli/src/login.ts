@@ -94,7 +94,7 @@ export async function loginWithChatGPT(
     }
     const result = handleCallback(url.searchParams);
     const html = result.ok
-      ? page("Signed in to Jun Desk", "You can close this tab and go back to the terminal.")
+      ? page("Signed in to Jun", "You can close this tab and go back to the terminal.")
       : page("Sign-in failed", escapeHtml(result.message));
     res.writeHead(result.ok ? 200 : 400, { "Content-Type": "text/html; charset=utf-8" }).end(html);
   });

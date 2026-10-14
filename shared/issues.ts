@@ -279,7 +279,7 @@ export function environmentSection(environment: IssueEnvironment | null, account
 }
 
 export function footer(conversationUrl: string): string {
-  return `---\nFrom a support conversation in Jun Desk: ${conversationUrl}`;
+  return `---\nFrom a support conversation in Jun: ${conversationUrl}`;
 }
 
 /** The whole draft: the model's narrative (or the template's) plus the factual sections. */

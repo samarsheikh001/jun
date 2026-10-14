@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { cachedGet, fetchSetting } from "./settingsData.ts";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { SettingsCard } from "./layout.tsx";
 
 export interface LinearTeam {
@@ -29,10 +30,10 @@ interface TestResult {
 
 /** S-08: where "Create issue" files issues (GitHub, Linear, or both). */
 export function IssueTrackersPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
-  const [status, setStatus] = useState<TrackerStatus | null>(null);
+  const [status, setStatus] = useState<TrackerStatus | null>(() => cachedGet<TrackerStatus>(`/workspaces/${workspaceId}/trackers`) ?? null);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
-    api<TrackerStatus>(`/workspaces/${workspaceId}/trackers`).then(setStatus, () => {});
+    fetchSetting<TrackerStatus>(`/workspaces/${workspaceId}/trackers`).then(setStatus, () => {});
   }, [workspaceId]);
   // Linked from the inbox's "Create issue" hint.
   useEffect(() => {
@@ -211,12 +212,12 @@ function LinearSection({ workspaceId, status, canEdit, onChange }: SectionProps)
           <div className="field">
             <span className="small strong">Team</span>
             <div className="row tracker-row">
-              <NativeSelect value={linear.team?.id ?? ""} disabled={busy || options.length === 0} onChange={(e) => choose(e.target.value)} aria-label="Linear team">
-                <NativeSelectOption value="">{options.length ? "No team (Linear off)" : "Test connection to load teams"}</NativeSelectOption>
+              <SelectField value={linear.team?.id ?? ""} disabled={busy || options.length === 0} onValueChange={(value) => choose(value)} aria-label="Linear team">
+                <SelectOption value="">{options.length ? "No team (Linear off)" : "Test connection to load teams"}</SelectOption>
                 {options.map((t) => (
-                  <NativeSelectOption key={t.id} value={t.id}>{t.name} ({t.key})</NativeSelectOption>
+                  <SelectOption key={t.id} value={t.id}>{t.name} ({t.key})</SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
               <Button variant="outline" size="sm" disabled={busy || !linear.keySet} onClick={testConnection}>Test connection</Button>
             </div>
           </div>

@@ -158,7 +158,7 @@ const assertDraftShape = (draft: { title: string; body: string }) => {
   assert.match(draft.body, /\| `POST \/api\/billing\/pay\?email=…` \| 500 \| 412 ms \|/, "the failing request, masked");
   assert.match(draft.body, /`Payment failed for \[email\]: Bearer \[token\]`/);
   assert.match(draft.body, /- Browser: Safari 18\n- OS: macOS\n- Screen: 1280×720\n- Locale: de-DE · Europe\/Berlin/);
-  assert.ok(draft.body.endsWith(`From a support conversation in Jun Desk: ${new URL(BASE).origin}/inbox/${conversationId}`), "links back to the conversation");
+  assert.ok(draft.body.endsWith(`From a support conversation in Jun: ${new URL(BASE).origin}/inbox/${conversationId}`), "links back to the conversation");
   for (const leaked of ["pat@customer.test", "abc123", "sk_live_51Hxyz"]) assert.ok(!`${draft.title}\n${draft.body}`.includes(leaked), `leaked ${leaked}`);
   assert.doesNotMatch(`${draft.title}\n${draft.body}`, EMAIL, "no email addresses at all");
 };

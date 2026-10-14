@@ -6,6 +6,7 @@ import { navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { sliceColor } from "./topic-colors.ts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
+import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 
 const DayChart = lazy(() => import("./DayChart.tsx"));
 const KpiSpark = lazy(() => import("./charts.tsx").then((m) => ({ default: m.KpiSpark })));
@@ -37,7 +38,7 @@ function Kpi({ label, value, change, detail, off, viz }: { label: string; value:
       <div className="kpi-label">{label}</div>
       <div className={`kpi-value${off ? " off" : ""}`}>{value}</div>
       <div className="kpi-viz">{viz}</div>
-      <div className="kpi-detail">{change}{detail}</div>
+      <div className="kpi-detail">{change}<span>{detail}</span></div>
     </div>
   );
 }
@@ -324,16 +325,59 @@ function Overview({ r }: { r: MetricsReport }) {
   );
 }
 
+/** The last report per workspace and period: coming back shows it at once while a fresh one loads. */
+const reportCache = new Map<string, MetricsReport>();
+
+/** The loading page: the hero card's own parts and sizes, so the report drops in without moving anything. */
+function DashboardSkeleton({ aiOff }: { aiOff: boolean }) {
+  const kpis = aiOff ? ["Conversations", "AI assistant", "First response", "CSAT"] : ["Conversations", "AI resolved", "Handed off", "First response", "CSAT"];
+  return (
+    // A fragment: the sections sit straight in the page, with its gaps, like the real ones.
+    <>
+      <section className="dash-card dash-hero" aria-busy="true" aria-label="Loading the dashboard">
+        <div className="dash-card-head">
+          <h2>Conversations</h2>
+          <span className="dash-caption"><SkelText width={84} /></span>
+        </div>
+        <Skeleton className="dither-day" />
+        <div className="kpis">
+          {kpis.map((label) => (
+            <div key={label} className="kpi" aria-hidden="true">
+              <div className="kpi-label">{label}</div>
+              <div className="kpi-value"><SkelText width="3ch" /></div>
+              <div className="kpi-viz"><Skeleton className="kpi-skel-viz" /></div>
+              <div className="kpi-detail"><SkelText width={110} /></div>
+            </div>
+          ))}
+        </div>
+        {/* The real note runs to about two lines. */}
+        <p className="dash-foot"><SkelText width="100%" /><br /><SkelText width="40%" /></p>
+      </section>
+      <div className="dash-grid" aria-hidden="true">
+        {[0, 1].map((i) => (
+          <section key={i} className="dash-card">
+            <div className="dash-card-head"><h2><SkelText width={140} /></h2></div>
+            <Skeleton className="dither-donut" />
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export function ReportsPage({ workspaceId }: { workspaceId: string }) {
   const [days, setDays] = useState<MetricPeriod>(7);
-  const [report, setReport] = useState<MetricsReport | null>(null);
+  const [report, setReport] = useState<MetricsReport | null>(() => reportCache.get(`${workspaceId}:7`) ?? null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
     setError(null);
     api<{ report: MetricsReport }>(`/workspaces/${workspaceId}/metrics?days=${days}&tz=${encodeURIComponent(timezone)}`).then(
-      (r) => current && setReport(r.report),
+      (r) => {
+        reportCache.set(`${workspaceId}:${days}`, r.report);
+        if (current) setReport(r.report);
+      },
       (e) => current && setError(describeError(e)),
     );
     return () => {
@@ -341,7 +385,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
     };
   }, [workspaceId, days]);
 
-  const r = report?.days === days ? report : null;
+  const r = report?.days === days ? report : reportCache.get(`${workspaceId}:${days}`) ?? null;
   const empty = r && r.conversations.total === 0 && r.csat.good + r.csat.bad === 0;
 
   return (
@@ -357,7 +401,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
       </div>
       {error && <p className="error">{error}</p>}
       {!r ? (
-        !error && <div className="dash-card dash-loading" aria-busy="true"><p className="muted">Loading…</p></div>
+        !error && <DashboardSkeleton aiOff={(report ?? [...reportCache.values()].at(-1))?.ai.off ?? false} />
       ) : empty ? (
         <section className="dash-card">
           <p className="muted">No conversations in the last {days} days. Numbers show up here once visitors start chatting.</p>

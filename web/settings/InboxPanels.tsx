@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { cachedGet, fetchSetting } from "./settingsData.ts";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
 
 interface SavedReplyRow { id: string; title: string; body: string }
@@ -13,10 +14,10 @@ interface TagRow { id: string; name: string; conversations: number }
 /** I-06: the team's saved replies. Any member can add and edit them. */
 export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
   const base = `/workspaces/${workspaceId}/saved-replies`;
-  const [replies, setReplies] = useState<SavedReplyRow[]>([]);
+  const [replies, setReplies] = useState<SavedReplyRow[]>(() => cachedGet<{ savedReplies: SavedReplyRow[] }>(base)?.savedReplies ?? []);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const { busy, error, run } = useAction();
-  const load = useCallback(async () => setReplies((await api<{ savedReplies: SavedReplyRow[] }>(base)).savedReplies), [base]);
+  const load = useCallback(async () => setReplies((await fetchSetting<{ savedReplies: SavedReplyRow[] }>(base)).savedReplies), [base]);
   useEffect(() => {
     load().catch(() => {});
   }, [load]);
@@ -73,9 +74,9 @@ export function SavedRepliesPanel({ workspaceId }: { workspaceId: string }) {
 /** I-07: rename or delete tags (owners and admins). Tags are created from a conversation. */
 export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/tags`;
-  const [tags, setTags] = useState<TagRow[]>([]);
+  const [tags, setTags] = useState<TagRow[]>(() => cachedGet<{ tags: TagRow[] }>(base)?.tags ?? []);
   const { busy, error, run } = useAction();
-  const load = useCallback(async () => setTags((await api<{ tags: TagRow[] }>(base)).tags), [base]);
+  const load = useCallback(async () => setTags((await fetchSetting<{ tags: TagRow[] }>(base)).tags), [base]);
   useEffect(() => {
     load().catch(() => {});
   }, [load]);
@@ -116,14 +117,14 @@ interface TopicRow { id: string; name: string; conversations: number }
  */
 export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/topics`;
-  const [topics, setTopics] = useState<TopicRow[] | null>(null);
-  const [max, setMax] = useState(40);
+  const [topics, setTopics] = useState<TopicRow[] | null>(() => cachedGet<{ topics: TopicRow[] }>(base)?.topics ?? null);
+  const [max, setMax] = useState(() => cachedGet<{ max: number }>(base)?.max ?? 40);
   const [merging, setMerging] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { busy, error, run } = useAction();
   const ref = useRef<HTMLElement>(null);
   const load = useCallback(async () => {
-    const r = await api<{ topics: TopicRow[]; max: number }>(base);
+    const r = await fetchSetting<{ topics: TopicRow[]; max: number }>(base);
     setTopics(r.topics);
     setMax(r.max);
   }, [base]);
@@ -172,18 +173,18 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
               </span>
               {canEdit && merging === t.id ? (
                 <span className="topic-actions">
-                  <NativeSelect
+                  <SelectField
                     aria-label={`Merge ${t.name} into`}
                     defaultValue=""
                     disabled={busy}
-                    onChange={(e) => {
-                      const into = e.target.value;
+                    onValueChange={(value) => {
+                      const into = value;
                       if (into) run(async () => { await api(`${base}/${t.id}/merge`, { body: { into } }); setMerging(null); await load(); });
                     }}
                   >
-                    <NativeSelectOption value="" disabled>Merge into…</NativeSelectOption>
-                    {topics.filter((o) => o.id !== t.id).map((o) => <NativeSelectOption key={o.id} value={o.id}>{o.name}</NativeSelectOption>)}
-                  </NativeSelect>
+                    <SelectOption value="" disabled>Merge into…</SelectOption>
+                    {topics.filter((o) => o.id !== t.id).map((o) => <SelectOption key={o.id} value={o.id}>{o.name}</SelectOption>)}
+                  </SelectField>
                   <Button variant="outline" size="sm" onClick={() => setMerging(null)}>Cancel</Button>
                 </span>
               ) : canEdit && (
@@ -210,13 +211,15 @@ interface Assignment { mode: "manual" | "round_robin"; capacity: number }
 /** I-02: who new chats that need a person go to. */
 export function AssignmentPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/inbox`;
-  const [saved, setSaved] = useState<Assignment | null>(null);
-  const [mode, setMode] = useState<Assignment["mode"]>("manual");
-  const [capacity, setCapacity] = useState("0");
+  const initial = cachedGet<{ inbox: { settings: { assignment?: Assignment } } | null }>(base);
+  const first = initial ? initial.inbox?.settings.assignment ?? { mode: "manual" as const, capacity: 0 } : null;
+  const [saved, setSaved] = useState<Assignment | null>(first);
+  const [mode, setMode] = useState<Assignment["mode"]>(first?.mode ?? "manual");
+  const [capacity, setCapacity] = useState(String(first?.capacity ?? 0));
   const [done, setDone] = useState(false);
   const { busy, error, run } = useAction();
   useEffect(() => {
-    api<{ inbox: { settings: { assignment?: Assignment } } | null }>(base).then((r) => {
+    fetchSetting<{ inbox: { settings: { assignment?: Assignment } } | null }>(base).then((r) => {
       const a = r.inbox?.settings.assignment ?? { mode: "manual", capacity: 0 };
       setSaved(a);
       setMode(a.mode);

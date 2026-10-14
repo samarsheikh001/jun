@@ -3,7 +3,7 @@ import { readYaml } from "../lib/agentFiles.ts";
 import { useThemePref } from "../lib/theme.ts";
 import { MAX_WIDGET_STATES, parseWidgetFile, previewSummary, previewWidget, renderWidget, starterWidget, widgetSchema, type WidgetNode } from "../../shared/widgets.ts";
 import { schemaFromSample, schemaParams, withDescription, withRequired, type JsonSchema } from "../../shared/widget-schema.ts";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -20,7 +20,7 @@ import { WidgetChat } from "./AiChat.tsx";
 import { Studio } from "./Studio.tsx";
 import { WidgetPageActions, widgetPageActions } from "./WebsiteActions.tsx";
 import { Connections } from "./Connections.tsx";
-import { AddDialog, CodeEditor, Problems, TOOL, WIDGET, changeOf, go, humanize, slug } from "./parts.tsx";
+import { AddDialog, CodeEditor, FilePicker, Problems, TOOL, WIDGET, changeOf, go, humanize, slug, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
 // /agent/widgets[/<name>]: widgets/<name>.widget (W-09). /agent/widgets is a gallery of live previews
@@ -87,7 +87,9 @@ export function WidgetsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
   useEffect(() => {
     if (gone) go("/agent/widgets");
   }, [gone]);
+  const code = useCodeView();
   if (current) return <WidgetEditor key={current.path} cfg={cfg} canEdit={canEdit} path={current.path} name={current.name} />;
+  if (code) return <WidgetFilesCode cfg={cfg} canEdit={canEdit} items={items} />;
   return <WidgetGallery cfg={cfg} canEdit={canEdit} items={items} />;
 }
 
@@ -404,10 +406,10 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
         <section className="agent-stage agent-wed-canvas" data-preview={theme} aria-label="Preview">
           {states.length > 0 && (
             <div className="agent-canvas-state">
-              <NativeSelect size="sm" aria-label="Example to preview" value={String(shown)} onChange={(e) => setState(Number(e.target.value))}>
-                <NativeSelectOption value="-1">Default</NativeSelectOption>
-                {states.map((s, i) => <NativeSelectOption key={i} value={String(i)}>{s.name}</NativeSelectOption>)}
-              </NativeSelect>
+              <SelectField size="sm" aria-label="Example to preview" value={String(shown)} onValueChange={(value) => setState(Number(value))}>
+                <SelectOption value="-1">Default</SelectOption>
+                {states.map((s, i) => <SelectOption key={i} value={String(i)}>{s.name}</SelectOption>)}
+              </SelectField>
             </div>
           )}
           <div className="agent-canvas-tools" role="group" aria-label="Preview theme">
@@ -425,6 +427,30 @@ function WidgetEditor({ cfg, canEdit, path, name }: { cfg: AgentConfig; canEdit:
         </section>
       }
     />
+  );
+}
+
+/** Code on the gallery: one widget at a time, in the same editor as its own page's Code tab. */
+function WidgetFilesCode({ cfg, canEdit, items }: { cfg: AgentConfig; canEdit: boolean; items: WidgetItem[] }) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const [state, setState] = useState(-1);
+  const item = items.find((i) => i.path === picked) ?? items[0];
+  if (!item) return <p className="muted agent-blank">No widgets yet. Switch to Form to pick a template or make one.</p>;
+  const states = statesOf(item.name, cfg.draft[item.path] ?? "");
+  return (
+    <section className="agent-form agent-code agent-widget-files">
+      {items.length > 1 && (
+        <FilePicker
+          files={items.map((i) => i.path)}
+          value={item.path}
+          onChange={(p) => {
+            setPicked(p);
+            setState(-1);
+          }}
+        />
+      )}
+      <WidgetCode key={item.path} cfg={cfg} path={item.path} canEdit={canEdit} states={states} state={state < states.length ? state : -1} setState={setState} />
+    </section>
   );
 }
 

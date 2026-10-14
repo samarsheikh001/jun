@@ -1,6 +1,6 @@
 import { useId } from "react";
 
-/** The Jun Desk mark: four lobes with the #E0BBE4 → #957DAD gradient (from the earlier desk prototype). */
+/** The Jun mark: four lobes with the #E0BBE4 → #957DAD gradient (from the earlier desk prototype). */
 export function DeskIcon({ className }: { className?: string }) {
   const gradient = `desk-mark-${useId().replace(/[^\w-]/g, "")}`;
   return (

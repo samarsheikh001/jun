@@ -12,7 +12,7 @@ export const JWKS_URL = `${AUTH_ISSUER}/.well-known/jwks.json`;
 
 /** Placeholder client id used only for the first (dynamic registration) sign-in. */
 export const REGISTRATION_CLIENT_ID = "dynamic_agent_client";
-export const AGENT_NAME = "Jun Desk";
+export const AGENT_NAME = "Jun";
 export const RESOURCE = "https://api.openai.com/v1";
 export const SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 export const PLAN_USAGE_SCOPE = "chatgpt.tokens.use.direct";

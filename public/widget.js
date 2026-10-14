@@ -1,4 +1,4 @@
-/*! Jun Desk widget loader | MIT License
+/*! Jun widget loader | MIT License
  * Usage: <script src="https://<your-desk>/widget.js" data-key="wk_..." defer></script>
  *   in <head>, before the site's own scripts: deferred scripts run in document order, so
  *   document.modelContext (below) exists before page code that checks for it once on load.
@@ -30,7 +30,7 @@
   var script = document.currentScript;
   if (!script || window.JunDesk) return;
   var key = script.getAttribute("data-key");
-  if (!key) return console.warn("Jun Desk: no data-key");
+  if (!key) return console.warn("Jun: no data-key");
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color"); // overrides the desk's branding colour
 
@@ -273,7 +273,7 @@
     "<style>" +
     ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
     "button{border:0;padding:0;cursor:pointer}.btn,.frame,.nudge{position:fixed;right:22px;bottom:88px;z-index:2147483000}" +
-    // D-34: the earlier Jun Desk widget's palette and radii; the open chat has a soft shadow instead of its border.
+    // D-34: the earlier Jun widget's palette and radii; the open chat has a soft shadow instead of its border.
     ".frame,.nudge{background:#fff;color:#171717;border:1px solid #e5e5e5;border-radius:var(--r,16px);display:none}" +
     // W-04 dark theme ("auto" keeps the light card; the chat itself follows the system). Before .btn, which keeps its colours.
     ".dark>*{background:#171717;color:#f5f5f5;border-color:#2f2f2f}" +

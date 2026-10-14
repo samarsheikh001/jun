@@ -1,6 +1,6 @@
 {
-  "name": "Jun Desk",
-  "short_name": "Jun Desk",
+  "name": "Jun",
+  "short_name": "Jun",
   "start_url": "/inbox",
   "scope": "/",
   "display": "standalone",

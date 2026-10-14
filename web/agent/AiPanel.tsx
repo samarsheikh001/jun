@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { cachedGet, fetchSetting } from "../settings/settingsData.ts";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "../settings/layout.tsx";
+import { ChatgptConnect, type DevChatgpt } from "./ChatgptConnect.tsx";
 
-type ProviderId = "openai" | "workers-ai" | "chatgpt";
+export type ProviderId = "openai" | "workers-ai" | "chatgpt";
 type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups" | "editor";
 
 interface AiState {
@@ -18,11 +20,11 @@ interface AiState {
   jobDefaults: Record<ProviderId, Partial<Record<AiJob, string>>>;
   effectiveModels: Record<AiJob, string>;
   openaiKeyConfigured: boolean;
-  devChatgpt: { available: boolean; connected: boolean; email: string | null };
+  devChatgpt: DevChatgpt;
   usage: { month: string; replies: number; inputTokens: number; outputTokens: number };
 }
 
-const PROVIDER_LABELS: Record<ProviderId, string> = {
+export const PROVIDER_LABELS: Record<ProviderId, string> = {
   "workers-ai": "Workers AI (built in, no key needed)",
   openai: "OpenAI (API key)",
   chatgpt: "ChatGPT sign-in (your plan)",
@@ -46,18 +48,18 @@ const FAST_JOBS: AiJob[] = ["nudge", "topics", "brief", "followups"];
 
 export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/ai`;
-  const [state, setState] = useState<AiState | null>(null);
-  const [enabled, setEnabled] = useState(false);
-  const [provider, setProvider] = useState<ProviderId>("workers-ai");
-  const [model, setModel] = useState("");
-  const [models, setModels] = useState<Partial<Record<AiJob, string>>>({});
+  // Settings fetched these when it opened (settingsData): the form starts filled in.
+  const initial = cachedGet<AiState>(base);
+  const [state, setState] = useState<AiState | null>(initial ?? null);
+  const [enabled, setEnabled] = useState(initial?.settings.enabled ?? false);
+  const [provider, setProvider] = useState<ProviderId>(initial?.settings.provider ?? "workers-ai");
+  const [model, setModel] = useState(initial?.settings.model ?? "");
+  const [models, setModels] = useState<Partial<Record<AiJob, string>>>(initial?.settings.models ?? {});
   const [saved, setSaved] = useState(false);
-  // Deployed desks: the sign-in returns to a 127.0.0.1 page that doesn't load; its address is pasted here.
-  const [pasting, setPasting] = useState(false);
   const { busy, error, run } = useAction();
 
   const load = useCallback(async () => {
-    const next = await api<AiState>(base);
+    const next = await fetchSetting<AiState>(base);
     setState(next);
     setEnabled(next.settings.enabled);
     setProvider(next.settings.provider);
@@ -107,46 +109,16 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
           <Switch checked={enabled} onCheckedChange={(value) => setEnabled(value)} disabled={!canEdit} aria-label="Answer new chats with AI" />
         </SettingRow>
         <SettingRow label="Model provider" description="Where the assistant's replies come from." htmlFor="ai-provider">
-          <NativeSelect id="ai-provider" value={provider} onChange={(e) => setProvider(e.target.value as ProviderId)} disabled={!canEdit}>
+          <SelectField id="ai-provider" value={provider} onValueChange={(value) => setProvider(value as ProviderId)} disabled={!canEdit}>
             {providers.map((p) => (
-              <NativeSelectOption key={p} value={p}>{PROVIDER_LABELS[p]}</NativeSelectOption>
+              <SelectOption key={p} value={p}>{PROVIDER_LABELS[p]}</SelectOption>
             ))}
-          </NativeSelect>
+          </SelectField>
         </SettingRow>
         {provider === "openai" && !state.openaiKeyConfigured && (
           <p className="small error">Set the <code>OPENAI_API_KEY</code> Worker secret (<code>npx wrangler secret put OPENAI_API_KEY</code>) to use OpenAI.</p>
         )}
-        {provider === "chatgpt" && (
-          <div className="small chatgpt-box">
-            {state.devChatgpt.connected ? (
-              <span>Connected as <strong>{state.devChatgpt.email ?? "your ChatGPT account"}</strong>. Replies use your ChatGPT plan.</span>
-            ) : (
-              <span>Not connected.</span>
-            )}
-            {canEdit && (state.devChatgpt.available || state.devChatgpt.connected) && (
-              <div className="row chatgpt-actions">
-                {canEdit && state.devChatgpt.available && (
-                  <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { const { url, paste } = await api<{ url: string; paste: boolean }>(`${base}/chatgpt/start`, { body: {} }); if (!paste) { window.location.href = url; return; } window.open(url, "_blank", "noopener"); setPasting(true); })}>
-                    {state.devChatgpt.connected ? "Reconnect" : "Sign in with ChatGPT"}
-                  </Button>
-                )}
-                {canEdit && state.devChatgpt.connected && (
-                  <Button variant="outline" size="sm" type="button" disabled={busy} onClick={() => run(async () => { await api(`${base}/chatgpt`, { method: "DELETE" }); await load(); })}>Disconnect</Button>
-                )}
-              </div>
-            )}
-            {pasting && (
-              <div className="stack chatgpt-paste">
-                <span>After you approve in the new tab, it ends on a page that doesn't load (<code>http://127.0.0.1:1455/auth/callback?…</code>). Copy that page's address and paste it here.</span>
-                <div className="row">
-                  <Input name="callbackUrl" placeholder="http://127.0.0.1:1455/auth/callback?code=…" aria-label="Sign-in return address" autoComplete="off" />
-                  <Button size="sm" type="button" disabled={busy} onClick={(e) => { const input = e.currentTarget.parentElement?.querySelector("input"); run(async () => { await api(`${base}/chatgpt/finish`, { body: { callbackUrl: input?.value ?? "" } }); setPasting(false); await load(); }); }}>Finish</Button>
-                </div>
-              </div>
-            )}
-            <div className="muted">Replies spend the signed-in ChatGPT plan. Only for a private desk: OpenAI's terms cover plan usage for your own use, not for serving the public.</div>
-          </div>
-        )}
+        {provider === "chatgpt" && <ChatgptConnect base={base} devChatgpt={state.devChatgpt} canEdit={canEdit} onChange={load} />}
         <SettingRow label="Model" description={<>Optional. Empty uses the provider's default, <code>{state.defaults[provider]}</code>.</>} htmlFor="ai-model">
           <Input id="ai-model" name="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.defaults[provider]} disabled={!canEdit} />
         </SettingRow>
@@ -204,7 +176,7 @@ export function GitCard() {
     <SettingsCard
       id="agent-git"
       title="Keep it in git"
-      description="Everything on the Agent pages is a set of text files. Developers can pull them into your Jun Desk checkout, review changes there, run the tests and push them back."
+      description="Everything on the Agent pages is a set of text files. Developers can pull them into your Jun checkout, review changes there, run the tests and push them back."
     >
       <p className="small muted">
         Create a token in{" "}

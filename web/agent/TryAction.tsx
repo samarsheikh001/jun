@@ -6,7 +6,7 @@ import { checkData } from "../../shared/widget-schema.ts";
 import { editYaml, readYaml } from "../lib/agentFiles.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
@@ -113,11 +113,11 @@ export function TryAction({ cfg, canEdit, path, name, compact = false }: { cfg: 
             <label key={key} className="agent-try-field">
               <span>{humanize(key)}</span>
               {types[key] === "boolean" ? (
-                <NativeSelect size="sm" value={shown[key] ?? ""} onChange={(e) => { const v = { ...shown, [key]: e.target.value }; setValues(v); keep({ values: v }); }}>
-                  <NativeSelectOption value="">(leave out)</NativeSelectOption>
-                  <NativeSelectOption value="true">Yes</NativeSelectOption>
-                  <NativeSelectOption value="false">No</NativeSelectOption>
-                </NativeSelect>
+                <SelectField size="sm" value={shown[key] ?? ""} onValueChange={(value) => { const v = { ...shown, [key]: value }; setValues(v); keep({ values: v }); }}>
+                  <SelectOption value="">(leave out)</SelectOption>
+                  <SelectOption value="true">Yes</SelectOption>
+                  <SelectOption value="false">No</SelectOption>
+                </SelectField>
               ) : (
                 <Input
                   value={shown[key] ?? ""}

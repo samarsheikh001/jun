@@ -5,7 +5,7 @@ import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
 
@@ -80,9 +80,9 @@ export function HoursPanel({ workspaceId, settings, canEdit, onSaved }: { worksp
           <Switch checked={enabled} onCheckedChange={(value) => setEnabled(value)} disabled={!canEdit} aria-label="Use business hours" />
         </SettingRow>
         <SettingRow label="Time zone" description="The hours below are in this time zone." htmlFor="hours-timezone">
-          <NativeSelect id="hours-timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={!canEdit}>
-            {zones().map((z) => <NativeSelectOption key={z} value={z}>{z.replace(/_/g, " ")}</NativeSelectOption>)}
-          </NativeSelect>
+          <SelectField id="hours-timezone" value={timezone} onValueChange={(value) => setTimezone(value)} disabled={!canEdit}>
+            {zones().map((z) => <SelectOption key={z} value={z}>{z.replace(/_/g, " ")}</SelectOption>)}
+          </SelectField>
         </SettingRow>
         <div className="hours-grid">
           {ALL_DAYS.map((d) => {

@@ -7,7 +7,10 @@ import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 
 export type OnboardingStep = "account" | "knowledge" | "ai" | "brand" | "install" | "team";
 
-const dismissedKey = (workspaceId: string) => `onboarding_dismissed:${workspaceId}`;
+// Set only by the sidebar card's × ("hide for good"). The old `onboarding_dismissed:` key was set by leaving Get started
+// for the inbox, which hid the card from people who hadn't finished; it's ignored now.
+const dismissedKey = (workspaceId: string) => `onboarding_hidden:${workspaceId}`;
+const installMarkedKey = (workspaceId: string) => `onboarding_install_marked:${workspaceId}`;
 
 async function requireMember(c: AppContext, workspaceId: string): Promise<void> {
   const row = await c.env.DB.prepare("SELECT 1 FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first();
@@ -22,7 +25,7 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
   const workspaceId = c.req.param("id");
   await requireMember(c, workspaceId);
   const db = c.env.DB;
-  const [knowledge, ai, inbox, team, dismissed] = await Promise.all([
+  const [knowledge, ai, inbox, team, dismissed, marked] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS n FROM kb_sources WHERE workspace_id = ? AND status = 'ready'").bind(workspaceId).first<{ n: number }>(),
     db.prepare("SELECT enabled FROM ai_settings WHERE workspace_id = ?").bind(workspaceId).first<{ enabled: number }>(),
     db.prepare("SELECT widget_key, settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ widget_key: string; settings: string }>(),
@@ -30,6 +33,7 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
       "SELECT (SELECT COUNT(*) FROM members WHERE workspace_id = ?1) AS members, (SELECT COUNT(*) FROM invites WHERE workspace_id = ?1) AS invites",
     ).bind(workspaceId).first<{ members: number; invites: number }>(),
     db.prepare("SELECT value FROM settings WHERE key = ?").bind(dismissedKey(workspaceId)).first<{ value: string }>(),
+    db.prepare("SELECT value FROM settings WHERE key = ?").bind(installMarkedKey(workspaceId)).first<{ value: string }>(),
   ]);
   const settings = inbox ? (JSON.parse(inbox.settings) as Record<string, unknown>) : {};
   const done: Record<OnboardingStep, boolean> = {
@@ -37,8 +41,9 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
     knowledge: (knowledge?.n ?? 0) > 0,
     ai: ai?.enabled === 1,
     brand: typeof settings.color === "string" || typeof settings.logoKey === "string" || typeof settings.logoDarkKey === "string" || typeof settings.greeting === "string",
-    // Set the first time the loader connects from a site other than the desk itself.
-    install: typeof settings.installedAt === "number",
+    // Set the first time the loader connects from a site other than the desk itself, or by the
+    // admin's "I've added it" (a staging site, or one not visited yet).
+    install: typeof settings.installedAt === "number" || Boolean(marked),
     team: (team?.members ?? 0) > 1 || (team?.invites ?? 0) > 0,
   };
   return c.json({ steps: done, widgetKey: inbox?.widget_key ?? null, installedOn: settings.installedOn ?? null, dismissed: Boolean(dismissed) });
@@ -49,4 +54,11 @@ onboarding.post("/workspaces/:id/onboarding/dismiss", async (c) => {
   await requireMember(c, workspaceId);
   await c.env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT (key) DO UPDATE SET value = '1'").bind(dismissedKey(workspaceId)).run();
   return c.json({ dismissed: true });
+});
+
+onboarding.post("/workspaces/:id/onboarding/installed", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireMember(c, workspaceId);
+  await c.env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, '1') ON CONFLICT (key) DO UPDATE SET value = '1'").bind(installMarkedKey(workspaceId)).run();
+  return c.json({ ok: true });
 });

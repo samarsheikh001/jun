@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/tooltip"
 import { SidebarIcon } from "@/components/icons"
 
-// Jun Desk: the open/closed choice is kept per browser in localStorage (like the theme), not a cookie.
+// Jun: the open/closed choice is kept per browser in localStorage (like the theme), not a cookie.
 const SIDEBAR_STORAGE_KEY = "jun:sidebar"
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"

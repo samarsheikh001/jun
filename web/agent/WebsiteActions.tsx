@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input.tsx";
 import { cardFromShape } from "../../shared/widgets.ts";
 import { widgetPageButtons } from "../../shared/agent-links.ts";
 import { Button } from "@/components/ui/button.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { PlusIcon, XIcon } from "../components/icons.tsx";
 import { go, humanize, slug, WIDGET } from "./parts.tsx";
 import { editYaml, readYaml } from "../lib/agentFiles.ts";
@@ -179,18 +179,18 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                 <p className="agent-index-sub">{a.description}</p>
                 <label className="agent-site-card">
                   <span>When the AI runs it</span>
-                  <NativeSelect
+                  <SelectField
                     aria-label={`When the AI runs ${humanize(a.name)}`}
                     size="sm"
                     value={risks[a.name] ?? ""}
                     disabled={!canEdit}
-                    onChange={(e) => setRisk(cfg, a.name, (e.target.value || null) as Risk | null)}
+                    onValueChange={(value) => setRisk(cfg, a.name, (value || null) as Risk | null)}
                   >
-                    <NativeSelectOption value="">{a.risk ? `${RISK_LABEL[a.risk]} (your site's setting)` : "Your site's setting"}</NativeSelectOption>
+                    <SelectOption value="">{a.risk ? `${RISK_LABEL[a.risk]} (your site's setting)` : "Your site's setting"}</SelectOption>
                     {(["auto", "confirm", "human"] as const).map((r) => (
-                      <NativeSelectOption key={r} value={r}>{RISK_LABEL[r]}</NativeSelectOption>
+                      <SelectOption key={r} value={r}>{RISK_LABEL[r]}</SelectOption>
                     ))}
-                  </NativeSelect>
+                  </SelectField>
                 </label>
                 <label className="agent-site-card">
                   <span>While it runs, the customer sees</span>
@@ -206,20 +206,20 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                 </label>
                 <label className="agent-site-card">
                   <span>Show what it returns as</span>
-                  <NativeSelect
+                  <SelectField
                     aria-label={`Widget for ${humanize(a.name)}`}
                     size="sm"
                     value={card?.widget ?? TEXT}
                     disabled={!canEdit}
-                    onChange={(e) => setCard(cfg, a.name, e.target.value || null)}
+                    onValueChange={(value) => setCard(cfg, a.name, value || null)}
                   >
-                    <NativeSelectOption value={TEXT}>Text (no widget)</NativeSelectOption>
+                    <SelectOption value={TEXT}>Text (no widget)</SelectOption>
                     {widgets.map((w) => (
-                      <NativeSelectOption key={w} value={w}>
+                      <SelectOption key={w} value={w}>
                         {humanize(w)}
-                      </NativeSelectOption>
+                      </SelectOption>
                     ))}
-                  </NativeSelect>
+                  </SelectField>
                 </label>
                 {card && <p className="agent-index-sub">Every time it runs, its result shows as this widget. To show a widget at a step of a task, use the task's steps instead.</p>}
                 {card?.by === "page" && <p className="agent-index-sub">Set in your site's code. Picking another widget here wins.</p>}
@@ -283,15 +283,15 @@ export function WidgetPageActions({ cfg, name, canEdit }: { cfg: AgentConfig; na
         </ul>
       )}
       {canEdit && (
-        <NativeSelect aria-label="Add a website action" size="sm" value="" onChange={(e) => e.target.value && setCard(cfg, e.target.value, name)}>
-          <NativeSelectOption value="">{others.length ? "Add a website action…" : seen === null ? "Loading…" : "No other website actions seen yet"}</NativeSelectOption>
+        <SelectField aria-label="Add a website action" size="sm" value="" onValueChange={(value) => value && setCard(cfg, value, name)}>
+          <SelectOption value="">{others.length ? "Add a website action…" : seen === null ? "Loading…" : "No other website actions seen yet"}</SelectOption>
           {others.map((a) => (
-            <NativeSelectOption key={a.name} value={a.name}>
+            <SelectOption key={a.name} value={a.name}>
               {humanize(a.name)}
               {cardOf(cfg.draft, a)?.by === "desk" ? ` (now ${humanize(cardOf(cfg.draft, a)!.widget)})` : ""}
-            </NativeSelectOption>
+            </SelectOption>
           ))}
-        </NativeSelect>
+        </SelectField>
       )}
     </div>
   );

@@ -12,7 +12,7 @@ export class PageErrorBoundary extends Component<{ children: ReactNode }, { erro
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[Jun Desk] page crashed:", error, info.componentStack);
+    console.error("[Jun] page crashed:", error, info.componentStack);
   }
 
   override render() {

@@ -27,6 +27,7 @@ import { movedFromSettings, SettingsDialog } from "./SettingsDialog.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
 import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
+import { SkelText } from "@/components/ui/skeleton.tsx";
 
 const NAV = [
   { id: "dashboard", label: "Dashboard", Icon: ChartColumnIcon },
@@ -36,6 +37,122 @@ const NAV = [
   { id: "agent", label: "Agent", Icon: BotIcon },
   { id: "appearance", label: "Chat widget", Icon: ChatIcon },
 ] as const;
+
+/** Which sidebar entry a path belongs to. */
+function sectionOf(pagePath: string) {
+  return pagePath.startsWith("/knowledge") ? "knowledge"
+    : pagePath.startsWith("/agent") ? "agent"
+    : pagePath.startsWith("/appearance") ? "appearance"
+    : pagePath.startsWith("/visitors") ? "visitors"
+    : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
+    : pagePath.startsWith("/welcome") ? "welcome"
+    : "inbox";
+}
+
+/**
+ * Who was signed in on this browser last time, for the first frame before /me answers (a
+ * per-browser convenience: only the name and workspace shown in the sidebar, never a token).
+ */
+const LAST_SESSION = "jun:last-session";
+export type LastSession = { name: string; workspace: string };
+export function lastSession(): LastSession | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_SESSION) ?? "null") as Partial<LastSession> | null;
+    return v && typeof v.name === "string" && typeof v.workspace === "string" ? { name: v.name, workspace: v.workspace } : null;
+  } catch {
+    return null;
+  }
+}
+export function rememberSession(session: LastSession | null) {
+  try {
+    if (session) localStorage.setItem(LAST_SESSION, JSON.stringify(session));
+    else localStorage.removeItem(LAST_SESSION);
+  } catch {
+    // Storage blocked: the first frame is just blank next time.
+  }
+}
+
+/**
+ * The first frame of a page load while /me is on its way: the same sidebar as the Shell (same
+ * component, entries and footer), the page area empty until the page draws its own skeleton.
+ * Nothing in the sidebar moves when the Shell takes over.
+ */
+export function ShellSkeleton({ session }: { session: LastSession }) {
+  const pagePath = window.location.pathname;
+  const section = sectionOf(pagePath);
+  return (
+    <SidebarProvider className="shell" aria-busy="true">
+      <Sidebar collapsible="icon" className="desk-sidebar">
+        <SidebarHeader className="desk-sidebar-head">
+          <SidebarTrigger />
+          <div className="brand"><DeskIcon /><span>Jun</span></div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarMenu aria-label="Main">
+              {NAV.map(({ id, label, Icon }) => (
+                <SidebarMenuItem key={id}>
+                  <SidebarMenuButton isActive={section === id} tooltip={label} render={<a href={`/${id}`} />}>
+                    <Icon />
+                    <span>{label}</span>
+                  </SidebarMenuButton>
+                  {id === "agent" && section === "agent" && (
+                    <SidebarMenuSub aria-label="Agent">
+                      {AGENT_SECTIONS.map((a) => (
+                        <SidebarMenuSubItem key={a.id}>
+                          {a.group && <span className="agent-nav-group">{a.group}</span>}
+                          <SidebarMenuSubButton isActive={agentSection(pagePath) === a.id} href={a.path}>
+                            <span>{a.label}</span>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  )}
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" tooltip={`Search (${modKey()} K)`}>
+                <SearchIcon />
+                <span>Search</span>
+                <kbd className="ml-auto">{modKey()} K</kbd>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <ThemeButton />
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" tooltip="Keyboard shortcuts (?)">
+                <HelpIcon />
+                <span>Keyboard shortcuts</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton type="button" size="lg" className="desk-user" aria-label="Account">
+                <span className="avatar me" aria-hidden="true">{session.name.slice(0, 1).toUpperCase()}</span>
+                <span className="desk-user-text">
+                  <span className="desk-user-name">{session.name}</span>
+                  <span className="desk-user-sub">{session.workspace} · <SkelText width={48} /></span>
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset className="desk-inset">
+        <header className="desk-mobile-bar">
+          <SidebarTrigger />
+          <div className="brand"><DeskIcon /><span>Jun</span></div>
+        </header>
+        <main className="desk-main" />
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
 
 export interface Hub {
   subscribe(listener: (event: HubEvent) => void): () => void;
@@ -77,9 +194,14 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     else navigate(pageBehind.current, { replace: true });
   }, []);
   const workspace = me.memberships?.[0];
+  // The next page load draws this sidebar (ShellSkeleton) before /me answers.
+  useEffect(() => {
+    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName });
+  }, [me.user, workspace]);
   const [online, setOnline] = useState<PresenceEntry[]>([]);
   // V-01: kept here (not in the page) because the hub sends the full list only on connect.
-  const [visitors, setVisitors] = useState<LiveVisitor[]>([]);
+  // Null until that first list arrives, so the Visitors page shows its skeleton, not "nobody".
+  const [visitors, setVisitors] = useState<LiveVisitor[] | null>(null);
   const listeners = useRef(new Set<(event: HubEvent) => void>());
   const onboarding = useOnboarding(workspace?.workspaceId ?? "");
   // The sidebar's "Get started" checklist follows what's done elsewhere (Settings, Knowledge…).
@@ -108,8 +230,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         if (event.type === "notify" && event.sound !== false && !(tabFocused() && window.location.pathname === event.notification.url)) playChime();
         if (event.type === "presence") setOnline(event.online);
         if (event.type === "visitors") setVisitors(event.visitors);
-        if (event.type === "visitor") setVisitors((list) => [...list.filter((v) => v.sessionId !== event.visitor.sessionId), event.visitor]);
-        if (event.type === "visitor_left") setVisitors((list) => list.filter((v) => v.sessionId !== event.sessionId));
+        if (event.type === "visitor") setVisitors((list) => [...(list ?? []).filter((v) => v.sessionId !== event.visitor.sessionId), event.visitor]);
+        if (event.type === "visitor_left") setVisitors((list) => list && list.filter((v) => v.sessionId !== event.sessionId));
         for (const listener of listeners.current) listener(event);
       },
     });
@@ -224,14 +346,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   );
 
   if (!workspace || !me.user) return <div className="center muted">You're not a member of any workspace.</div>;
-  const section =
-    pagePath.startsWith("/knowledge") ? "knowledge"
-    : pagePath.startsWith("/agent") ? "agent"
-    : pagePath.startsWith("/appearance") ? "appearance"
-    : pagePath.startsWith("/visitors") ? "visitors"
-    : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
-    : pagePath.startsWith("/welcome") ? "welcome"
-    : "inbox";
+  const section = sectionOf(pagePath);
   const ob = onboarding.state;
   const obDone = ob ? STEP_ORDER.filter((k) => ob.steps[k]).length : 0;
   const showGetStarted = Boolean(ob && !ob.dismissed && obDone < STEP_ORDER.length && workspace.role !== "agent");
@@ -245,7 +360,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       <Sidebar collapsible="icon" className="desk-sidebar">
         <SidebarHeader className="desk-sidebar-head">
           <SidebarTrigger />
-          <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
+          <div className="brand"><DeskIcon /><span>Jun</span></div>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -260,7 +375,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                     <Icon />
                     <span>{label}</span>
                   </SidebarMenuButton>
-                  {id === "visitors" && visitors.length > 0 && <SidebarMenuBadge className="nav-count">{visitors.length}</SidebarMenuBadge>}
+                  {id === "visitors" && visitors && visitors.length > 0 && <SidebarMenuBadge className="nav-count">{visitors.length}</SidebarMenuBadge>}
                   {/* The Agent's parts open under it while you're there (Chatbase's "Build"); the icon rail shows only Agent. */}
                   {id === "agent" && section === "agent" && !settingsOpen && (
                     <SidebarMenuSub aria-label="Agent">
@@ -290,7 +405,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <SidebarFooter>
           {ob && showGetStarted && section !== "welcome" && (
             <>
-              <div className="desk-sidebar-expanded"><GetStartedCard onboarding={ob} /></div>
+              <div className="desk-sidebar-expanded"><GetStartedCard onboarding={ob} onHide={() => { api(`/workspaces/${workspace.workspaceId}/onboarding/dismiss`, { body: {} }).then(reloadOnboarding).catch(() => {}); }} /></div>
               <SidebarMenu className="desk-sidebar-collapsed">
                 <SidebarMenuItem>
                   <SidebarMenuButton tooltip={`Get started (${obDone} of ${STEP_ORDER.length})`} render={<a href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }} />}>
@@ -364,7 +479,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       <SidebarInset className="desk-inset">
       <header className="desk-mobile-bar">
         <SidebarTrigger />
-        <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
+        <div className="brand"><DeskIcon /><span>Jun</span></div>
       </header>
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
       <PageErrorBoundary key={section}>

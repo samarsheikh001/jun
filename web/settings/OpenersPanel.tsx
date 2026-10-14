@@ -4,7 +4,7 @@ import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 
 // P-01 page openers (owners/admins): "after 20 s on /pricing, offer a chat". Mounted once the
 // inbox settings have loaded; `initial` only seeds the form.
@@ -64,10 +64,10 @@ export function OpenersPanel({ workspaceId, proactive, initial }: { workspaceId:
               </label>
               <label className="field">
                 <span className="small">Message</span>
-                <NativeSelect value={d.ai ? "ai" : "text"} onChange={(e) => change(i, { ai: e.target.value === "ai" })}>
-                  <NativeSelectOption value="text">Fixed text</NativeSelectOption>
-                  <NativeSelectOption value="ai">Let the AI write it</NativeSelectOption>
-                </NativeSelect>
+                <SelectField value={d.ai ? "ai" : "text"} onValueChange={(value) => change(i, { ai: value === "ai" })}>
+                  <SelectOption value="text">Fixed text</SelectOption>
+                  <SelectOption value="ai">Let the AI write it</SelectOption>
+                </SelectField>
               </label>
               <Button variant="outline" size="sm" disabled={busy} onClick={() => setDrafts((list) => list.filter((_, j) => j !== i))} aria-label={`Remove opener ${i + 1}`}>Remove</Button>
             </div>

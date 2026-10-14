@@ -16,14 +16,14 @@ button.w-thumb { padding: 2px 10px; font-size: 1.1rem; line-height: 1.4; backgro
 button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }
 
 /* ---------- The chat window (button and card launchers, D-34) ----------
-   The earlier Jun Desk widget's stylesheet (its public/widget.css), rule for rule, on our markup:
+   The earlier Jun widget's stylesheet (its public/widget.css), rule for rule, on our markup:
    .panel is .w-shell (its place, size, border and corners are the loader's frame), .header
    .w-head, .msg.user the visitor's .bubble and .msg.assistant everyone else's, .composer2 and
    .composer-wrap the composer, .footer-brand .w-badge. The card launcher's closed state (.mini,
    then .launcher) is .w-closed, drawn here (card.tsx). Its radii are the corner rounding setting
    (--radius) and 0.75, 0.625 and 0.5 of it. */
 :root { --radius: calc(var(--r-md) * 8 / 7); --radius-md: calc(var(--radius) * 0.75); --radius-sm: calc(var(--radius) * 0.625); --radius-xs: calc(var(--radius) * 0.5); }
-.w-shell, .w-closed { color: var(--text); font-family: "Jun Desk Outfit", Arial, sans-serif; font-size: 14px; line-height: 1.5; }
+.w-shell, .w-closed { color: var(--text); font-family: "Jun Outfit", Arial, sans-serif; font-size: 14px; line-height: 1.5; }
 .w-shell { height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
 :is(.w-shell, .w-closed) button, :is(.w-shell, .w-closed) input, :is(.w-shell, .w-closed) textarea { font: inherit; color: inherit; }
 :is(.w-shell, .w-closed) button { cursor: pointer; padding: 1px 6px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); transition: background 0.15s, box-shadow 0.15s; }
@@ -32,7 +32,7 @@ button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }
 :is(.w-shell, .w-closed) :is(button, input, a, [role="button"]):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 :is(.w-shell, .w-closed) svg { width: 18px; height: 18px; flex-shrink: 0; }
 :is(.w-shell, .w-closed) img { display: block; }
-.w-shell code, .w-shell pre { font-family: "Jun Desk Mono", monospace; }
+.w-shell code, .w-shell pre { font-family: "Jun Mono", monospace; }
 
 /* Header */
 .w-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
@@ -61,7 +61,7 @@ button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }
 .w-exit { display: flex; justify-content: flex-end; padding: 6px 16px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 .b-panel .w-exit { padding: 8px 16px 0; border: 0; }
 :is(.w-shell, .b-panel) .w-exit-btn { padding: 4px 12px; font-size: 12px; line-height: 1.5; font-weight: 500; background: var(--bg); color: inherit; border: 1px solid var(--border); border-radius: var(--radius-xs); }
-/* "Built with Jun Desk" (.footer-brand) */
+/* "Built with Jun" (.footer-brand) */
 .w-badge { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 0 12px; color: var(--muted); font-size: 10px; flex-shrink: 0; }
 :is(.w-shell, .w-closed) .w-badge-logo { width: 14px; height: 14px; }
 .w-badge.mini { padding-bottom: 12px; }
@@ -130,7 +130,7 @@ html.mini body { overflow: hidden; }
 .w-shell .bubble { padding: 0 4px; border: 0; border-radius: 0; background: none; color: var(--text-soft); overflow-wrap: anywhere; white-space: pre-wrap; }
 .w-shell .msg.ai .bubble { background: none; color: var(--text-soft); }
 .w-shell .msg.own .bubble { width: fit-content; padding: 10px 14px; border-radius: var(--radius-md); background: var(--bubble); color: var(--bubble-text); }
-.w-shell .bubble code { font-family: "Jun Desk Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; white-space: break-spaces; }
+.w-shell .bubble code { font-family: "Jun Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; white-space: break-spaces; }
 .w-shell .bubble a, .w-shell .sources a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
 .w-shell .cite { padding: 0 3px; border-radius: 4px; background: var(--code); color: var(--link); text-decoration: none; }
 .w-shell .sources { margin: 4px 4px 0; font-size: 12px; color: var(--muted); }
@@ -352,7 +352,7 @@ html.bar body {
    page's gets an opaque backdrop); the palette still comes from data-theme. */
 :root.island, :root.island[data-theme] { color-scheme: light; }
 html.island, html.island body, html.island #root { background: transparent; }
-html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Desk Outfit", Arial, sans-serif; }
+html.island body { overflow: hidden; color: var(--text); font: 14px/1.5 "Jun Outfit", Arial, sans-serif; }
 /* The near-black surface (islandSurface "dark", the default), like Apple's Dynamic Island, whatever
    the page or theme: the island's own palette, so every part (status shimmer, chips, box, sources,
    steps, action cards, CSAT and email asks, typing dots) reads on black. With "page" none of this
@@ -422,7 +422,7 @@ html.island.island-dark {
 .i-rest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Folded with a chat: its last answer in a few words. */
 .i-rest-sum { color: var(--text-soft); animation: b-fade 300ms ease-out; }
-.i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px/1 "Jun Desk Mono", ui-monospace, monospace; }
+.i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px/1 "Jun Mono", ui-monospace, monospace; }
 @media (hover: none) { .i-kbd { display: none; } }
 .i-up { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
 .i-up svg { width: 16px; height: 16px; }
@@ -529,7 +529,7 @@ html.island.island-dark {
 @media (prefers-reduced-motion: reduce) { .i-body .w-card-open { animation: none; } }
 .i-body .bubble.typing { display: flex; align-items: center; gap: 3px; min-height: 22px; padding: 0; }
 .i-body .typing { color: var(--focus); }
-.i-body .bubble code { font-family: "Jun Desk Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; }
+.i-body .bubble code { font-family: "Jun Mono", monospace; font-size: 0.88em; background: var(--code); border-radius: 4px; padding: 0.15em 0.35em; }
 .i-body .bubble a, .i-body .sources a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
 .i-body .cite { padding: 0 3px; border-radius: 4px; background: var(--code); color: var(--link); text-decoration: none; }
 .i-body .sources { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
@@ -627,7 +627,7 @@ html.island.island-dark {
 .w-answer .md ol > .md-li > .md-mark { min-width: 1.2em; }
 .w-answer .md .md-li-body { flex: 1; min-width: 0; }
 .w-answer .md .md-quote { padding-left: 0.75em; box-shadow: inset 2px 0 0 var(--a-line); color: var(--a-ink-3); }
-.w-answer .md .md-pre { padding: 8px 10px; border-radius: 8px; background: var(--a-inset); color: var(--a-ink-2); font: 0.86em/1.5 "Jun Desk Mono", monospace; white-space: pre; overflow-x: auto; }
+.w-answer .md .md-pre { padding: 8px 10px; border-radius: 8px; background: var(--a-inset); color: var(--a-ink-2); font: 0.86em/1.5 "Jun Mono", monospace; white-space: pre; overflow-x: auto; }
 .w-answer .md .md-pre code { padding: 0; background: none; font: inherit; }
 .w-answer .md .md-hr { height: 0; border: 0; border-top: 1px solid var(--a-line); }
 .w-answer .md a.md-a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
@@ -640,11 +640,11 @@ html.island.island-dark {
 .w-answer .w-cite-wrap.w-anim { animation: w-pop 250ms cubic-bezier(0.23, 1, 0.32, 1) both; }
 @keyframes w-pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 .w-answer .w-cite-wrap { display: inline-block; }
-.w-answer .bubble .w-cite { display: inline-flex; align-items: center; gap: 4px; height: 18px; max-width: 160px; margin-right: 2px; padding: 0 4px 0 3px; border-radius: 5px; background: var(--a-inset); box-shadow: 0 0 0 1px var(--a-line); color: var(--a-ink-2); font: 10.5px/1 "Jun Desk Mono", monospace; text-decoration: none; vertical-align: 1px; white-space: nowrap; transition: background 150ms, color 150ms; }
+.w-answer .bubble .w-cite { display: inline-flex; align-items: center; gap: 4px; height: 18px; max-width: 160px; margin-right: 2px; padding: 0 4px 0 3px; border-radius: 5px; background: var(--a-inset); box-shadow: 0 0 0 1px var(--a-line); color: var(--a-ink-2); font: 10.5px/1 "Jun Mono", monospace; text-decoration: none; vertical-align: 1px; white-space: nowrap; transition: background 150ms, color 150ms; }
 .w-answer .bubble .w-cite > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .w-answer .bubble a.w-cite:hover { background: var(--a-hover); color: var(--a-ink); }
 .w-answer .w-cite-icon { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; object-fit: cover; }
-.w-answer .w-src-letter { display: inline-grid; place-items: center; color: #fff; font: 600 8px/1 "Jun Desk Outfit", Arial, sans-serif; }
+.w-answer .w-src-letter { display: inline-grid; place-items: center; color: #fff; font: 600 8px/1 "Jun Outfit", Arial, sans-serif; }
 
 /* Copy and the sources toggle */
 .w-answer .w-anim-in, .w-answer .w-follow { animation: w-fade 400ms ease-out both; }
@@ -669,7 +669,7 @@ html.island.island-dark {
 .w-answer a.w-src-row:hover .w-src-name { text-decoration: underline; text-underline-offset: 2px; }
 .w-answer .w-src-icon { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; object-fit: cover; }
 .w-answer .w-src-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.w-answer .w-src-domain { margin-left: auto; padding-left: 8px; flex-shrink: 0; color: var(--a-ink-3); font: 10.5px/1.5 "Jun Desk Mono", monospace; }
+.w-answer .w-src-domain { margin-left: auto; padding-left: 8px; flex-shrink: 0; color: var(--a-ink-3); font: 10.5px/1.5 "Jun Mono", monospace; }
 
 /* Follow-ups (the newest answer only; tapping one sends it) */
 .w-answer .w-follow { margin-top: 10px; }

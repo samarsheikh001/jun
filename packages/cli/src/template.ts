@@ -3,7 +3,7 @@
 export const TEMPLATE: Record<string, string> = {
   "README.md": `# Support agent
 
-This folder is your Jun Desk AI agent, as code. Edit it like any other code: in a branch, reviewed in a pull request.
+This folder is your Jun support agent, as code. Edit it like any other code: in a branch, reviewed in a pull request.
 
 | File | What it does |
 |---|---|

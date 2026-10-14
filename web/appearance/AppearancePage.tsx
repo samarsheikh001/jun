@@ -7,7 +7,7 @@ import { IdentityPanel, InstallPanel } from "./InstallPanels.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { previewChime } from "../lib/sound.ts";
@@ -177,11 +177,11 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
               </div>
             </Field>
             <Field label="Theme" hint="Auto follows each visitor's light or dark system setting." htmlFor="appear-theme">
-              <NativeSelect id="appear-theme" value={look.theme} disabled={off} onChange={(e) => edit({ theme: e.target.value as WidgetTheme })}>
-                <NativeSelectOption value="auto">Auto</NativeSelectOption>
-                <NativeSelectOption value="light">Light</NativeSelectOption>
-                <NativeSelectOption value="dark">Dark</NativeSelectOption>
-              </NativeSelect>
+              <SelectField id="appear-theme" value={look.theme} disabled={off} onValueChange={(value) => edit({ theme: value as WidgetTheme })}>
+                <SelectOption value="auto">Auto</SelectOption>
+                <SelectOption value="light">Light</SelectOption>
+                <SelectOption value="dark">Dark</SelectOption>
+              </SelectField>
             </Field>
             <Field label="Brand colour" hint="The launcher, the card's buttons and the send button. Text on it switches between dark and white to stay readable." htmlFor="appear-color">
               <div className="appear-color">
@@ -200,10 +200,10 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
               </div>
             </Field>
             <Field label="Side of the page" htmlFor="appear-side">
-              <NativeSelect id="appear-side" value={look.position} disabled={off} onChange={(e) => edit({ position: e.target.value as "left" | "right" })}>
-                <NativeSelectOption value="right">Right</NativeSelectOption>
-                <NativeSelectOption value="left">Left</NativeSelectOption>
-              </NativeSelect>
+              <SelectField id="appear-side" value={look.position} disabled={off} onValueChange={(value) => edit({ position: value as "left" | "right" })}>
+                <SelectOption value="right">Right</SelectOption>
+                <SelectOption value="left">Left</SelectOption>
+              </SelectField>
             </Field>
             <Field
               label="Closed state"
@@ -216,27 +216,27 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
               }
               htmlFor="appear-launcher"
             >
-              <NativeSelect id="appear-launcher" value={look.launcher} disabled={off} onChange={(e) => { edit({ launcher: e.target.value as LauncherStyle }); setOpen(false); }}>
-                <NativeSelectOption value="button">Chat button only</NativeSelectOption>
-                <NativeSelectOption value="card">Greeting card</NativeSelectOption>
-                <NativeSelectOption value="bar">Ask bar</NativeSelectOption>
-                <NativeSelectOption value="island">Island</NativeSelectOption>
-              </NativeSelect>
+              <SelectField id="appear-launcher" value={look.launcher} disabled={off} onValueChange={(value) => { edit({ launcher: value as LauncherStyle }); setOpen(false); }}>
+                <SelectOption value="button">Chat button only</SelectOption>
+                <SelectOption value="card">Greeting card</SelectOption>
+                <SelectOption value="bar">Ask bar</SelectOption>
+                <SelectOption value="island">Island</SelectOption>
+              </SelectField>
             </Field>
             {look.launcher === "button" && (
               <Field label="Button shows" hint={look.logoUrl ? "Your logo, or the words." : "Your logo once you upload one (a chat bubble until then), or the words."} htmlFor="appear-button">
-                <NativeSelect id="appear-button" value={look.buttonStyle} disabled={off} onChange={(e) => edit({ buttonStyle: e.target.value as ButtonStyle })}>
-                  <NativeSelectOption value="logo">Company logo</NativeSelectOption>
-                  <NativeSelectOption value="text">"{BUTTON_TEXT}"</NativeSelectOption>
-                </NativeSelect>
+                <SelectField id="appear-button" value={look.buttonStyle} disabled={off} onValueChange={(value) => edit({ buttonStyle: value as ButtonStyle })}>
+                  <SelectOption value="logo">Company logo</SelectOption>
+                  <SelectOption value="text">"{BUTTON_TEXT}"</SelectOption>
+                </SelectField>
               </Field>
             )}
             {look.launcher === "island" && (
               <Field label="Island colour" hint={look.islandSurface === "dark" ? "Near-black with white text on every page, whatever the theme." : "Follows the Theme above, like the rest of the widget."} htmlFor="appear-island">
-                <NativeSelect id="appear-island" value={look.islandSurface} disabled={off} onChange={(e) => edit({ islandSurface: e.target.value as IslandSurface })}>
-                  <NativeSelectOption value="dark">Dark (like Dynamic Island)</NativeSelectOption>
-                  <NativeSelectOption value="page">Match the page theme</NativeSelectOption>
-                </NativeSelect>
+                <SelectField id="appear-island" value={look.islandSurface} disabled={off} onValueChange={(value) => edit({ islandSurface: value as IslandSurface })}>
+                  <SelectOption value="dark">Dark (like Dynamic Island)</SelectOption>
+                  <SelectOption value="page">Match the page theme</SelectOption>
+                </SelectField>
               </Field>
             )}
             {look.launcher === "island" && (

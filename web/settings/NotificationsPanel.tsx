@@ -3,6 +3,7 @@ import { DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from "../../shared
 import { api, describeError } from "../api.ts";
 import { currentSubscription, deviceName, enablePush, endpointHash, notificationPermission, pushSupport, type Device } from "../lib/notifications.ts";
 import { useAction } from "../useAction.ts";
+import { cachedGet, fetchSetting, THIS_DEVICE } from "./settingsData.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
@@ -22,20 +23,24 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
   const base = `/workspaces/${workspaceId}`;
   const support = pushSupport();
   const [permission, setPermission] = useState(notificationPermission);
-  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [thisDevice, setThisDevice] = useState<string | null>(null);
+  // Settings fetched these when it opened (settingsData): the cards start filled in.
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(() => cachedGet<{ prefs: NotificationPrefs }>(`${base}/notifications`)?.prefs ?? null);
+  const [devices, setDevices] = useState<Device[]>(() => cachedGet<{ devices: Device[] }>(`${base}/push/subscriptions`)?.devices ?? []);
+  const [thisDevice, setThisDevice] = useState<string | null>(() => {
+    const hash = cachedGet<string | null>(THIS_DEVICE);
+    return (hash && cachedGet<{ devices: Device[] }>(`${base}/push/subscriptions`)?.devices.find((d) => d.endpointHash === hash)?.id) ?? null;
+  });
   const [sent, setSent] = useState(false);
   const { busy, error, run } = useAction();
 
   const load = useCallback(async () => {
-    const [list, subscription] = await Promise.all([api<{ devices: Device[] }>(`${base}/push/subscriptions`), currentSubscription().catch(() => null)]);
+    const [list, subscription] = await Promise.all([fetchSetting<{ devices: Device[] }>(`${base}/push/subscriptions`), currentSubscription().catch(() => null)]);
     setDevices(list.devices);
     const hash = subscription ? await endpointHash(subscription.endpoint) : null;
     setThisDevice(list.devices.find((d) => d.endpointHash === hash)?.id ?? null);
   }, [base]);
   useEffect(() => {
-    api<{ prefs: NotificationPrefs }>(`${base}/notifications`).then((r) => setPrefs(r.prefs), () => setPrefs(DEFAULT_NOTIFICATION_PREFS));
+    fetchSetting<{ prefs: NotificationPrefs }>(`${base}/notifications`).then((r) => setPrefs(r.prefs), () => setPrefs(DEFAULT_NOTIFICATION_PREFS));
     load().catch(() => {});
   }, [base, load]);
 
@@ -85,7 +90,7 @@ export function NotificationsPanel({ workspaceId }: { workspaceId: string }) {
     >
       <div className="notify-device">
         {support === "ios-home-screen" ? (
-          <p className="small">On iPhone and iPad, notifications work only in the desk added to your Home Screen: tap Share, then <strong>Add to Home Screen</strong>, open Jun Desk from there and turn them on.</p>
+          <p className="small">On iPhone and iPad, notifications work only in the desk added to your Home Screen: tap Share, then <strong>Add to Home Screen</strong>, open Jun from there and turn them on.</p>
         ) : support === "unsupported" ? (
           <p className="small">This browser can't show notifications. Try a current Chrome, Edge, Firefox or Safari.</p>
         ) : permission === "denied" ? (

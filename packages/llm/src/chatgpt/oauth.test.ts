@@ -41,7 +41,7 @@ const base = {
 test("first sign-in registers with dynamic_agent_client and agent_name_hint", () => {
   const q = new URL(buildAuthorizeUrl(base)).searchParams;
   assert.equal(q.get("client_id"), "dynamic_agent_client");
-  assert.equal(q.get("agent_name_hint"), "Jun Desk");
+  assert.equal(q.get("agent_name_hint"), "Jun");
   assert.equal(q.get("ext_agent_host_id"), "host-1");
   assert.equal(q.get("scope"), "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct");
   assert.equal(q.get("resource"), "https://api.openai.com/v1");

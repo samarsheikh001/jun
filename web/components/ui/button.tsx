@@ -44,7 +44,7 @@ function Button({
   className,
   variant = "default",
   size = "default",
-  // Jun Desk: keep the native default (Base UI would make every button type="button"), so
+  // Jun: keep the native default (Base UI would make every button type="button"), so
   // buttons inside our forms still submit them, as the plain <button>s they replaced did.
   type = "submit",
   ...props

@@ -23,7 +23,7 @@ function minifyLoader(): Plugin {
         if (!source.startsWith("/*!")) continue; // already minified
         const result = minifySync(name, source, { compress: true, mangle: true });
         if (result.errors.length) throw new Error(`${name} minify failed: ${result.errors.map((e) => e.message).join("; ")}`);
-        writeFileSync(file, `/*! Jun Desk ${name === "widget.js" ? "widget loader" : "page actions"} | MIT License | source: public/${name} */\n${result.code}`);
+        writeFileSync(file, `/*! Jun ${name === "widget.js" ? "widget loader" : "page actions"} | MIT License | source: public/${name} */\n${result.code}`);
       }
     },
   };

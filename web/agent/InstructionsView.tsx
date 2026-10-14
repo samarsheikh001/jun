@@ -5,6 +5,7 @@ import { editFrontmatter, readFrontmatter, setBody } from "../lib/agentFiles.ts"
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
+import { SkelText } from "@/components/ui/skeleton.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
 import { ExpandIcon } from "../components/icons.tsx";
 import { CodeEditor, EVAL, Field, FilePicker, Problems, SKILL, TextList, TOOL, Unreadable, WIDGET, go, useCodeView } from "./parts.tsx";
@@ -168,7 +169,9 @@ function ModelSummary({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="agent-panel-model">
       <h3 className="agent-panel-title">Model</h3>
-      {ai && (
+      {!ai ? (
+        <ModelFactsSkeleton />
+      ) : (
         <dl className="agent-panel-facts">
           <dt>Replies with</dt>
           <dd>
@@ -187,5 +190,17 @@ function ModelSummary({ workspaceId }: { workspaceId: string }) {
         Change the model in <a {...link("/settings/ai", true)}>Settings → AI</a>. Answers come from your <a {...link("/knowledge")}>Knowledge</a>.
       </p>
     </div>
+  );
+}
+
+/** The model facts' rows while /ai loads: same rows and line boxes, so the panel doesn't grow. */
+export function ModelFactsSkeleton() {
+  return (
+    <dl className="agent-panel-facts" aria-hidden="true">
+      <dt>Replies with</dt>
+      <dd><SkelText width={150} /></dd>
+      <dt>This month</dt>
+      <dd><SkelText width={120} /></dd>
+    </dl>
   );
 }

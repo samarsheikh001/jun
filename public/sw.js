@@ -1,4 +1,4 @@
-/*! Jun Desk service worker | AGPL-3.0 | I-14 notifications for agents.
+/*! Jun service worker | AGPL-3.0 | I-14 notifications for agents.
  * Shows Web Push notifications and opens the right conversation when one is clicked.
  * It has no fetch handler on purpose: it never intercepts or caches requests. */
 "use strict";
@@ -14,7 +14,7 @@ async function showDeskNotification(data) {
   const tag = typeof data.tag === "string" && data.tag ? data.tag : "jun";
   const existing = await self.registration.getNotifications({ tag });
   const repeat = existing.some((n) => n.data && n.data.id === data.id);
-  await self.registration.showNotification(typeof data.title === "string" && data.title ? data.title : "Jun Desk", {
+  await self.registration.showNotification(typeof data.title === "string" && data.title ? data.title : "Jun", {
     body: typeof data.body === "string" ? data.body : "",
     tag,
     renotify: !repeat,

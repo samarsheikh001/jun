@@ -21,7 +21,7 @@ import { formatTime, uploadFile, useThread, useTypingSignal } from "../lib/threa
 import type { Hub } from "../Shell.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 /** The composer's saved-reply / @mention popup: focus stays in the textarea, so no tab stop. */
@@ -232,7 +232,7 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
 
   const unreadCount = useMemo(() => list?.filter(isUnread).length ?? 0, [list]);
   useEffect(() => {
-    document.title = unreadCount > 0 ? `(${unreadCount}) Jun Desk` : "Jun Desk";
+    document.title = unreadCount > 0 ? `(${unreadCount}) Jun` : "Jun";
   }, [unreadCount]);
 
   const columns = COLUMNS.filter((c) => c === "Person" || !hidden.has(c));
@@ -284,41 +284,38 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
           }}
           trailing={<ColumnPicker hidden={hidden} onToggle={toggleColumn} />}
         >
-          <select data-plain className="cv-filter" value={assignee} onChange={(e) => setAssignee(e.target.value as AssigneeFilter)} aria-label="Assignee filter">
-            <option value="all">Everyone's</option>
-            <option value="me">Assigned to me</option>
-            <option value="unassigned">Unassigned</option>
-            <option value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</option>
-          </select>
-          {tags.length > 0 && (
-            <select data-plain className="cv-filter" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} aria-label="Tag filter">
-              <option value="">Any tag</option>
-              {tags.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
-            </select>
-          )}
-          {(topics.length > 0 || topicFilter) && (
-            <select data-plain className="cv-filter" value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)} aria-label="Topic filter">
-              <option value="">Any topic</option>
-              {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              {topicFilter && !topics.some((t) => t.id === topicFilter) && <option value={topicFilter}>Topic not found</option>}
-            </select>
-          )}
-          <select
-            data-plain
+          <SelectField size="sm" className="cv-filter" value={assignee} onValueChange={(value) => setAssignee(value as AssigneeFilter)} aria-label="Assignee filter">
+            <SelectOption value="all">Everyone's</SelectOption>
+            <SelectOption value="me">Assigned to me</SelectOption>
+            <SelectOption value="unassigned">Unassigned</SelectOption>
+            <SelectOption value="mentions">Mentions me{unreadMentions > 0 ? ` (${unreadMentions} new)` : ""}</SelectOption>
+          </SelectField>
+          {/* Always shown (even before tags and topics load, or with none) so the strip never moves. */}
+          <SelectField size="sm" className="cv-filter" value={tagFilter} onValueChange={(value) => setTagFilter(value)} aria-label="Tag filter">
+            <SelectOption value="">Any tag</SelectOption>
+            {tags.map((t) => <SelectOption key={t.id} value={t.name}>{t.name}</SelectOption>)}
+          </SelectField>
+          <SelectField size="sm" className="cv-filter" value={topicFilter} onValueChange={(value) => setTopicFilter(value)} aria-label="Topic filter">
+            <SelectOption value="">Any topic</SelectOption>
+            {topics.map((t) => <SelectOption key={t.id} value={t.id}>{t.name}</SelectOption>)}
+            {topicFilter && !topics.some((t) => t.id === topicFilter) && <SelectOption value={topicFilter}>Topic not found</SelectOption>}
+          </SelectField>
+          <SelectField
+            size="sm"
             className="cv-filter"
             value={ratingFilter}
-            onChange={(e) => {
-              const next = e.target.value as RatingFilter;
+            onValueChange={(value) => {
+              const next = value as RatingFilter;
               setRatingFilter(next);
               // Rated conversations are resolved ones: don't leave the filter on an empty Open tab.
               if (next && status === "open") setStatus("all");
             }}
             aria-label="Rating filter"
           >
-            <option value="">Any rating</option>
-            <option value="good">Rated 👍 Good</option>
-            <option value="bad">Rated 👎 Bad</option>
-          </select>
+            <SelectOption value="">Any rating</SelectOption>
+            <SelectOption value="good">Rated 👍 Good</SelectOption>
+            <SelectOption value="bad">Rated 👎 Bad</SelectOption>
+          </SelectField>
         </TabStrip>
         <div className="cv-table-wrap">
           <table className="cv-table">
@@ -526,18 +523,18 @@ function Thread({
           </div>
         </div>
         <div className="cv-drawer-actions">
-        <NativeSelect size="sm" value={conversation.assigneeId ?? ""} onChange={(e) => void update({ assigneeId: e.target.value || null })} aria-label="Assignee">
-          <NativeSelectOption value="">Unassigned</NativeSelectOption>
+        <SelectField size="sm" value={conversation.assigneeId ?? ""} onValueChange={(value) => void update({ assigneeId: value || null })} aria-label="Assignee">
+          <SelectOption value="">Unassigned</SelectOption>
           {members.map((m) => (
-            <NativeSelectOption key={m.id} value={m.id}>{m.id === me.id ? `${m.name} (me)` : m.name}</NativeSelectOption>
+            <SelectOption key={m.id} value={m.id}>{m.id === me.id ? `${m.name} (me)` : m.name}</SelectOption>
           ))}
-        </NativeSelect>
-        <NativeSelect size="sm" value={conversation.status} onChange={(e) => void update({ status: e.target.value as ConversationStatus })} aria-label="Status">
-          <NativeSelectOption value="open">Open</NativeSelectOption>
-          <NativeSelectOption value="pending">Pending</NativeSelectOption>
-          <NativeSelectOption value="snoozed">Snoozed</NativeSelectOption>
-          <NativeSelectOption value="resolved">Resolved</NativeSelectOption>
-        </NativeSelect>
+        </SelectField>
+        <SelectField size="sm" value={conversation.status} onValueChange={(value) => void update({ status: value as ConversationStatus })} aria-label="Status">
+          <SelectOption value="open">Open</SelectOption>
+          <SelectOption value="pending">Pending</SelectOption>
+          <SelectOption value="snoozed">Snoozed</SelectOption>
+          <SelectOption value="resolved">Resolved</SelectOption>
+        </SelectField>
         {conversation.status !== "resolved" && <Button size="sm" onClick={() => void update({ status: "resolved" })}>Resolve</Button>}
         <span className="issue-button">
           <Button variant="outline" size="sm" disabled={configuredProviders(trackers).length === 0} title={configuredProviders(trackers).length ? "Draft an issue from this conversation" : "Connect GitHub or Linear in Settings first"} onClick={() => setIssueOpen(true)}>

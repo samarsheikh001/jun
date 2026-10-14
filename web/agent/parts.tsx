@@ -209,6 +209,19 @@ export function FilePicker({ files, value, onChange }: { files: string[]; value:
   );
 }
 
+/** Code on a list page (Tasks, Actions, Widgets): its files, one at a time. */
+export function FilesCode({ cfg, files, canEdit, empty }: { cfg: AgentConfig; files: string[]; canEdit: boolean; empty: string }) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const path = picked !== null && files.includes(picked) ? picked : files[0];
+  if (path === undefined) return <p className="muted agent-blank">{empty}</p>;
+  return (
+    <section className="agent-form agent-code">
+      {files.length > 1 && <FilePicker files={files} value={path} onChange={setPicked} />}
+      <CodeEditor cfg={cfg} path={path} canEdit={canEdit} />
+    </section>
+  );
+}
+
 /** Code: one file as text, exactly as `jun pull` writes it, with the checker's messages under it. */
 export function CodeEditor({ cfg, path, canEdit }: { cfg: AgentConfig; path: string; canEdit: boolean }) {
   // Tab inserts spaces (YAML and Markdown lists need them).

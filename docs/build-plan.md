@@ -19,7 +19,7 @@
 
 > **Status 2026-10-04: deployed** to https://jun-desk.samarsheikh001.workers.dev via `npm run deploy` (D1 auto-provisioned, migrations applied, SETUP_TOKEN set). Passkey auth passes an 11-step e2e test locally. Owner setup and sign-in verified with a real passkey on the live site. Still to do: the Deploy button itself (repo is private), CLA bot setup.
 
-*Demo: click "Deploy to Cloudflare" → an empty Jun Desk is live, and you can log in.*
+*Demo: click "Deploy to Cloudflare" → an empty Jun install is live, and you can log in.*
 
 | ID | Feature | Size | |
 |---|---|---|---|

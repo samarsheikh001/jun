@@ -94,6 +94,33 @@ function readQuery(): string {
   }
 }
 
+/** How many rows the list showed last time, so the loading rows take the same room (this device). */
+const rowsKey = (workspaceId: string) => `jun.kbRows:${workspaceId}`;
+function lastRows(workspaceId: string): number {
+  try {
+    const n = Number(localStorage.getItem(rowsKey(workspaceId)));
+    return Number.isInteger(n) && n >= 0 && n <= 50 ? n : 3;
+  } catch {
+    return 3;
+  }
+}
+
+/** A loading row with the real row's parts and height: title, details, type label, menu. */
+function SourceRowSkeleton() {
+  return (
+    <div className="kb-row kb-row-loading" aria-hidden="true">
+      <div className="kb-skel-main">
+        <Skeleton className="kb-skel-title" />
+        <Skeleton className="kb-skel-meta" />
+      </div>
+      <div className="kb-row-side">
+        <Skeleton className="kb-skel-kind" />
+        <Skeleton className="kb-skel-menu" />
+      </div>
+    </div>
+  );
+}
+
 export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/knowledge`;
   const [sources, setSources] = useState<SourceRow[] | null>(null);
@@ -107,6 +134,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
   const [sort, setSort] = useState<Sort>("newest");
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
+  const [loadingRows] = useState(() => lastRows(workspaceId));
   const { busy, error, run } = useAction();
 
   const load = useCallback(async () => {
@@ -164,6 +192,16 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
   const pages = Math.max(1, Math.ceil(shown.length / pageSize));
   const current = Math.min(page, pages - 1);
   const visible = shown.slice(current * pageSize, (current + 1) * pageSize);
+  // Unfiltered first page: what the next visit's loading rows should match.
+  const firstPageRows = sources ? Math.min(sources.length, pageSize) : null;
+  useEffect(() => {
+    if (firstPageRows === null) return;
+    try {
+      localStorage.setItem(rowsKey(workspaceId), String(firstPageRows));
+    } catch {
+      // Private mode: the next visit shows the default three.
+    }
+  }, [workspaceId, firstPageRows]);
   const lastSynced = sources?.reduce<number | null>((max, s) => (s.lastSyncedAt && (!max || s.lastSyncedAt > max) ? s.lastSyncedAt : max), null) ?? null;
   const totalChunks = sources?.reduce((n, s) => n + s.chunkCount, 0) ?? 0;
 
@@ -244,7 +282,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
 
         <div className="kb-tray">
           {sources === null ? (
-            [0, 1, 2].map((i) => <Skeleton key={i} className="kb-row-skeleton" />)
+            Array.from({ length: Math.max(loadingRows, 1) }, (_, i) => <SourceRowSkeleton key={i} />)
           ) : visible.length === 0 ? (
             <div className="kb-empty">
               {sources.length === 0
@@ -268,6 +306,12 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
           )}
         </div>
 
+        {sources === null && loadingRows > 0 && (
+          <div className="kb-pager" aria-hidden="true">
+            <Skeleton className="kb-skel-pager-size" />
+            <Skeleton className="kb-skel-pager-nav" />
+          </div>
+        )}
         {sources && shown.length > 0 && (
           <div className="kb-pager">
             <div className="kb-pager-size">

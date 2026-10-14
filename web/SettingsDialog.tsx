@@ -5,6 +5,8 @@ import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsPanel } from "./se
 import { NotificationsPanel } from "./settings/NotificationsPanel.tsx";
 import { HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
 import { SettingRow, SettingsCard } from "./settings/layout.tsx";
+import { cachedGet, fetchSetting, prefetchSettings, sectionRequests, useSectionReady } from "./settings/settingsData.ts";
+import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { navigate } from "./lib/router.ts";
 import { AiPanel, GitCard } from "./agent/AiPanel.tsx";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "./lib/theme.ts";
@@ -15,7 +17,7 @@ import {
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 
 interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
 type Role = "owner" | "admin" | "agent";
@@ -73,6 +75,11 @@ export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; on
   const [mobileList, setMobileList] = useState(!sub);
   const pane = useRef<HTMLDivElement>(null);
   const themePref = useThemePref();
+  // Every section's data at once, so switching sections never waits or fills in piece by piece.
+  const workspaceForPrefetch = me.memberships?.[0];
+  useEffect(() => {
+    if (workspaceForPrefetch) prefetchSettings(workspaceForPrefetch.workspaceId, workspaceForPrefetch.role !== "agent");
+  }, [workspaceForPrefetch]);
 
   useEffect(() => {
     if (sub && !SETTINGS_SECTIONS.some((s) => s.id === sub)) return navigate("/settings", { replace: true });
@@ -140,7 +147,38 @@ export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; on
   );
 }
 
-function Section({ id, me, workspaceId, canEdit, role, myId }: { id: SectionId; me: Me; workspaceId: string; canEdit: boolean; role: Role; myId: string }) {
+/** Each section's cards, for its skeleton: the same titles in the same order. */
+const SECTION_CARDS: Record<SectionId, (canInvite: boolean) => string[]> = {
+  general: () => ["General"],
+  ai: () => ["AI replies", "Keep it in git"],
+  inbox: () => ["Assignment", "Business hours", "Saved replies", "Tags", "Topics"],
+  team: (canInvite) => ["Members", ...(canInvite ? ["Invite people"] : [])],
+  notifications: () => ["This device", "Notify me when"],
+  integrations: () => ["Issue trackers", "GitHub", "Linear"],
+  developer: () => ["API tokens"],
+  account: () => ["Your passkeys"],
+};
+
+/** A section shows only once all of its data is in (fetched when Settings opened), then all at once. */
+function Section(props: { id: SectionId; me: Me; workspaceId: string; canEdit: boolean; role: Role; myId: string }) {
+  const canInvite = props.role !== "agent";
+  const ready = useSectionReady(sectionRequests(props.id, props.workspaceId, canInvite));
+  if (!ready) {
+    // Straight in the section list (no wrapper), so the cards keep their dividers.
+    return (
+      <>
+        {SECTION_CARDS[props.id](canInvite).map((title) => (
+          <SettingsCard key={title} title={title} description={<SkelText width={360} />}>
+            <Skeleton className="settings-skel-body" aria-busy="true" aria-label="Loading" />
+          </SettingsCard>
+        ))}
+      </>
+    );
+  }
+  return <SectionPanels {...props} />;
+}
+
+function SectionPanels({ id, me, workspaceId, canEdit, role, myId }: { id: SectionId; me: Me; workspaceId: string; canEdit: boolean; role: Role; myId: string }) {
   switch (id) {
     case "general":
       return <GeneralPanel me={me} />;
@@ -190,10 +228,10 @@ function GeneralPanel({ me }: { me: Me }) {
 }
 
 function PasskeysPanel() {
-  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  const [passkeys, setPasskeys] = useState<Passkey[]>(() => cachedGet<{ passkeys: Passkey[] }>("/passkeys")?.passkeys ?? []);
   const { busy, error, run } = useAction();
   const loadPasskeys = useCallback(async () => {
-    setPasskeys((await api<{ passkeys: Passkey[] }>("/passkeys")).passkeys);
+    setPasskeys((await fetchSetting<{ passkeys: Passkey[] }>("/passkeys")).passkeys);
   }, []);
   useEffect(() => {
     loadPasskeys().catch(() => {});
@@ -222,8 +260,8 @@ function PasskeysPanel() {
 }
 
 function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole: Role; myId: string }) {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [invites, setInvites] = useState<Invite[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => cachedGet<{ members: Member[] }>(`/workspaces/${workspaceId}/members`)?.members ?? []);
+  const [invites, setInvites] = useState<Invite[]>(() => cachedGet<{ invites: Invite[] }>(`/workspaces/${workspaceId}/invites`)?.invites ?? []);
   const [inviteRole, setInviteRole] = useState<"agent" | "admin">("agent");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -232,8 +270,10 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
   const base = `/workspaces/${workspaceId}`;
 
   const load = useCallback(async () => {
-    setMembers((await api<{ members: Member[] }>(`${base}/members`)).members);
-    if (canInvite) setInvites((await api<{ invites: Invite[] }>(`${base}/invites`)).invites);
+    // Both at once, applied together, so the cards don't fill in one after the other.
+    const [m, i] = await Promise.all([fetchSetting<{ members: Member[] }>(`${base}/members`), canInvite ? fetchSetting<{ invites: Invite[] }>(`${base}/invites`) : null]);
+    setMembers(m.members);
+    if (i) setInvites(i.invites);
   }, [base, canInvite]);
   useEffect(() => {
     load().catch(() => {});
@@ -268,15 +308,15 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
                 <span className="muted small">{m.email}</span>
                 {manageable ? (
                   <>
-                    <NativeSelect
+                    <SelectField
                       value={m.role}
                       disabled={busy}
                       aria-label={`Role for ${m.name}`}
-                      onChange={(e) => run(async () => { await api(`${base}/members/${m.id}`, { method: "PATCH", body: { role: e.target.value } }); await load(); })}
+                      onValueChange={(value) => run(async () => { await api(`${base}/members/${m.id}`, { method: "PATCH", body: { role: value } }); await load(); })}
                     >
-                      <NativeSelectOption value="agent">agent</NativeSelectOption>
-                      {myRole === "owner" && <NativeSelectOption value="admin">admin</NativeSelectOption>}
-                    </NativeSelect>
+                      <SelectOption value="agent">agent</SelectOption>
+                      {myRole === "owner" && <SelectOption value="admin">admin</SelectOption>}
+                    </SelectField>
                     <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (!confirm(`Remove ${m.name}? They'll be signed out and lose access.`)) return; run(async () => { await api(`${base}/members/${m.id}`, { method: "DELETE" }); await load(); }); }}>
                       Remove
                     </Button>
@@ -294,10 +334,10 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
         <SettingsCard title="Invite people" description="Invite links work once and expire after 7 days.">
           <SettingRow label="Role" description="What the person can do once they join.">
             <div className="row">
-              <NativeSelect value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "agent" | "admin")} aria-label="Invite role">
-                <NativeSelectOption value="agent">Agent</NativeSelectOption>
-                {myRole === "owner" && <NativeSelectOption value="admin">Admin</NativeSelectOption>}
-              </NativeSelect>
+              <SelectField value={inviteRole} onValueChange={(value) => setInviteRole(value as "agent" | "admin")} aria-label="Invite role">
+                <SelectOption value="agent">Agent</SelectOption>
+                {myRole === "owner" && <SelectOption value="admin">Admin</SelectOption>}
+              </SelectField>
               <Button disabled={busy} onClick={createInvite}>Create invite link</Button>
             </div>
           </SettingRow>
@@ -340,10 +380,10 @@ interface TokenRow {
 /** Personal API tokens for the `jun` CLI (pull, push, eval). */
 function TokensPanel({ workspaceId }: { workspaceId: string }) {
   const base = `/workspaces/${workspaceId}/tokens`;
-  const [tokens, setTokens] = useState<TokenRow[]>([]);
+  const [tokens, setTokens] = useState<TokenRow[]>(() => cachedGet<{ tokens: TokenRow[] }>(base)?.tokens ?? []);
   const [created, setCreated] = useState<string | null>(null);
   const { busy, error, run } = useAction();
-  const load = useCallback(async () => setTokens((await api<{ tokens: TokenRow[] }>(base)).tokens), [base]);
+  const load = useCallback(async () => setTokens((await fetchSetting<{ tokens: TokenRow[] }>(base)).tokens), [base]);
   useEffect(() => {
     load().catch(() => {});
   }, [load]);
@@ -363,7 +403,7 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
     <SettingsCard
       title="API tokens"
       id="api-tokens"
-      description={<>For the <code>jun</code> CLI: keep the agent in git, run evals and push changes (<code>npm run jun -- login {window.location.origin}</code> in your Jun Desk checkout). A token acts as you, for this workspace's agent config only.</>}
+      description={<>For the <code>jun</code> CLI: keep the agent in git, run evals and push changes (<code>npm run jun -- login {window.location.origin}</code> in your Jun checkout). A token acts as you, for this workspace's agent config only.</>}
     >
       {created && (
         <div className="invite">
@@ -395,10 +435,11 @@ function TokensPanel({ workspaceId }: { workspaceId: string }) {
 
 /** I-10 hours (the widget's look, W-04, is on the Widget page). */
 function WidgetSettings({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
-  const [inbox, setInbox] = useState<{ widgetKey: string; settings: InboxSettings } | null>(null);
+  const url = `/workspaces/${workspaceId}/inbox`;
+  const [inbox, setInbox] = useState<{ widgetKey: string; settings: InboxSettings } | null>(() => cachedGet<{ inbox: { widgetKey: string; settings: InboxSettings } | null }>(url)?.inbox ?? null);
   useEffect(() => {
-    api<{ inbox: { widgetKey: string; settings: InboxSettings } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => setInbox(r.inbox), () => {});
-  }, [workspaceId]);
+    fetchSetting<{ inbox: { widgetKey: string; settings: InboxSettings } | null }>(url).then((r) => setInbox(r.inbox), () => {});
+  }, [url]);
   if (!inbox) return null;
   return <HoursPanel workspaceId={workspaceId} settings={inbox.settings} canEdit={canEdit} onSaved={(settings) => setInbox({ ...inbox, settings })} />;
 }

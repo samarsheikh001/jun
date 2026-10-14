@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { api, describeError, registerPasskey, signInWithPasskey, type Me } from "./api.ts";
-import { Shell } from "./Shell.tsx";
+import { lastSession, rememberSession, Shell, ShellSkeleton } from "./Shell.tsx";
 import { useAction } from "./useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -23,13 +23,18 @@ export function App() {
     refresh();
   };
 
-  if (loadError) return <Card title="Can't reach Jun Desk"><p className="error">{loadError}</p></Card>;
-  if (!me) return <div className="center muted">Loading…</div>;
+  if (loadError) return <Card title="Can't reach Jun"><p className="error">{loadError}</p></Card>;
+  if (!me) {
+    // Signed in here last time: the desk's own frame at once (the page draws its skeleton next);
+    // otherwise a blank page, so the sign-in card doesn't follow a flash of the desk.
+    const session = path.startsWith("/invite/") || path === "/recover" ? null : lastSession();
+    return session ? <ShellSkeleton session={session} /> : null;
+  }
   if (invite?.[1]) return <InvitePage token={invite[1]} onDone={done} />;
   if (path === "/recover") return <RecoverPage onDone={done} />;
   // T-11: a fresh desk goes straight to "Get started".
   if (!me.setupComplete) return <SetupPage onDone={() => { window.history.replaceState(null, "", "/welcome"); refresh(); }} />;
-  if (!me.user) return <LoginPage onDone={refresh} />;
+  if (!me.user) return <SignedOut><LoginPage onDone={refresh} /></SignedOut>;
   return <Shell me={me} onSignOut={refresh} />;
 }
 
@@ -37,7 +42,7 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
   return (
     <main className="center">
       <UiCard className="auth-card w-full max-w-[416px] gap-0 p-6">
-        <div className="brand"><DeskIcon /><span>Jun Desk</span></div>
+        <div className="brand"><DeskIcon /><span>Jun</span></div>
         <h1>{title}</h1>
         {subtitle && <p className="muted">{subtitle}</p>}
         {children}
@@ -146,4 +151,10 @@ function InvitePage({ token, onDone }: { token: string; onDone: () => void }) {
       </form>
     </Card>
   );
+}
+
+/** Signed out: the next page load starts blank, not with the desk's frame. */
+function SignedOut({ children }: { children: ReactNode }) {
+  useEffect(() => rememberSession(null), []);
+  return <>{children}</>;
 }

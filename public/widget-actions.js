@@ -1,4 +1,4 @@
-/*! Jun Desk page actions | MIT License
+/*! Jun page actions | MIT License
  * AI-21 (D-40): loaded by widget.js the first time a page registers an action (or when the browser
  * has WebMCP). Implements WebMCP's imperative API where the browser lacks it and bridges the page's
  * tools to the chat: the list travels with each message, the model picks one, this file runs it.
@@ -50,7 +50,7 @@
       dispatchEvent: target.dispatchEvent.bind(target),
     };
     document.modelContext.polyfill = true;
-    if (shim) shim.q.forEach(function (x) { try { document.modelContext.registerTool(x[0], x[1]); } catch (e) { console.warn("Jun Desk:", e.message); } });
+    if (shim) shim.q.forEach(function (x) { try { document.modelContext.registerTool(x[0], x[1]); } catch (e) { console.warn("Jun:", e.message); } });
   }
   var mc = document.modelContext;
   // execute's second argument. Chrome's docs show `execute(input, { signal })` in code but call it "an
@@ -73,11 +73,11 @@
   }
   function register(t) {
     if (!t || typeof t.name != "string" || typeof t.description != "string" || typeof t.execute != "function") {
-      console.warn("Jun Desk: registerAction needs name, description and execute");
+      console.warn("Jun: registerAction needs name, description and execute");
       return function () {};
     }
     var id = idOf(t);
-    if (registry.has(id)) { console.warn("Jun Desk: action " + id + " registered twice; the newer one replaces it"); remove(id); }
+    if (registry.has(id)) { console.warn("Jun: action " + id + " registered twice; the newer one replaces it"); remove(id); }
     registry.set(id, t);
     // Other agents (Chrome's) see the standard part too; instances (key) stay ours, names must be unique there.
     if (t.key == null) {

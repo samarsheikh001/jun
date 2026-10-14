@@ -10,7 +10,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { base64UrlDecode, base64UrlEncode, newId } from "../lib/crypto.ts";
 import { HttpError, type AppContext } from "../types.ts";
 
-const RP_NAME = "Jun Desk";
+const RP_NAME = "Jun";
 const CHALLENGE_COOKIE = "jun_challenge";
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
@@ -155,7 +155,7 @@ export async function finishLogin(c: AppContext, response: AuthenticationRespons
   )
     .bind(response.id, rpID)
     .first<{ id: string; user_id: string; public_key: string; counter: number; transports: string | null }>();
-  if (!passkey) throw new HttpError(401, "unknown_passkey", "This passkey isn't registered with this Jun Desk.");
+  if (!passkey) throw new HttpError(401, "unknown_passkey", "This passkey isn't registered with this Jun install.");
 
   let verification;
   try {

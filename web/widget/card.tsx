@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 
-// W-04 "card" launcher (D-34): the closed state of the earlier Jun Desk widget, a welcome card
+// W-04 "card" launcher (D-34): the closed state of the earlier Jun widget, a welcome card
 // (its `.mini`) or, once dismissed, a "Chat with us" pill, drawn by the frame itself. Like the
 // bar (bar.tsx), the frame tells the loader its size and place (`jun:css`); open, it hands back
 // to the loader's panel rules. Styles: `.w-mini*` in widget.css.
@@ -109,12 +109,12 @@ export function MiniCard({
   );
 }
 
-/** "Built with Jun Desk", under the card and the chat (the reference's footer badge, not a link here). */
+/** "Built with Jun", under the card and the chat (the reference's footer badge, not a link here). */
 export function Badge({ mini = false }: { mini?: boolean }) {
   return (
     <span className={`w-badge ${mini ? "mini" : ""}`}>
       <img className="w-badge-logo" src="/jun-agent.svg" alt="" />
-      <span>Built with Jun Desk</span>
+      <span>Built with Jun</span>
     </span>
   );
 }

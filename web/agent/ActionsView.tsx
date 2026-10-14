@@ -4,10 +4,10 @@ import { editYaml, freshName, readYaml, type Edit } from "../lib/agentFiles.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Checkbox } from "@/components/ui/checkbox.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { PlusIcon, TrashIcon } from "../components/icons.tsx";
-import { Advanced, Field, ItemIndex, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize } from "./parts.tsx";
+import { Advanced, Field, FilesCode, ItemIndex, Problems, TextList, TOOL, Unreadable, WIDGET, go, humanize, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { FileStudio } from "./FileStudio.tsx";
 import { KeysField, SetupNotice, setupProblems, useActionKeys, type ActionKeys } from "./ActionKeys.tsx";
@@ -50,6 +50,7 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
   useEffect(() => {
     if (gone) go("/agent/actions");
   }, [gone]);
+  const code = useCodeView();
 
   if (current) {
     return (
@@ -64,6 +65,11 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
         form={<ActionForm cfg={cfg} canEdit={canEdit} path={current.path} keys={keys} />}
       />
     );
+  }
+  if (code) {
+    // website-actions.yaml (D-74) belongs here too: the "On your website" cards edit it.
+    const files = [...items.map((i) => i.path), ...("website-actions.yaml" in cfg.draft ? ["website-actions.yaml"] : [])];
+    return <FilesCode cfg={cfg} files={files} canEdit={canEdit} empty="No actions yet. Switch to Form and press New action, or add tools/<name>.yaml with jun push." />;
   }
   return (
     <>
@@ -131,10 +137,10 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
         htmlFor="act-url"
       >
         <div className="agent-request">
-          <NativeSelect aria-label="Kind of request" value={method} disabled={!canEdit} onChange={(e) => set("method", e.target.value)}>
-            <NativeSelectOption value="GET">Look up (GET)</NativeSelectOption>
-            <NativeSelectOption value="POST">Make a change (POST)</NativeSelectOption>
-          </NativeSelect>
+          <SelectField aria-label="Kind of request" value={method} disabled={!canEdit} onValueChange={(value) => set("method", value)}>
+            <SelectOption value="GET">Look up (GET)</SelectOption>
+            <SelectOption value="POST">Make a change (POST)</SelectOption>
+          </SelectField>
           <Input id="act-url" className="mono" value={str("url")} readOnly={!canEdit} placeholder="https://" spellCheck={false} onChange={(e) => set("url", e.target.value)} />
         </div>
       </Field>
@@ -149,9 +155,9 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
             return (
               <div className="agent-param" key={i}>
                 <Input className="mono" aria-label="Name" value={key} readOnly={!canEdit} spellCheck={false} onChange={(e) => rename(key, e.target.value.replace(/[^a-zA-Z0-9_]/g, "_"))} />
-                <NativeSelect aria-label="Type" value={String(spec.type ?? "string")} disabled={!canEdit} onChange={(e) => setSpec("type", e.target.value)}>
-                  {TYPES.map((t) => <NativeSelectOption key={t.value} value={t.value}>{t.label}</NativeSelectOption>)}
-                </NativeSelect>
+                <SelectField aria-label="Type" value={String(spec.type ?? "string")} disabled={!canEdit} onValueChange={(value) => setSpec("type", value)}>
+                  {TYPES.map((t) => <SelectOption key={t.value} value={t.value}>{t.label}</SelectOption>)}
+                </SelectField>
                 <Input aria-label="Description" value={typeof spec.description === "string" ? spec.description : ""} readOnly={!canEdit} placeholder="What it is, e.g. The order number (#1234)" onChange={(e) => setSpec("description", e.target.value)} />
                 <label className="agent-param-required small">
                   <Checkbox checked={spec.required !== false} disabled={!canEdit} onCheckedChange={(on) => setSpec("required", on ? "" : false)} />
@@ -185,10 +191,10 @@ function ActionForm({ cfg, canEdit, path, keys }: { cfg: AgentConfig; canEdit: b
           <TextList values={Array.isArray(data.pages) ? (data.pages as unknown[]).map(String) : []} onChange={(next) => set("pages", next)} placeholder="/billing or /orders/*" label="Page" addLabel="Add a page" disabled={!canEdit} />
         </Field>
         <Field label="Show the result as a widget" htmlFor="act-widget">
-          <NativeSelect id="act-widget" value={str("widget")} disabled={!canEdit} onChange={(e) => set("widget", e.target.value)}>
-            <NativeSelectOption value="">No widget (the AI describes it)</NativeSelectOption>
-            {widgets.map((w) => <NativeSelectOption key={w} value={w}>{humanize(w)}</NativeSelectOption>)}
-          </NativeSelect>
+          <SelectField id="act-widget" value={str("widget")} disabled={!canEdit} onValueChange={(value) => set("widget", value)}>
+            <SelectOption value="">No widget (the AI describes it)</SelectOption>
+            {widgets.map((w) => <SelectOption key={w} value={w}>{humanize(w)}</SelectOption>)}
+          </SelectField>
         </Field>
         {!(runFrom.length > 0 || data.widget_done !== undefined || data.widget_failed !== undefined) && <CardLines str={str} set={set} canEdit={canEdit} runFrom={runFrom} />}
       </Advanced>

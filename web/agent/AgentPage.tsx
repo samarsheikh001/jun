@@ -10,6 +10,7 @@ import { WidgetsView } from "./WidgetsView.tsx";
 import { InstructionsView } from "./InstructionsView.tsx";
 import { TasksView } from "./TasksView.tsx";
 import { TestsView } from "./TestsView.tsx";
+import { AgentSkeleton } from "./AgentSkeleton.tsx";
 import { SaveBar, routeFor, setCodeView, useCodeView } from "./parts.tsx";
 import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
 
@@ -81,7 +82,9 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         <SaveBar cfg={cfg} canEdit={canEdit} />
       </div>
     ) : (
-      <div className="content muted">Loading…</div>
+      <div className="agent-view">
+        <AgentSkeleton tab={tab} item={item} code={code} canEdit={canEdit} />
+      </div>
     );
 
   return (

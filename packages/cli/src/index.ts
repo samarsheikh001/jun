@@ -14,7 +14,7 @@ import { evaluate, init, login, pull, push } from "./desk.ts";
 import { loginWithChatGPT } from "./login.ts";
 import { FileCredentialStore } from "./store.ts";
 
-const HELP = `jun — Jun Desk developer CLI
+const HELP = `jun — Jun developer CLI
 
 Support agent as code (talks to your deployed desk):
   jun login <desk-url> [--token jun_…]   Connect to a desk with an API token (Settings → API tokens)

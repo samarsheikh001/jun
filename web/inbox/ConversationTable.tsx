@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
+import { useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { ConversationSummary } from "../../shared/protocol.ts";
 import { contactLabel } from "../../shared/notifications.ts";
 import { markdownToPlain } from "../../shared/markdown.ts";
 import { formatTime } from "../lib/thread.ts";
 import { ColumnsIcon, SearchIcon, XIcon } from "@/components/icons";
+import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 
 // The inbox's list as Widgo's Conversations page (measured from app.widgo.ai, colours mapped to our
 // tokens): sticky title, a tab strip with counts and search, a sortable table with a column picker,
@@ -122,7 +124,8 @@ export function TabStrip<K extends string>({ tabs, active, onChange, search, chi
       {tabs.map((t) => (
         <button key={t.key} type="button" data-plain className={`cv-tab ${t.key === active ? "active" : ""}`} aria-pressed={t.key === active} onClick={() => onChange(t.key)}>
           {t.label}
-          {t.count != null && <span className="cv-tab-count">{t.count}</span>}
+          {/* Two figure spaces hold a count's place while it loads, so the tabs don't move. */}
+          {t.count != null ? <span className="cv-tab-count">{t.count}</span> : <span className="cv-tab-count loading" aria-hidden="true">{"  "}</span>}
         </button>
       ))}
       {children}
@@ -149,60 +152,24 @@ export function TabStrip<K extends string>({ tabs, active, onChange, search, chi
   );
 }
 
-const PICKER_WIDTH = 208;
-
-/** Widgo's "Show columns" picker: a fixed popover under the button, closed by an outside click, scroll or resize. */
+/** Widgo's "Show columns" picker, as the desk's dropdown menu (stays open while you tick). */
 export function ColumnPicker({ hidden, onToggle }: { hidden: Set<Column>; onToggle: (column: Column) => void }) {
-  const [open, setOpen] = useState(false);
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  const show = () => {
-    const r = button.current?.getBoundingClientRect();
-    if (r) setAt({ top: r.bottom + 6, left: Math.max(8, r.right - PICKER_WIDTH) });
-    setOpen(true);
-  };
-  useEffect(() => {
-    if (!open) return;
-    const outside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (!menu.current?.contains(target) && !button.current?.contains(target)) setOpen(false);
-    };
-    const close = () => setOpen(false);
-    const escape = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      setOpen(false);
-      button.current?.focus();
-    };
-    document.addEventListener("mousedown", outside);
-    document.addEventListener("keydown", escape);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("mousedown", outside);
-      document.removeEventListener("keydown", escape);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [open]);
   return (
-    <>
-      <button ref={button} type="button" data-plain className="cv-columns" onClick={() => (open ? setOpen(false) : show())} title="Columns" aria-label="Columns" aria-expanded={open}>
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<button type="button" data-plain className="cv-columns" title="Columns" aria-label="Columns" />}>
         <ColumnsIcon />
-      </button>
-      {open && at && (
-        <div ref={menu} className="cv-columns-menu" style={{ position: "fixed", top: at.top, left: at.left, width: PICKER_WIDTH }}>
-          <div className="cv-columns-title">Show columns</div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Show columns</DropdownMenuLabel>
           {COLUMNS.filter((c) => c !== "Person").map((c) => (
-            <label key={c}>
-              <input type="checkbox" checked={!hidden.has(c)} onChange={() => onToggle(c)} />
+            <DropdownMenuCheckboxItem key={c} checked={!hidden.has(c)} closeOnClick={false} onCheckedChange={() => onToggle(c)}>
               {c}
-            </label>
+            </DropdownMenuCheckboxItem>
           ))}
-        </div>
-      )}
-    </>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -233,6 +200,34 @@ export function Pager({ page, pageCount, onPage }: { page: number; pageCount: nu
   );
 }
 
+/** Skeleton rows while the list loads: the real cells and line boxes, widths varied like real text. */
+const SKELETON_ROWS = [[118, 196, 64], [96, 172, 80], [134, 208, 56], [104, 150, 72], [124, 188, 64], [90, 204, 88], [112, 164, 60], [128, 180, 76], [100, 196, 68], [120, 156, 84]] as const;
+
+function SkeletonRows({ columns }: { columns: Column[] }) {
+  const shows = (c: Column) => columns.includes(c);
+  return (
+    <>
+      {SKELETON_ROWS.map(([name, message, topic], i) => (
+        <tr key={i} className="cv-skel-row" aria-hidden="true">
+          <td>
+            <div className="cv-person">
+              <Skeleton className="cv-avatar cv-skel-avatar" />
+              <div className="cv-person-text"><div className="cv-name"><SkelText width={name} /></div></div>
+            </div>
+          </td>
+          {shows("Message") && <td className="cv-text"><span className="cv-clamp"><SkelText width={message} /></span></td>}
+          {shows("Status") && <td className="cv-text nowrap"><SkelText width={40} /></td>}
+          {shows("Topic") && <td className="cv-text"><span className="cv-clamp"><SkelText width={topic} /></span></td>}
+          {shows("Assignee") && <td className="cv-text nowrap"><SkelText width={64} /></td>}
+          {shows("Tags") && <td><SkelText width={48} /></td>}
+          {shows("Rating") && <td className="cv-text nowrap"><SkelText width={48} /></td>}
+          {shows("Updated") && <td className="cv-time"><SkelText width={56} /></td>}
+        </tr>
+      ))}
+    </>
+  );
+}
+
 const STATUS_LABEL: Record<ConversationSummary["status"], string> = { open: "Open", pending: "Pending", snoozed: "Snoozed", resolved: "Resolved" };
 const dash = <span className="cv-dash">—</span>;
 
@@ -248,10 +243,11 @@ export function ConversationRows({ rows, columns, selected, cursor, empty, membe
   onFocusRow: (id: string) => void;
 }) {
   const shows = (c: Column) => columns.includes(c);
-  if (rows === null || empty) {
+  if (rows === null) return <SkeletonRows columns={columns} />;
+  if (empty) {
     return (
       <tr>
-        <td colSpan={columns.length} className="cv-empty">{rows === null ? "Loading…" : empty}</td>
+        <td colSpan={columns.length} className="cv-empty">{empty}</td>
       </tr>
     );
   }

@@ -171,7 +171,7 @@ test("the draft has every section and the link back; facts for the model hold no
   assert.deepEqual(headings, ["Summary", "Steps to reproduce", "Expected vs actual", "Failing requests", "Errors", "Environment"]);
   assert.match(draft.body, /_Inferred from the visitor's session/);
   assert.match(draft.body, /\n1\. Open `\/dashboard`\n2\. Open `\/billing`\n/);
-  assert.ok(draft.body.endsWith("---\nFrom a support conversation in Jun Desk: https://desk.acme.dev/inbox/cv_123"));
+  assert.ok(draft.body.endsWith("---\nFrom a support conversation in Jun: https://desk.acme.dev/inbox/cv_123"));
   assert.doesNotMatch(draft.body, /pat@customer|abc123/);
 
   const text = issueFactsText(facts);
@@ -235,8 +235,8 @@ test("GitHub links: desk file URLs as Markdown images, before the footer", () =>
   assert.equal(section, "## Screenshots\n\n![Screenshot checkout .png](https://desk.acme.test/api/files/f_abc)\n\n![screenshot](https://desk.acme.test/api/files/f%20two%281%29)");
   assert.equal(imagesSection([]), "");
 
-  const body = "## Summary\nPay fails.\n\n---\nFrom a support conversation in Jun Desk: https://desk.acme.test/inbox/cv_1";
-  assert.equal(withImagesSection(body, section), `## Summary\nPay fails.\n\n${section}\n\n---\nFrom a support conversation in Jun Desk: https://desk.acme.test/inbox/cv_1`);
+  const body = "## Summary\nPay fails.\n\n---\nFrom a support conversation in Jun: https://desk.acme.test/inbox/cv_1";
+  assert.equal(withImagesSection(body, section), `## Summary\nPay fails.\n\n${section}\n\n---\nFrom a support conversation in Jun: https://desk.acme.test/inbox/cv_1`);
   // An agent removed the footer: appended at the end. No images: unchanged.
   assert.equal(withImagesSection("Pay fails.\n", section), `Pay fails.\n\n${section}`);
   assert.equal(withImagesSection("", section), section);

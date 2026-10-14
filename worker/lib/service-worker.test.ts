@@ -78,7 +78,7 @@ test("push shows the notification with the conversation as tag; the same event a
   // Garbage still shows something (browsers require it) and never an off-site URL.
   await sw.dispatch("push", { data: { json: () => { throw new Error("bad"); } } });
   await sw.dispatch("push", pushEvent({ title: "x", url: "https://evil.test/" }));
-  assert.equal(sw.shown[3]!.title, "Jun Desk");
+  assert.equal(sw.shown[3]!.title, "Jun");
   assert.equal((sw.shown[4]!.options.data as { url: string }).url, "/inbox");
 });
 

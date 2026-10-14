@@ -100,6 +100,9 @@ ai.post("/workspaces/:id/ai/chatgpt/start", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
   const url = new URL(c.req.url);
+  // Where a local sign-in lands afterwards: Settings, or the Get started step it started from.
+  const asked = (await readJson(c.req)).returnTo;
+  const back = typeof asked === "string" && /^\/welcome\/[a-z]+$/.test(asked) ? asked : "/settings";
 
   // OpenAI's open-source flow requires a 127.0.0.1 loopback redirect; only the port may vary.
   const paste = !isLoopback(url.hostname);
@@ -119,7 +122,7 @@ ai.post("/workspaces/:id/ai/chatgpt/start", async (c) => {
     c.env.DB.prepare("DELETE FROM dev_chatgpt_states WHERE expires_at < ?").bind(Date.now()),
     c.env.DB.prepare(
       "INSERT INTO dev_chatgpt_states (state, workspace_id, code_verifier, nonce, redirect_uri, return_to, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).bind(state, workspaceId, codeVerifier, nonce, redirectUri, `${url.origin}/settings`, Date.now() + 10 * 60 * 1000),
+    ).bind(state, workspaceId, codeVerifier, nonce, redirectUri, `${url.origin}${back}`, Date.now() + 10 * 60 * 1000),
   ]);
   return c.json({
     paste,

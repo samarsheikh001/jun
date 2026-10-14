@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge.tsx";
 import { Card, CardContent, CardHeader } from "@/components/ui/card.tsx";
 import { Checkbox } from "@/components/ui/checkbox.tsx";
 import { Input } from "@/components/ui/input.tsx";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { PlusIcon, TrashIcon } from "../components/icons.tsx";
 import { PixelLoader } from "../components/PixelLoader.tsx";
@@ -228,16 +228,16 @@ function TestCase({ data, result, tools, widgets, canEdit, edit, remove }: {
         )}
         <div className="agent-test-grid">
           <Field label="The AI should">
-            <NativeSelect aria-label="The AI should" value={String(expect.outcome ?? "")} disabled={!canEdit} onChange={(e) => edit({ op: "set", path: ["expect", "outcome"], value: e.target.value })}>
-              {OUTCOMES.map((o) => <NativeSelectOption key={o.value} value={o.value}>{o.label}</NativeSelectOption>)}
-            </NativeSelect>
+            <SelectField aria-label="The AI should" value={String(expect.outcome ?? "")} disabled={!canEdit} onValueChange={(value) => edit({ op: "set", path: ["expect", "outcome"], value: value })}>
+              {OUTCOMES.map((o) => <SelectOption key={o.value} value={o.value}>{o.label}</SelectOption>)}
+            </SelectField>
           </Field>
           {widgets.length > 0 && (
             <Field label="And show this widget">
-              <NativeSelect aria-label="And show this widget" value={String(expect.widget ?? "")} disabled={!canEdit} onChange={(e) => edit({ op: "set", path: ["expect", "widget"], value: e.target.value })}>
-                <NativeSelectOption value="">No widget needed</NativeSelectOption>
-                {widgets.map((w) => <NativeSelectOption key={w} value={w}>{humanize(w)}</NativeSelectOption>)}
-              </NativeSelect>
+              <SelectField aria-label="And show this widget" value={String(expect.widget ?? "")} disabled={!canEdit} onValueChange={(value) => edit({ op: "set", path: ["expect", "widget"], value: value })}>
+                <SelectOption value="">No widget needed</SelectOption>
+                {widgets.map((w) => <SelectOption key={w} value={w}>{humanize(w)}</SelectOption>)}
+              </SelectField>
             </Field>
           )}
         </div>

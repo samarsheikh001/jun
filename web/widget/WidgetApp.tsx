@@ -345,13 +345,13 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         spec = (await api.call<{ intent: IntentSpec | null }>(`/intents/${name}`)).intent;
       } catch (err) {
         // Can't tell whether it has an exit: a plain chat, not tagged (the AI would expect the button).
-        console.warn(`[Jun Desk] couldn't load intent "${name}": ${(err as Error).message}`);
+        console.warn(`[Jun] couldn't load intent "${name}": ${(err as Error).message}`);
         setView({ kind: "thread", id: null });
         return;
       }
       // Hard rule (D-37): a flow with an exit button never starts without a way out.
       if (spec?.exit && !hostExit) {
-        console.warn(`[Jun Desk] intent "${name}" has an exit ("${spec.exit}") but JunDesk.open() got no onExit function: opening a plain chat.`);
+        console.warn(`[Jun] intent "${name}" has an exit ("${spec.exit}") but JunDesk.open() got no onExit function: opening a plain chat.`);
         setView({ kind: "thread", id: null });
         return;
       }
@@ -378,7 +378,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         if (userToken) {
           api.identify(userToken).then(
             () => setIdentityVersion((n) => n + 1),
-            (err: Error) => console.warn(`[Jun Desk] identify failed: ${err.message}`),
+            (err: Error) => console.warn(`[Jun] identify failed: ${err.message}`),
           );
         } else {
           api.forget();
@@ -668,7 +668,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   );
 }
 
-/** A line icon on the earlier Jun Desk widget's 24px grid (shown at 18px). */
+/** A line icon on the earlier Jun widget's 24px grid (shown at 18px). */
 function Icon({ d }: { d: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

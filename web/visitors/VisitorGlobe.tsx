@@ -12,34 +12,37 @@ setWorkerUrl(workerUrl);
 // (public/geo/world.v1.json, built by scripts/globe-data.ts from Natural Earth, ~220 KB gzipped,
 // cached forever) and labels are drawn with the desk's own font, so there are no tiles, glyph
 // server or map service. Loaded lazily: only the Visitors page pays for MapLibre.
-// Drag to spin, Ctrl/⌘ + scroll to zoom (two zoom steps); hovering a visitor in the table
-// turns the globe to them.
+// One size, no zoom; drag to spin (with a mouse: on touch screens a drag scrolls the page);
+// hovering a visitor in the table turns the globe to them. Day or night map follows the desk theme.
 
 const WORLD_URL = "/geo/world.v1.json";
 const FONT = "Outfit";
-/** How far you can zoom in from the whole globe. */
-const ZOOM_STEPS = 2;
 /** Degrees of longitude per second while idle. */
 const SPIN = 4;
 
 type World = Record<"countries" | "borders" | "lakes" | "ice" | "barren" | "depth" | "countryLabels" | "seaLabels" | "cities", GeoJSONSourceSpecification["data"]>;
 
-/** Map colours: a bright atlas by day, the same map at night. Not theme tokens: a map wants colour. */
+/**
+ * Map colours, kept quiet: one sea, one land, hairline borders, grey labels. The only colour is the
+ * marker purple, softly on countries with someone on the site. Not theme tokens: MapLibre paints
+ * with plain colours, swapped when the desk theme changes.
+ */
 const PALETTES = {
   light: {
-    shelf: "#a6dffa", deep200: "#8fd5f8", deep2000: "#78cbf5", deep4000: "#63c1f2",
-    land: "#d3eec5", visited: "#b4e09b", barren: "#eef2e2", ice: "#ffffff", lake: "#8fd5f8",
-    border: "#e49aae", text: "#2b2f33", halo: "rgba(255,255,255,0.9)", sea: "#2f86c2", city: "#2b2f33",
+    shelf: "#dce2e9", deep200: "#dce2e9", deep2000: "#dce2e9", deep4000: "#dce2e9",
+    land: "#ffffff", visited: "#e4dcff", barren: "#ffffff", ice: "#ffffff", lake: "#dce2e9",
+    border: "#d3d9e1", text: "#6b7280", halo: "rgba(255,255,255,0.92)",
   },
   dark: {
-    shelf: "#173c5e", deep200: "#133555", deep2000: "#0f2d4b", deep4000: "#0c2641",
-    land: "#284a33", visited: "#3a6b43", barren: "#33493a", ice: "#c9d6dc", lake: "#133555",
-    border: "#b0687e", text: "#e9ecef", halo: "rgba(10,14,20,0.85)", sea: "#7db6e3", city: "#e9ecef",
+    shelf: "#1d2026", deep200: "#1d2026", deep2000: "#1d2026", deep4000: "#1d2026",
+    land: "#30353e", visited: "#43386f", barren: "#30353e", ice: "#30353e", lake: "#1d2026",
+    border: "#3c424c", text: "#9aa1ab", halo: "rgba(14,16,20,0.85)",
   },
 };
 type Palette = (typeof PALETTES)["light"];
 
-const palette = (): Palette => (document.documentElement.dataset.theme === "dark" ? PALETTES.dark : PALETTES.light);
+type Mode = keyof typeof PALETTES;
+const deskMode = (): Mode => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
 const landFill = (p: Palette, countries: string[]): ExpressionSpecification | string =>
   countries.length ? ["case", ["in", ["get", "iso"], ["literal", countries]], p.visited, p.land] : p.land;
@@ -54,14 +57,12 @@ function paints(p: Palette, countries: string[]): Record<string, Record<string, 
     ice: { "fill-color": p.ice },
     lakes: { "fill-color": p.lake },
     borders: { "line-color": p.border },
-    "sea-labels": { "text-color": p.sea, "text-halo-color": p.halo },
-    "city-labels": { "text-color": p.text, "text-halo-color": p.halo },
     "country-labels": { "text-color": p.text, "text-halo-color": p.halo },
   };
 }
 
-function style(world: World, countries: string[]): StyleSpecification {
-  const colour = paints(palette(), countries);
+function style(world: World, countries: string[], p: Palette): StyleSpecification {
+  const colour = paints(p, countries);
   const layers: LayerSpecification[] = [
     { id: "ocean", type: "background", paint: {} },
     // Depth bands overlap (4000 m lies inside 2000 m inside 200 m): drawn shallow to deep.
@@ -71,19 +72,8 @@ function style(world: World, countries: string[]): StyleSpecification {
     { id: "ice", type: "fill", source: "ice", paint: { "fill-opacity": 0.9 } },
     { id: "lakes", type: "fill", source: "lakes", paint: {} },
     { id: "borders", type: "line", source: "borders", paint: { "line-width": ["interpolate", ["linear"], ["zoom"], 1, 0.6, 4, 1.2] } },
-    {
-      id: "sea-labels", type: "symbol", source: "seaLabels",
-      layout: { "text-field": ["get", "name"], "text-font": [FONT], "text-size": ["case", ["get", "ocean"], 13, 11], "text-letter-spacing": ["case", ["get", "ocean"], 0.25, 0.1], "text-max-width": 6, "symbol-sort-key": ["get", "rank"] },
-      paint: { "text-halo-width": 0 },
-    },
-    // The dot is part of the label ("• Mumbai"), so a city whose name doesn't fit shows no orphan dot.
-    // minz is Natural Earth's zoom for the place; the globe starts around zoom 2.
-    {
-      id: "city-labels", type: "symbol", source: "cities",
-      filter: ["<=", ["get", "minz"], ["+", ["zoom"], 1]],
-      layout: { "text-field": ["format", "• ", { "font-scale": 1.5 }, ["get", "name"], {}], "text-font": [FONT], "text-size": 10.5, "text-anchor": "left", "text-offset": [-0.4, -0.1], "symbol-sort-key": ["get", "rank"] },
-      paint: { "text-halo-width": 1.2 },
-    },
+    // Only country names: the map file also has seas and cities, left out to keep the globe quiet.
+    // minz is Natural Earth's zoom for the place; the globe sits around zoom 2.
     {
       id: "country-labels", type: "symbol", source: "countryLabels",
       filter: ["<=", ["get", "minz"], ["+", ["zoom"], 1.5]],
@@ -97,7 +87,7 @@ function style(world: World, countries: string[]): StyleSpecification {
     projection: { type: "globe" },
     // Labels in the desk's font, drawn in the browser (no glyph server).
     "font-faces": { [FONT]: new URL("/fonts/outfit-latin-wght-normal.woff2", location.href).href },
-    sources: Object.fromEntries(Object.entries(world).map(([name, data]) => [name, { type: "geojson", data }])),
+    sources: Object.fromEntries(Object.entries(world).filter(([name]) => name !== "seaLabels" && name !== "cities").map(([name, data]) => [name, { type: "geojson", data }])),
     layers,
   };
 }
@@ -131,6 +121,15 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
   countriesRef.current = countries;
   const spotsRef = useRef(spots);
   spotsRef.current = spots;
+  const [mode, setMode] = useState<Mode>(deskMode);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
+  useEffect(() => {
+    const theme = new MutationObserver(() => setMode(deskMode()));
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => theme.disconnect();
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -146,13 +145,19 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
           const zoom = fitZoom(host.clientWidth || 320);
           m = new MapLibre({
             container: host,
-            style: style(world, countriesRef.current),
+            style: style(world, countriesRef.current, PALETTES[modeRef.current]),
             center: [spotsRef.current[0]?.location[1] ?? 10, 20],
             zoom,
             minZoom: zoom,
-            maxZoom: zoom + ZOOM_STEPS,
+            maxZoom: zoom,
             attributionControl: false,
-            cooperativeGestures: true,
+            scrollZoom: false,
+            boxZoom: false,
+            doubleClickZoom: false,
+            touchZoomRotate: false,
+            keyboard: false,
+            // A finger on the globe scrolls the page; a mouse spins it.
+            dragPan: !window.matchMedia("(pointer: coarse)").matches,
             dragRotate: false,
             pitchWithRotate: false,
             touchPitch: false,
@@ -174,9 +179,6 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
         m.on("touchstart", hold);
         m.on("mouseup", release);
         m.on("touchend", release);
-        m.on("zoomend", (e) => {
-          if (e.originalEvent) release();
-        });
         let frame = 0;
         let last = performance.now();
         const tick = (now: number) => {
@@ -194,21 +196,15 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
           m.resize();
           const zoom = fitZoom(host.clientWidth || 320);
           m.setMinZoom(zoom);
-          m.setMaxZoom(zoom + ZOOM_STEPS);
+          m.setMaxZoom(zoom);
+          m.setZoom(zoom);
         });
         resize.observe(host);
-        const theme = new MutationObserver(() => {
-          for (const [layer, props] of Object.entries(paints(palette(), countriesRef.current))) {
-            for (const [prop, value] of Object.entries(props)) m.setPaintProperty(layer, prop as never, value as never);
-          }
-        });
-        theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
         setMap(m);
         cleanup = () => {
           cancelAnimationFrame(frame);
           resize.disconnect();
-          theme.disconnect();
           m.remove();
         };
       },
@@ -249,11 +245,17 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
     }
   }, [map, spots]);
 
-  // Countries with someone on the site are tinted.
+  // Day or night map, and the countries with someone on the site tinted.
   useEffect(() => {
-    if (!map?.getLayer("land")) return;
-    map.setPaintProperty("land", "fill-color", landFill(palette(), countries));
-  }, [map, countries]);
+    if (!map) return;
+    const apply = () => {
+      for (const [layer, props] of Object.entries(paints(PALETTES[mode], countries))) {
+        for (const [prop, value] of Object.entries(props)) map.setPaintProperty(layer, prop as never, value as never);
+      }
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [map, mode, countries]);
 
   // Hovering a visitor in the table: fly there, highlight their marker.
   useEffect(() => {

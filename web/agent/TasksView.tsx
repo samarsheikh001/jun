@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
 import { Field as UiField, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field.tsx";
 import { PlusIcon } from "../components/icons.tsx";
-import { Advanced, Field, ItemIndex, Problems, SKILL, TextList, TOOL, Unreadable, go, humanize, slug } from "./parts.tsx";
+import { Advanced, Field, FilesCode, ItemIndex, Problems, SKILL, TextList, TOOL, Unreadable, go, humanize, slug, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { MentionText, useMentionActions } from "./MentionText.tsx";
 import { FileStudio } from "./FileStudio.tsx";
@@ -44,6 +44,7 @@ export function TasksView({ cfg, canEdit, selected }: { cfg: AgentConfig; canEdi
   useEffect(() => {
     if (gone) go("/agent/tasks");
   }, [gone]);
+  const code = useCodeView();
 
   if (current) {
     return (
@@ -59,6 +60,7 @@ export function TasksView({ cfg, canEdit, selected }: { cfg: AgentConfig; canEdi
       />
     );
   }
+  if (code) return <FilesCode cfg={cfg} files={items.map((i) => i.path)} canEdit={canEdit} empty="No tasks yet. Switch to Form and press New task, or add skills/<name>/SKILL.md with jun push." />;
   return (
     <>
       <ItemIndex
