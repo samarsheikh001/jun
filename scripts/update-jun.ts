@@ -156,23 +156,39 @@ async function openPullRequest(title: string, text: string) {
   if (open[0]) {
     await api(`/pulls/${open[0].number}`, { method: "PATCH", body: JSON.stringify({ title, body: text }) });
     console.log(`Updated ${open[0].html_url}`);
+    await closeFallbackIssue(open[0].html_url);
     return;
   }
   const base = git("remote", "show", "origin").match(/HEAD branch: (.+)/)?.[1] ?? "main";
   const created = await api("/pulls", { method: "POST", body: JSON.stringify({ title, body: text, head: BRANCH, base }) });
   if (created.ok) {
-    console.log(`Opened ${((await created.json()) as { html_url: string }).html_url}`);
+    const url = ((await created.json()) as { html_url: string }).html_url;
+    console.log(`Opened ${url}`);
+    await closeFallbackIssue(url);
     return;
   }
   // "GitHub Actions is not permitted to create or approve pull requests" (a repo setting, off by default).
   console.log(`Couldn't open the pull request (${created.status}): opening an issue with the link instead.`);
   const compare = `https://github.com/${repo}/compare/${base}...${BRANCH}?expand=1`;
   const issueText = `The \`${BRANCH}\` branch has ${title.replace("Update Jun to", "Jun")} ready. [Open the pull request](${compare}) and merge it to update.\n\nTo let this workflow open the pull request itself next time: **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests**.\n\n${text}`;
-  const issues = (await (await api(`/issues?state=open&creator=github-actions%5Bbot%5D`)).json()) as { number: number; title: string; pull_request?: unknown; html_url: string }[];
-  const existing = issues.find((i) => !i.pull_request && i.title.startsWith("Update Jun to"));
+  const existing = await fallbackIssue();
   const res = existing
     ? await api(`/issues/${existing.number}`, { method: "PATCH", body: JSON.stringify({ title, body: issueText }) })
     : await api("/issues", { method: "POST", body: JSON.stringify({ title, body: issueText }) });
   if (!res.ok) throw new Error(`Couldn't open the pull request or an issue (${res.status}). The update is on the ${BRANCH} branch: ${compare}`);
   console.log(`Issue: ${((await res.json()) as { html_url: string }).html_url}`);
+
+  /** The open "Update Jun to …" issue this workflow opened when it couldn't open a pull request. */
+  async function fallbackIssue() {
+    const issues = (await (await api(`/issues?state=open&creator=github-actions%5Bbot%5D`)).json()) as { number: number; title: string; pull_request?: unknown }[];
+    return issues.find((i) => !i.pull_request && i.title.startsWith("Update Jun to"));
+  }
+
+  /** Once the pull request exists, an earlier fallback issue has done its job. */
+  async function closeFallbackIssue(pullUrl: string) {
+    const issue = await fallbackIssue();
+    if (!issue) return;
+    await api(`/issues/${issue.number}/comments`, { method: "POST", body: JSON.stringify({ body: `The update is now a pull request: ${pullUrl}` }) });
+    await api(`/issues/${issue.number}`, { method: "PATCH", body: JSON.stringify({ state: "closed", state_reason: "completed" }) });
+  }
 }

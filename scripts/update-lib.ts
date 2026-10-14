@@ -132,6 +132,7 @@ export function pullRequestBody(input: {
   const lines: string[] = [];
   lines.push(`Updates Jun ${input.from ? `from v${input.from} ` : ""}to **${input.to}** ([release notes](https://github.com/${input.upstream}/releases/tag/${input.to})).`);
   lines.push("", "Merging deploys it: the deploy applies database migrations first, then the new Worker. Conversations, knowledge, passkeys and settings carry over.");
+  lines.push("", "A failed **Workers Builds** check on this pull request is Cloudflare's branch preview (`wrangler preview`), which needs separate preview resources Jun doesn't set up; it isn't this update. The build itself runs before it, and merging runs the normal deploy. To stop branch builds: your Worker → **Settings → Build → Branch control** → turn off **Builds for non-production branches**.");
   if (!input.from) lines.push("", "Your copy didn't say which Jun version it came from, so every file now matches the release (your resource names in `wrangler.jsonc` are kept). If you changed Jun's code in this repo, check those files below.");
   if (input.conflicts.length) {
     lines.push("", "### Resolve before merging", "Jun and your copy both changed these files in the same place. They contain `<<<<<<<` markers: edit them on this branch, then merge.");
