@@ -65,14 +65,24 @@ button.w-thumb:hover:not(:disabled) { border-color: var(--accent); }
 :is(.w-shell, .w-closed) .w-badge-logo { width: 14px; height: 14px; }
 .w-badge.mini { padding-bottom: 12px; }
 
-/* The greeting card, closed (.launcher-wrap): the frame is this size, and transparent around it. */
-/* Light like the frame (the loader sets color-scheme:normal on it): a dark root inside a light
-   frame gets an opaque canvas, which squares off the card's corners. Beats :root[data-theme]. */
-:root.mini, :root.mini[data-theme] { color-scheme: light; }
+/* The greeting card (.launcher-wrap) and, D-90, the chat it opens: html.mini (.phone when the frame
+   fills a phone's screen). The frame is always the open chat's box plus room for the shadow
+   (--m, card.tsx SHADOW_ROOM), transparent (its color-scheme is set to ours, so its canvas stays
+   transparent too), clipped to the card while closed. One surface, .w-edge, draws the background,
+   hairline and shadow under the card and under the chat, so the edge is the same in both and
+   through the morph between them. */
+html.mini { --m: 40px; --edge: 0 0 0 1px var(--border), 0 8px 32px rgb(0 0 0 / 0.12); }
+html.mini.phone { --m: 0px; }
 html.mini, html.mini body, html.mini #root { background: transparent; }
 html.mini body { overflow: hidden; }
 .w-closed { display: flow-root; }
-.w-mini { width: 100%; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); box-shadow: none; overflow: hidden; }
+html.mini .w-closed { position: fixed; left: var(--m); right: var(--m); bottom: var(--m); }
+html.mini.phone .w-closed { left: 16px; right: 16px; bottom: 16px; }
+.w-edge { position: absolute; inset: 0; border-radius: var(--radius); background: var(--surface); box-shadow: var(--edge); }
+html.mini :is(.w-edge.open, .w-shell) { position: fixed; inset: var(--m); height: auto; border-radius: var(--radius); }
+html.mini.phone :is(.w-edge.open, .w-shell) { border-radius: 0; }
+html.mini .w-shell { background: transparent; }
+.w-mini { position: relative; width: 100%; border-radius: var(--radius); overflow: hidden; }
 .w-mini-head { position: relative; display: flex; flex-direction: row; align-items: baseline; gap: 7px; padding: 16px 44px 0 18px; }
 .w-mini-head.has-logo { align-items: center; }
 .w-closed .w-mini-logo { width: 22px; height: 22px; border-radius: var(--radius-xs); object-fit: contain; flex-shrink: 0; }
@@ -95,6 +105,46 @@ html.mini body { overflow: hidden; }
 /* Hidden for this page: the "Chat with us" pill (.launcher). */
 .w-closed .w-launcher { display: block; width: max-content; padding: 12px 18px; background: var(--accent); color: var(--accent-text); box-shadow: none; }
 .w-closed .w-launcher:hover { background: var(--accent-hover); }
+.w-closed[data-side="right"] .w-launcher { margin-left: auto; }
+
+/* D-90 the morph between the card and the chat (card.tsx `morph`): a view transition inside the
+   frame. The parts both show carry one name each; the surface is drawn on its group (the same
+   background, hairline and shadow at every size), the composer and "Built with Jun" sit at the same
+   place in both and are shown as they are, the rest cross-fade while they move. */
+html.mini .w-edge, html.mini .w-launcher { view-transition-name: jun-surface; }
+html.mini :is(.w-mini-head, .w-head) { view-transition-name: jun-head; }
+html.mini :is(.w-mini-logo, .w-agent-icon) { view-transition-name: jun-logo; }
+html.mini :is(.w-mini-name, .w-name) { view-transition-name: jun-name; }
+html.mini :is(.w-mini-sub, .w-sub) { view-transition-name: jun-sub; }
+html.mini :is(.w-mini-welcome, .w-greet) { view-transition-name: jun-welcome; }
+html.mini .w-shell > .w-body { view-transition-name: jun-body; }
+html.mini .w-shell > .w-suggest { view-transition-name: jun-suggest; }
+html.mini :is(.w-mini-actions, .w-shell > .w-actions) > button:first-child { view-transition-name: jun-act-1; }
+html.mini :is(.w-mini-actions, .w-shell > .w-actions) > button:nth-child(2) { view-transition-name: jun-act-2; }
+html.mini :is(.w-mini-composer, .w-shell > .w-composer-wrap .composer-box) { view-transition-name: jun-composer; }
+html.mini :is(.w-badge.mini, .w-shell > .w-badge) { view-transition-name: jun-badge; }
+html.mini::view-transition-group(*) { animation-duration: 0.4s; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+/* What's leaving goes in the first half, what's coming in the second: no double image midway. */
+html.mini::view-transition-old(*) { animation: w-vt-out 0.2s ease-out both; }
+/* The chat's own parts (messages, suggestions, the composer bar's line) don't fit in the card: gone before the surface shrinks past them. */
+html.mini::view-transition-old(jun-body), html.mini::view-transition-old(jun-suggest), html.mini::view-transition-old(root) { animation-duration: 0.1s; }
+html.mini::view-transition-new(*) { animation: w-vt-in 0.3s 0.1s ease-in both; }
+/* Text keeps its size (name, reply time and welcome are the same type in both, their boxes aren't): drawn unscaled from the group's corner. */
+html.mini::view-transition-old(jun-name), html.mini::view-transition-new(jun-name), html.mini::view-transition-old(jun-sub), html.mini::view-transition-new(jun-sub), html.mini::view-transition-old(jun-welcome), html.mini::view-transition-new(jun-welcome), html.mini::view-transition-new(jun-body), html.mini::view-transition-new(jun-suggest) { width: 100%; height: 100%; object-fit: none; object-position: left top; }
+html.mini::view-transition-old(jun-head), html.mini::view-transition-new(jun-head) { width: 100%; height: 100%; object-fit: none; object-position: right top; }
+html.mini::view-transition-group(jun-surface) { border-radius: var(--radius); background: var(--surface); box-shadow: var(--edge); }
+html.mini::view-transition-old(jun-surface), html.mini::view-transition-new(jun-surface) { animation: none; opacity: 0; }
+/* The pill isn't the surface: it fades out into it (and back in on closing). */
+html.mini[data-morph="pill-open"]::view-transition-old(jun-surface) { opacity: 1; animation: w-vt-out 0.15s ease-out both; }
+html.mini[data-morph="pill-close"]::view-transition-new(jun-surface) { opacity: 1; animation: w-vt-in 0.2s 0.2s ease-in both; }
+html.mini[data-morph^="pill"]::view-transition-old(jun-surface), html.mini[data-morph^="pill"]::view-transition-new(jun-surface) { width: 100%; height: 100%; object-fit: none; }
+html.mini::view-transition-old(jun-composer), html.mini::view-transition-old(jun-badge) { animation: none; opacity: 0; }
+html.mini::view-transition-new(jun-composer), html.mini::view-transition-new(jun-badge) { animation: none; height: 100%; }
+/* From the pill there's no composer to keep: it comes in with the rest. */
+html.mini[data-morph^="pill"]::view-transition-new(jun-composer), html.mini[data-morph^="pill"]::view-transition-new(jun-badge) { animation: w-vt-in 0.3s 0.1s ease-in both; }
+html.mini[data-morph^="pill"]::view-transition-old(jun-composer), html.mini[data-morph^="pill"]::view-transition-old(jun-badge) { opacity: 1; animation: w-vt-out 0.1s ease-out both; }
+@keyframes w-vt-out { to { opacity: 0; } }
+@keyframes w-vt-in { from { opacity: 0; } }
 
 /* The visitor's earlier conversations (the reference had one chat at a time): suggestion-list type, button rows. */
 .w-home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }

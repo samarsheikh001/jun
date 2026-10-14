@@ -364,7 +364,8 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
         post({ type: openRef.current ? "jun:open" : "jun:close" });
       }
       if (data?.type === "jun:close") onOpen(false);
-      // The island and the card open themselves, and size and place their frame like the loader does.
+      // The island and the card open themselves, and size and place their frame like the loader does
+      // (the card morphs into the chat inside a frame that keeps its size, D-90: no grow-in here).
       if (data?.type === "jun:open") onOpen(true);
       if (data?.type === "jun:css" && frame.current) {
         frame.current.style.cssText = String((data as { css?: unknown }).css ?? "");
@@ -404,7 +405,7 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
       <div className={`appear-stage ${look.theme} ${look.launcher}`} style={brand}>
         <iframe
           ref={frame}
-          className={`appear-frame${open && look.launcher !== "island" ? " opening" : ""}`}
+          className={`appear-frame${open && button ? " opening" : ""}`}
           title="Widget preview"
           src={`/widget?key=${encodeURIComponent(widgetKey)}&preview=1&persist=0`}
           hidden={!open && button}

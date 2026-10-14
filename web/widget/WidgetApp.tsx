@@ -12,7 +12,7 @@ import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage
 import { playChime, unlockSoundOnInteraction } from "../lib/sound.ts";
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
 import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
-import { Badge, MiniCard, useCardFrame } from "./card.tsx";
+import { Badge, MiniCard, morph, useCardFrame, usePhoneFrame } from "./card.tsx";
 import { Island, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
@@ -266,6 +266,15 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [starts, setStarts] = useState(0);
   const threadKey = view.kind === "thread" ? (view.mount ?? view.id ?? `new${starts}`) : "list";
   const [open, setOpen] = useState(window.parent === window);
+  /** Opening from the card: the fallback if the host page never answers (see openChat). */
+  const openFallback = useRef(0);
+  /** D-90: the view to show with the chat once the host says it's open (openChat). */
+  const pendingView = useRef<typeof view | null>(null);
+  /** D-90: opens or closes the chat, morphing from or to the greeting card (set each render, below). */
+  const switchOpen = useRef<(next: boolean) => void>(setOpen);
+  /** D-90: a morph between the card and the chat is running (the frame stays unclipped meanwhile). */
+  const [morphing, setMorphing] = useState(false);
+  const phoneFrame = usePhoneFrame();
   /** D-34: the panel's Expand (740px tall), the card hidden for this page (then a "Chat with us" pill), the suggestions dismissed. */
   const [grown, setGrown] = useState(false);
   const [miniHidden, setMiniHidden] = useState(false);
@@ -361,8 +370,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       if (preview && data?.type === "jun:preview" && e.origin === window.location.origin && data.look) {
         setDraft(data.look as WidgetLook);
       }
-      if (data?.type === "jun:open") setOpen(true);
-      if (data?.type === "jun:close") setOpen(false);
+      if (data?.type === "jun:open" || data?.type === "jun:close") clearTimeout(openFallback.current);
+      if (data?.type === "jun:open") switchOpen.current(true);
+      if (data?.type === "jun:close") switchOpen.current(false);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
         if (typeof data.sessionId === "string") setSessionId(data.sessionId);
@@ -444,19 +454,49 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     setView((v) => (v.kind === "thread" && !(v.id || v.opener || v.intent || v.first || v.human) ? { kind: "thread", id } : v));
   }, [api, conversations]);
 
-  // W-04 chat window with its greeting card (D-34, D-89): the frame draws the closed card itself, and sizes itself to it.
+  // W-04 chat window with its greeting card (D-34, D-89): the frame draws the closed card itself, in a frame the open chat's size, clipped to the card (D-90).
   const cardLauncher = Boolean(config && config.launcher === "card" && window.parent !== window);
   const framed = Boolean(config && !asIsland(config) && window.parent !== window);
-  useCardFrame(cardLauncher, config?.position ?? "right", open && framed, grown && framed, closedRef, miniHidden);
+  useCardFrame({
+    card: cardLauncher,
+    side: config?.position ?? "right",
+    open: open && framed,
+    grown: grown && framed,
+    closed: closedRef,
+    pill: miniHidden,
+    scheme: config?.theme === "dark" ? "dark" : config?.theme === "light" ? "light" : "light dark",
+    hold: morphing,
+  });
+  // D-90: with the greeting card the frame is transparent, closed and open (the surface draws itself).
   useLayoutEffect(() => {
-    document.documentElement.classList.toggle("mini", cardLauncher && !open);
-  }, [cardLauncher, open]);
-  // The panel's entrance (the reference's `enter .25s ease-out`), drawn here to keep the loader small.
-  // Started before paint, so the frame's first open paint (maybe still card-sized) is transparent.
+    const root = document.documentElement;
+    root.classList.toggle("mini", cardLauncher);
+    root.classList.toggle("phone", cardLauncher && phoneFrame);
+  }, [cardLauncher, phoneFrame]);
+  // Every open and close goes through the host (it answers "jun:open" / "jun:close"); with the
+  // greeting card, the switch morphs between the card and the chat (D-90).
+  switchOpen.current = (next) => {
+    const nextView = next ? pendingView.current : null;
+    pendingView.current = null;
+    const apply = () => {
+      if (nextView) setView(nextView);
+      setOpen(next);
+    };
+    if (!cardLauncher || next === open) return apply();
+    setMorphing(true);
+    const root = document.documentElement;
+    root.dataset.morph = `${miniHidden ? "pill" : "card"}-${next ? "open" : "close"}`;
+    void morph(apply, { opening: next, phone: phoneFrame }).then(() => {
+      delete root.dataset.morph;
+      setMorphing(false);
+    });
+  };
+  // The plain button's panel entrance (the reference's `enter .25s ease-out`), drawn here to keep
+  // the loader small. Started before paint, so the frame's first open paint is transparent.
   useLayoutEffect(() => {
-    if (!framed || !open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!framed || cardLauncher || !open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     shellRef.current?.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 250, easing: "ease-out" });
-  }, [framed, open]);
+  }, [framed, cardLauncher, open]);
   // Esc closes the chat, as it did.
   useEffect(() => {
     if (!framed || !open) return;
@@ -544,37 +584,44 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const logoUrl = logoFor(config, effectiveTheme(config) === "dark");
   /** The conversation the chat would show: the one on screen, else the ongoing one. */
   const current = view.kind === "thread" && view.id ? view.id : (conversations.find((c) => c.status !== "resolved")?.id ?? null);
+  // From the card: the chat opens (and the card morphs into it, D-90) when the host answers
+  // "jun:open", so the loader's state and the frame's never disagree. If no answer comes, open anyway.
   const openChat = (next?: typeof view) => {
-    if (next) setView(next);
-    setOpen(true);
+    pendingView.current = next ?? null;
     postToHost({ type: "jun:open" });
+    clearTimeout(openFallback.current);
+    openFallback.current = window.setTimeout(() => switchOpen.current(true), 300);
   };
 
   // Closed, as the card launcher: the welcome card, or the "Chat with us" pill once it's hidden.
   if (cardLauncher && !open) {
     return (
-      <div className="w-closed" ref={closedRef}>
+      <div className="w-closed" ref={closedRef} data-side={config.position}>
         {miniHidden ? (
           <button className="w-launcher" onClick={() => openChat()}>Chat with us</button>
         ) : (
-          <MiniCard
-            name={config.workspaceName}
-            sub={opener?.from ?? sub}
-            logoUrl={logoUrl}
-            welcome={opener ? (opener.page || opener.inviteId ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`) : config.greeting}
-            placeholder={config.placeholder}
-            onOpen={() => openChat()}
-            onContact={() => openChat({ kind: "thread", id: current, human: true })}
-            onNewChat={() => openChat({ kind: "thread", id: null })}
-            onHide={() => setMiniHidden(true)}
-            icon={(d) => <Icon d={d} />}
-          />
+          <>
+            {/* D-90: the surface (background, hairline, shadow), the same element in the open chat. */}
+            <div className="w-edge" aria-hidden="true" />
+            <MiniCard
+              name={config.workspaceName}
+              sub={opener?.from ?? sub}
+              logoUrl={logoUrl}
+              welcome={opener ? (opener.page || opener.inviteId ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`) : config.greeting}
+              placeholder={config.placeholder}
+              onOpen={() => openChat()}
+              onContact={() => openChat({ kind: "thread", id: current, human: true })}
+              onNewChat={() => openChat({ kind: "thread", id: null })}
+              onHide={() => setMiniHidden(true)}
+              icon={(d) => <Icon d={d} />}
+            />
+          </>
         )}
       </div>
     );
   }
 
-  return (
+  const shell = (
     <div className={`w-shell ${view.kind}`} ref={shellRef}>
       <header className="w-head">
         <span className="w-title">
@@ -641,6 +688,15 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         />
       )}
     </div>
+  );
+  // D-90: the card's surface, under the chat (widget.css draws the chat on it, transparent).
+  return cardLauncher ? (
+    <>
+      <div className="w-edge open" aria-hidden="true" />
+      {shell}
+    </>
+  ) : (
+    shell
   );
 }
 

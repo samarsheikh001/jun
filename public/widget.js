@@ -285,16 +285,17 @@
     ".nudge{padding:16px 18px;font:14px/1.6 Arial,sans-serif}" +
     // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
     ".left>*{right:auto;left:22px}" +
-    // Opening: the chat grows in from its corner (not the island, which morphs itself).
-    ".o{animation:jo .28s cubic-bezier(.23,1,.32,1);transform-origin:100% 100%}.left .o{transform-origin:0 100%}.island .o{animation:none}" +
+    // Opening: the chat grows in from its corner (not the island or the greeting card, which morph themselves).
+    ".o{animation:jo .28s cubic-bezier(.23,1,.32,1);transform-origin:100% 100%}.left .o{transform-origin:0 100%}.card .o,.island .o{animation:none}" +
     "@keyframes jo{from{opacity:0;transform:translateY(10px) scale(.96)}}@media(prefers-reduced-motion:reduce){.o{animation:none}}" +
     "@media(max-width:768px){.frame{inset:0;width:100%;height:100dvh;border-radius:0}}" +
     // W-04 the greeting card (D-34; mode window, launcher "card") and the island (D-39): no button; the frame draws them and says where it goes (jun:css).
     // The button shows the company logo (a chat bubble until one is uploaded), or "Chat with us".
     ".btn img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.txt .btn{width:auto;padding:0 18px;font:600 14px system-ui,sans-serif}" +
-    ".card .btn,.island .btn{display:none}.island .frame{display:block;box-shadow:none;background:none}" +
+    // Their frame is always shown (D-90: the card's never resizes; it morphs inside, clipped by jun:css), and draws its own edge.
+    ".card .btn,.island .btn{display:none}.card .frame,.island .frame{display:block}" +
     // Unseen until the frame has sized itself: before that it's the default panel, painted dark by a dark-mode browser.
-    ".island .frame:not(.sized){visibility:hidden}" +
+    ".card .frame:not(.sized),.island .frame:not(.sized){visibility:hidden}" +
     ".nudge p{margin:0 24px 14px 0}.from{font-size:12px;color:#737373}.go{width:100%;padding:8px 6px;border-radius:calc(var(--r,16px)*.625);background:var(--c);color:var(--t);font:12px Arial,sans-serif}" +
     ".x{position:absolute;top:12px;right:12px;width:30px;height:30px;background:none;font-size:23px;font-weight:300;color:#737373}" +
     "</style><div class=\"w\">" +
