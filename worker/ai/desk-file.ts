@@ -1,5 +1,5 @@
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify, type Document } from "yaml";
-import { APPEARANCE_DEFAULTS, applyAppearance, widgetLook, type ButtonStyle, type IslandSurface, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
+import { APPEARANCE_DEFAULTS, applyAppearance, widgetLook, type ButtonStyle, type IslandSurface, type WidgetMode, type WidgetTheme } from "../../shared/appearance.ts";
 import { DEFAULT_AWAY_MESSAGE, parseHours, validTimezone, type BusinessHours, type DayHours, type Weekday } from "../../shared/hours.ts";
 import { assignmentSettings, parseAssignment } from "../../shared/inbox.ts";
 import { parseOpeners, storedOpeners, type OpenerRule } from "../../shared/openers.ts";
@@ -46,12 +46,18 @@ export interface DeskFile {
     /** "" = the workspace's name. */
     name?: string;
     color?: string;
-    launcher?: LauncherStyle;
-    island?: { surface?: IslandSurface; glow?: boolean };
+    /** D-89: island or window (the old `launcher:` key is read too and mapped, see parseChat). */
+    mode?: WidgetMode;
+    /** Window only: the greeting card over the button. */
+    greetingCard?: boolean;
+    /** Window only: the round button shows your logo or text. */
     button?: ButtonStyle;
+    /** Window only. */
+    position?: "left" | "right";
+    /** Island only. */
+    island?: { surface?: IslandSurface; glow?: boolean };
     theme?: WidgetTheme;
     rounding?: number;
-    position?: "left" | "right";
     sound?: boolean;
     greeting?: string;
     replyTime?: string;
@@ -134,11 +140,12 @@ const bool = (value: unknown) => typeof value === "boolean";
 const LOOK_FIELDS = {
   name: "displayName",
   color: "color",
-  launcher: "launcher",
+  mode: "mode",
+  greetingCard: "greetingCard",
   button: "buttonStyle",
+  position: "position",
   theme: "theme",
   rounding: "radius",
-  position: "position",
   greeting: "greeting",
   replyTime: "replyTime",
   placeholder: "placeholder",
@@ -147,7 +154,9 @@ const LOOK_FIELDS = {
 
 const TEXT_DEFAULTS = { greeting: APPEARANCE_DEFAULTS.greeting, replyTime: APPEARANCE_DEFAULTS.replyTime, placeholder: APPEARANCE_DEFAULTS.placeholder } as const;
 
-const CHAT_KEYS = [...Object.keys(LOOK_FIELDS), "island", "sound", "askForRating", "allowedWebsites", "offerHelpOnErrors", "openers"];
+// `launcher` is the pre-D-89 key: still read (island and bar → mode island, card → window with the
+// greeting card, button → window without), never written.
+const CHAT_KEYS = [...Object.keys(LOOK_FIELDS), "island", "sound", "askForRating", "allowedWebsites", "offerHelpOnErrors", "openers", "launcher"];
 
 /** applyAppearance's words for its fields → desk.yaml's keys. */
 const fieldWords = (message: string) => message.replace(/\bdisplayName\b/, "name");
@@ -172,6 +181,17 @@ function parseChat(raw: Record<string, unknown>, issues: DeskIssue[]): NonNullab
     // An empty text means the default words: written as those words (what visitors see).
     const fallback = key in TEXT_DEFAULTS ? TEXT_DEFAULTS[key as keyof typeof TEXT_DEFAULTS] : "";
     (out as Record<string, unknown>)[key] = key === "suggestedQuestions" ? (set ?? []) : set === undefined ? fallback : set;
+  }
+  if (raw.launcher !== undefined) {
+    // D-89: an older file's launcher, as the mode and the greeting card switch (mode and greetingCard win).
+    const scratch: Record<string, unknown> = {};
+    try {
+      applyAppearance(scratch, { launcher: raw.launcher });
+      out.mode ??= scratch.mode as WidgetMode;
+      if (raw.launcher === "card" || raw.launcher === "button") out.greetingCard ??= scratch.greetingCard as boolean;
+    } catch {
+      problem("launcher", "use mode: island or window instead (launcher is the old key: island, card or button).");
+    }
   }
   if (raw.island !== undefined && raw.island !== null) {
     if (!isRecord(raw.island)) problem("island", "use surface: dark or page, and glow: true or false.");
@@ -404,12 +424,13 @@ export function deskFromSettings(settings: Record<string, unknown>, ai: DeskAi):
     chat: {
       name: typeof settings.displayName === "string" ? settings.displayName : "",
       color: look.color,
-      launcher: look.launcher,
-      island: { surface: look.islandSurface, glow: look.neon },
+      mode: look.mode,
+      greetingCard: look.greetingCard,
       button: look.buttonStyle,
+      position: look.position,
+      island: { surface: look.islandSurface, glow: look.neon },
       theme: look.theme,
       rounding: look.radius,
-      position: look.position,
       sound: look.sound,
       greeting: look.greeting,
       replyTime: look.replyTime,
@@ -464,16 +485,17 @@ export function renderDeskFile(desk: DeskFile): string {
     out.push("chat:  # the chat widget on your website (the Chat widget page)");
     if (chat.name !== undefined) out.push(line(2, "name", chat.name, "empty = your workspace's name"));
     if (chat.color !== undefined) out.push(line(2, "color", chat.color));
-    if (chat.launcher !== undefined) out.push(line(2, "launcher", chat.launcher, "island | bar | card | button"));
+    if (chat.mode !== undefined) out.push(line(2, "mode", chat.mode, "island (a pill at the bottom centre) | window (a button in the corner that opens a chat window)"));
+    if (chat.greetingCard !== undefined) out.push(line(2, "greetingCard", chat.greetingCard, "window: a greeting card over the button"));
+    if (chat.button !== undefined) out.push(line(2, "button", chat.button, "window: the round button shows your logo or text"));
+    if (chat.position !== undefined) out.push(line(2, "position", chat.position, "window: left | right"));
     if (chat.island !== undefined) {
-      out.push("  island:");
+      out.push("  island:  # island only");
       if (chat.island.surface !== undefined) out.push(line(4, "surface", chat.island.surface, "dark | page"));
       if (chat.island.glow !== undefined) out.push(line(4, "glow", chat.island.glow, "the turning multi-colour border"));
     }
-    if (chat.button !== undefined) out.push(line(2, "button", chat.button, "the round button shows your logo or text"));
     if (chat.theme !== undefined) out.push(line(2, "theme", chat.theme, "auto | light | dark"));
     if (chat.rounding !== undefined) out.push(line(2, "rounding", chat.rounding, "corner rounding, 0 to 24"));
-    if (chat.position !== undefined) out.push(line(2, "position", chat.position, "left | right"));
     if (chat.sound !== undefined) out.push(line(2, "sound", chat.sound, "a soft chime for new replies"));
     if (chat.greeting !== undefined) out.push(line(2, "greeting", chat.greeting));
     if (chat.replyTime !== undefined) out.push(line(2, "replyTime", chat.replyTime));
@@ -640,6 +662,13 @@ export function updateDeskText(text: string | undefined, before: DeskFile, after
       if ((sameValue(getPath(before, path), value) && has === undefined) || sameValue(has, value)) continue;
       put(doc, path, value);
       changed = true;
+    }
+    // D-89: an older file's `launcher:` gives way to mode and greetingCard once either is written.
+    if (changed && doc.hasIn(["chat", "launcher"]) && (doc.hasIn(["chat", "mode"]) || doc.hasIn(["chat", "greetingCard"]))) {
+      doc.deleteIn(["chat", "launcher"]);
+      for (const key of ["mode", "greetingCard"] as const) {
+        if (after.chat?.[key] !== undefined && !doc.hasIn(["chat", key])) put(doc, ["chat", key], after.chat[key]);
+      }
     }
   } catch {
     return renderDeskFile(after); // a shape the edit can't follow (a section that isn't a map)

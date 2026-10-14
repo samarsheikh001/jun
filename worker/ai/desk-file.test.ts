@@ -9,7 +9,8 @@ const AI: DeskAi = { enabled: true, model: null, models: {}, monthlyReplyCap: 20
 const SETTINGS: Record<string, unknown> = {
   displayName: "Acme",
   color: "#5b4cff",
-  launcher: "island",
+  mode: "island",
+  greetingCard: false,
   islandSurface: "page",
   neon: false,
   buttonStyle: "text",
@@ -43,7 +44,9 @@ test("D-84: settings → desk.yaml → parse is the same desk, and applying it g
   const desk = deskFromSettings(SETTINGS, { ...AI, model: "gpt-5.5", models: { editor: "gpt-6-astra" } });
   const text = renderDeskFile(desk);
   assert.match(text, /^# desk\.yaml/);
-  assert.match(text, /launcher: island {2}# island \| bar \| card \| button/);
+  assert.match(text, /mode: island {2}# island \(/);
+  assert.match(text, /greetingCard: false {2}# window: /);
+  assert.ok(!text.includes("launcher"), "the old key isn't written");
   assert.match(text, /monday: 09:00-17:30/);
   assert.ok(!/logoKey|logo_abc|logo:/.test(text), "uploads aren't in the file");
   const { desk: back, issues } = parse(text);
@@ -120,7 +123,7 @@ extra: 1
     /^ai\.monthlyReplyCap: /,
     /^Unknown key "chat\.colour"/,
     /^chat\.color: Colour must look like #2f5bea/,
-    /^chat\.launcher: Launcher must be button, card, bar or island/,
+    /^chat\.launcher: use mode: island or window instead/,
     /^chat\.rounding: Corner rounding must be a whole number from 0 to 24/,
     /^chat\.island\.surface: use dark/,
     /^chat\.allowedWebsites: not a website: not a domain/,
@@ -189,10 +192,10 @@ hours:
 `,
   );
   // Keys the file doesn't have and that didn't change stay out (a partial file stays partial).
-  assert.ok(!out.includes("launcher"));
+  assert.ok(!out.includes("mode"));
   // A key that changed but isn't in the file is added.
-  const added = updateDeskText(text, before, deskFromSettings({ ...SETTINGS, launcher: "bar" }, AI));
-  assert.match(added, /launcher: bar/);
+  const added = updateDeskText(text, before, deskFromSettings({ ...SETTINGS, mode: "window" }, AI));
+  assert.match(added, /mode: window/);
   // Nothing changed: the same text (no new version).
   assert.equal(updateDeskText(text, before, before), text);
   // A key the file has with another value than the desk's is put right.
@@ -221,3 +224,29 @@ test("D-84: a dashboard save from an older version merges when the changed files
   assert.equal(mergeConfigs(base, { ...latest, "tasks/r.md": "dashboard" }, draft, ["desk.yaml"]), null);
   assert.deepEqual(changedPaths(base, draft), ["instructions.md", "tasks/x.md"]);
 });
+
+test("D-89: an older file's launcher reads as mode + greetingCard, and gives way to them on the next change", () => {
+  const read = (launcher: string) => parse(`chat:\n  launcher: ${launcher}\n`);
+  assert.deepEqual(read("island").desk.chat, { mode: "island" });
+  assert.deepEqual(read("bar").desk.chat, { mode: "island" }, "the removed bar becomes the island");
+  assert.deepEqual(read("card").desk.chat, { mode: "window", greetingCard: true });
+  assert.deepEqual(read("button").desk.chat, { mode: "window", greetingCard: false });
+  for (const l of ["island", "bar", "card", "button"]) assert.deepEqual(read(l).issues, [], l);
+  // mode and greetingCard win over launcher.
+  assert.deepEqual(parse("chat:\n  launcher: card\n  mode: island\n  greetingCard: false\n").desk.chat, { mode: "island", greetingCard: false });
+  // Applied: the stored settings get mode + greetingCard, never launcher.
+  const applied = applyDesk(read("button").desk, { launcher: "card", color: "#111111" }, AI, () => "op_x");
+  assert.deepEqual(applied.settings, { color: "#111111", mode: "window", greetingCard: false });
+  // A settings change rewrites the old key as the new ones; an unrelated change leaves it be.
+  const before = deskFromSettings({ launcher: "card" }, AI);
+  const text = "chat:\n  launcher: card  # ours\n  theme: auto\n";
+  assert.equal(updateDeskText(text, before, deskFromSettings({ launcher: "card", theme: "dark" }, AI)), "chat:\n  launcher: card # ours\n  theme: dark\n");
+  const moved = updateDeskText(text, before, deskFromSettings({ mode: "island", greetingCard: true }, AI));
+  assert.ok(!moved.includes("launcher"), moved);
+  assert.deepEqual(parse(moved).desk.chat, { mode: "island", greetingCard: true, theme: "auto" });
+  assert.deepEqual(parse(moved).issues, []);
+  // A bad value in mode or greetingCard is a plain problem.
+  assert.match(parse("chat:\n  mode: bar\n").issues[0]!.message, /^chat\.mode: Mode must be island or window\./);
+  assert.match(parse("chat:\n  greetingCard: yes please\n").issues[0]!.message, /^chat\.greetingCard: The greeting card must be on or off/);
+});
+

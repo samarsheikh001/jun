@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
@@ -12,7 +12,6 @@ import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage
 import { playChime, unlockSoundOnInteraction } from "../lib/sound.ts";
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
 import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
-import { BarHead, Chips, Glass, Typewriter, useBarFrame } from "./bar.tsx";
 import { Badge, MiniCard, useCardFrame } from "./card.tsx";
 import { Island, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
 
@@ -202,9 +201,7 @@ interface WidgetConfig extends WidgetLook {
   csat: boolean;
 }
 
-/** In a frame on a host page (the loader's, or the Appearance preview), as the "Ask anything…" bar. */
-const asBar = (look: WidgetLook) => look.launcher === "bar" && window.parent !== window;
-/** In a frame, as the morphing island (D-39). */
+/** In a frame on a host page (the loader's, or the Appearance preview), as the morphing island (D-39). */
 const asIsland = (look: WidgetLook) => look.launcher === "island" && window.parent !== window;
 /** The island on its near-black surface (the default; `page` follows the theme). */
 const islandDark = (look: WidgetLook) => asIsland(look) && look.islandSurface !== "page";
@@ -235,10 +232,8 @@ function applyLook(look: WidgetLook): void {
     root.style.setProperty("--accent", look.color);
     root.style.setProperty("--accent-text", textOn(look.color));
   }
-  // The bar has one look (a white bar, the chat on dark glass). Its page stays light: a frame
-  // whose colour scheme differs from the host page's gets an opaque backdrop. The island follows
-  // the theme like the chat window; its page stays light the same way (widget.css).
-  root.classList.toggle("bar", asBar(look));
+  // The island follows the theme like the chat window; its page stays light: a frame whose colour
+  // scheme differs from the host page's gets an opaque backdrop (widget.css).
   root.classList.toggle("island", asIsland(look));
   // D-39: the island's own near-black palette (widget.css, html.island-dark); a near-black brand
   // colour would vanish on it, so its buttons go white there instead.
@@ -247,7 +242,7 @@ function applyLook(look: WidgetLook): void {
     root.style.setProperty("--accent", "#f5f5f5");
     root.style.setProperty("--accent-text", "#0c0c0d");
   }
-  if (look.theme === "auto" || asBar(look)) delete root.dataset.theme;
+  if (look.theme === "auto") delete root.dataset.theme;
   else root.dataset.theme = look.theme;
   for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
 }
@@ -415,8 +410,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     return () => window.removeEventListener("message", onMessage);
   }, [api]);
 
-  // Before paint: the island and the bar size their frame before paint too, and their first paint
-  // must already be on the transparent page (html.island / html.bar), not the plain white one.
+  // Before paint: the island sizes its frame before paint too, and its first paint must already
+  // be on the transparent page (html.island), not the plain white one.
   useLayoutEffect(() => {
     if (config) applyLook(config);
   }, [config]);
@@ -449,9 +444,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     setView((v) => (v.kind === "thread" && !(v.id || v.opener || v.intent || v.first || v.human) ? { kind: "thread", id } : v));
   }, [api, conversations]);
 
-  // W-04 card launcher (D-34): the frame draws the closed card itself, and sizes itself to it.
+  // W-04 chat window with its greeting card (D-34, D-89): the frame draws the closed card itself, and sizes itself to it.
   const cardLauncher = Boolean(config && config.launcher === "card" && window.parent !== window);
-  const framed = Boolean(config && !asBar(config) && !asIsland(config) && window.parent !== window);
+  const framed = Boolean(config && !asIsland(config) && window.parent !== window);
   useCardFrame(cardLauncher, config?.position ?? "right", open && framed, grown && framed, closedRef, miniHidden);
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("mini", cardLauncher && !open);
@@ -503,57 +498,38 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     endIntent: () => setView((v) => (v.kind === "thread" && v.intent ? { kind: "thread", id: v.id, ...(v.mount ? { mount: v.mount } : {}) } : v)),
   };
 
-  // W-04 bar launcher (D-32) and island (D-39): one conversation at a time, opened from the control itself.
-  if (asBar(config) || asIsland(config)) {
+  // W-04 island (D-39): one conversation at a time, opened from the control itself.
+  if (asIsland(config)) {
     const id = view.kind === "thread" ? view.id : null;
-    const setBarOpen = (next: boolean) => {
+    const setIslandOpen = (next: boolean) => {
       setOpen(next);
       postToHost({ type: next ? "jun:open" : "jun:close" });
     };
-    const away = config.hours && !config.hours.open ? `back ${config.hours.back ?? "soon"}` : null;
-    if (asIsland(config)) {
-      const summary = conversations.find((c) => c.id === id) ?? null;
-      const cardTheme = islandDark(config) ? "dark" : effectiveTheme(config);
-      return (
-        <WidgetThread
-          key={threadKey}
-          {...threadProps}
-          conversationId={id}
-          summary={summary}
-          opener={view.kind === "thread" ? view.opener : undefined}
-          intent={view.kind === "thread" ? view.intent : undefined}
-          island={{
-            name: config.workspaceName,
-            logoUrl: logoFor(config, cardTheme === "dark"),
-            suggestions: config.suggestions,
-            placeholder: config.placeholder,
-            neon: config.neon,
-            cardTheme,
-            unread: Boolean(summary && unread(summary)),
-            setOpen: setBarOpen,
-            newChat: () => {
-              // Older open chats too: after a reload the island starts fresh, not in one of those.
-              for (const c of conversations) if (c.status !== "resolved") markEnded(api.key, c.id);
-              if (id) markEnded(api.key, id);
-              setView({ kind: "thread", id: null });
-            },
-          }}
-        />
-      );
-    }
+    const summary = conversations.find((c) => c.id === id) ?? null;
+    const cardTheme = islandDark(config) ? "dark" : effectiveTheme(config);
     return (
       <WidgetThread
         key={threadKey}
         {...threadProps}
         conversationId={id}
-        summary={conversations.find((c) => c.id === id) ?? null}
+        summary={summary}
         opener={view.kind === "thread" ? view.opener : undefined}
         intent={view.kind === "thread" ? view.intent : undefined}
-        bar={{
-          head: <BarHead name={config.workspaceName} logoUrl={logoFor(config, true)} sub={away} onClose={() => setBarOpen(false)} />,
+        island={{
+          name: config.workspaceName,
+          logoUrl: logoFor(config, cardTheme === "dark"),
           suggestions: config.suggestions,
-          side: config.position,
-          setOpen: setBarOpen,
+          placeholder: config.placeholder,
+          neon: config.neon,
+          cardTheme,
+          unread: Boolean(summary && unread(summary)),
+          setOpen: setIslandOpen,
+          newChat: () => {
+            // Older open chats too: after a reload the island starts fresh, not in one of those.
+            for (const c of conversations) if (c.status !== "resolved") markEnded(api.key, c.id);
+            if (id) markEnded(api.key, id);
+            setView({ kind: "thread", id: null });
+          },
         }}
       />
     );
@@ -696,7 +672,6 @@ function WidgetThread({
   onConversation,
   endIntent,
   intent,
-  bar,
   island,
 }: {
   api: WidgetApi;
@@ -718,8 +693,6 @@ function WidgetThread({
   onConversation: (c: ConversationSummary) => void;
   endIntent: () => void;
   intent?: ChatIntent | undefined;
-  /** W-04 bar launcher: the chat panel's header, the suggested questions, and opening or folding it. */
-  bar?: { head: ReactNode; suggestions: string[]; side: "left" | "right"; setOpen: (open: boolean) => void };
   /** W-04 island (D-39): what its states show, and opening or closing it. */
   island?: {
     name: string;
@@ -1000,29 +973,23 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [first, conversationId]);
 
-  // W-04 bar: the chat panel shows once there's something in it; the frame sizes itself to fit.
   const hasChat = Boolean(conversationId || starting || opener || intent?.spec.opening || intent?.spec.exit);
-  const panel = Boolean(bar && open && hasChat);
-  const bottom = useRef<HTMLDivElement>(null);
-  const pill = useRef<HTMLDivElement>(null);
-  useBarFrame(Boolean(bar), bar?.side ?? "right", open, panel, bottom);
-  const setBarOpen = bar?.setOpen ?? island?.setOpen;
+  const setIslandOpen = island?.setOpen;
   const islandState = useIslandState({ island: Boolean(island), open, hasChat, conversationId, opener, intent, handling });
-  // The box takes focus when the bar or island opens (and again once a new chat's thread, or
-  // another island state, swaps the box in).
+  // The box takes focus when the island opens (and again once a new chat's thread, or another
+  // island state, swaps the box in).
   useEffect(() => {
-    if (setBarOpen && open) document.querySelector<HTMLTextAreaElement>(".b-pill textarea, .i-view textarea")?.focus();
-  }, [setBarOpen, open, islandState.state]);
-  // Esc folds the chat back into the bar or island; so does a click on the page while nothing's been asked.
-  const sticky = bar ? panel : hasChat;
+    if (setIslandOpen && open) document.querySelector<HTMLTextAreaElement>(".i-view textarea")?.focus();
+  }, [setIslandOpen, open, islandState.state]);
+  // Esc folds the chat back into the island; so does a click on the page while nothing's been asked.
   useEffect(() => {
-    if (!setBarOpen || !open) return;
+    if (!setIslandOpen || !open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setBarOpen(false);
+      if (e.key === "Escape") setIslandOpen(false);
     };
     // Not when a file picker or the screen-capture prompt took the focus.
     const onBlur = () => {
-      if (!sticky && !document.activeElement?.closest(".composer-plus")) setBarOpen(false);
+      if (!hasChat && !document.activeElement?.closest(".composer-plus")) setIslandOpen(false);
     };
     document.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
@@ -1030,7 +997,7 @@ function WidgetThread({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
     };
-  }, [setBarOpen, open, sticky]);
+  }, [setIslandOpen, open, hasChat]);
 
   // "Contact the team": hand an AI conversation to the team, or start one asking for them.
   const sentHuman = useRef(false);
@@ -1122,12 +1089,6 @@ function WidgetThread({
   );
   const extras = (
     <>
-      {/* W-07: a person is always one click away while the AI is answering. */}
-      {bar && conversationId && handling === "ai" && (
-        <div className="w-human">
-          <button className="link small" onClick={() => thread.requestHuman()}>Talk to a person</button>
-        </div>
-      )}
       {/* W-12: rate a resolved conversation someone (the team or the AI) actually answered. */}
       {conversationId && summary && offersRating(csat, summary.status, thread.messages) && (
         <CsatAsk api={api} conversationId={conversationId} rated={summary.csat.ratedThisRound} onConversation={onConversation} />
@@ -1352,42 +1313,6 @@ function WidgetThread({
           </div>
         )}
       </Island>
-    );
-  }
-
-  if (bar) {
-    return (
-      <div className="b-root">
-        {panel && (
-          <main className="b-main">
-            <Glass />
-            <div className="b-panel">
-              {bar.head}
-              {exitBar}
-              <div className="b-tab">
-                <div className="b-log" role="log">
-                  {openerMessage}
-                  {messages}
-                  {error && <p className="error small b-pad">{error}</p>}
-                  {extras}
-                </div>
-              </div>
-            </div>
-          </main>
-        )}
-        <div className="b-bottom" ref={bottom}>
-          <div className="b-sizer">
-            {error && !panel && open && <p className="b-error" role="alert">{error}</p>}
-            {open && !hasChat && bar.suggestions.length > 0 && <Chips questions={bar.suggestions} onPick={(q) => void send(q, [])} />}
-            {/* Closed, the whole bar opens the chat (a click, or Tab into its box). */}
-            <div className={`b-pill ${open ? "open" : ""}`} ref={pill} onClick={open ? undefined : () => bar.setOpen(true)} onFocus={open ? undefined : () => bar.setOpen(true)}>
-              {composer}
-              {!open && <Typewriter phrases={bar.suggestions} fallback={placeholder} />}
-            </div>
-          </div>
-          <div className="b-notice" />
-        </div>
-      </div>
     );
   }
 

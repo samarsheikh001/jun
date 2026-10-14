@@ -231,7 +231,7 @@ export function AiAnswer({
    * The island's answer view (D-39): a card is the answer. The open card draws bare (the island is
    * its frame), the reply's words go under it as a caption, and further cards are one-line peeks
    * that open in its place; finished tool steps leave once the card or the words are there. Off (the
-   * default) for the bar, the chat window and the island's panel.
+   * default) for the chat window and the island's panel.
    */
   cardFirst?: boolean;
   /** D-76: the island's other widgets of this exchange (from earlier replies), as chips under the open one. */

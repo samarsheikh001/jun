@@ -98,6 +98,8 @@ export function SourceDetail({
   const notices = row && (
     <>
       {row.status === "error" && <p className="kb-notice is-error" role="alert">{row.error ?? "The last sync failed."}</p>}
+      {/* D-88: a sync the watchdog finished keeps a note (pages it didn't read) on a ready source. */}
+      {row.status === "ready" && row.error && <p className="kb-notice" role="status">{row.error}</p>}
       {row.chunksWithoutVectors > 0 && row.status !== "syncing" && row.status !== "pending" && (
         <p className="kb-notice" role="status">
           Keyword search only{row.chunksWithoutVectors < row.chunkCount ? ` for ${row.chunksWithoutVectors} of ${plural(row.chunkCount, "chunk")}` : ""}: embedding failed (Workers AI may be out of its

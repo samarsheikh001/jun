@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APPEARANCE_DEFAULTS, applyAppearance, logoFor, radiusVars, textOn, widgetLook } from "./appearance.ts";
+import { APPEARANCE_DEFAULTS, applyAppearance, launcherOf, logoFor, modeOf, radiusVars, textOn, widgetLook } from "./appearance.ts";
 
 test("appearance: an untouched desk gets the original look", () => {
   assert.deepEqual(widgetLook({}, "Acme", null), {
@@ -13,6 +13,8 @@ test("appearance: an untouched desk gets the original look", () => {
     logoDarkUrl: null,
     theme: "auto",
     radius: 16,
+    mode: "window",
+    greetingCard: true,
     launcher: "card",
     placeholder: "Write a message…",
     suggestions: [],
@@ -40,12 +42,9 @@ test("appearance: reading is lenient (half-typed drafts, hand-edited rows)", () 
 
 test("appearance: writing is strict, and empty text clears a field", () => {
   const settings: Record<string, unknown> = { greeting: "Old" };
-  applyAppearance(settings, { color: "#FF6600", theme: "dark", radius: 4, launcher: "card", greeting: " ", placeholder: " Ask   us ", suggestions: [" How much? ", ""] });
-  assert.deepEqual(settings, { color: "#ff6600", theme: "dark", radius: 4, launcher: "card", placeholder: "Ask us", suggestions: ["How much?"] });
-  applyAppearance(settings, { launcher: "bar" });
-  assert.equal(settings.launcher, "bar");
-  assert.equal(widgetLook(settings, "Acme", null).launcher, "bar");
-  for (const body of [{ color: "blue" }, { position: "top" }, { theme: "neon" }, { launcher: "banner" }, { radius: 25 }, { radius: 2.5 }, { radius: "4" }, { placeholder: "x".repeat(61) }, { suggestions: "a" }, { suggestions: ["1", "2", "3", "4", "5"] }, { suggestions: ["x".repeat(81)] }]) {
+  applyAppearance(settings, { color: "#FF6600", theme: "dark", radius: 4, mode: "window", greetingCard: true, greeting: " ", placeholder: " Ask   us ", suggestions: [" How much? ", ""] });
+  assert.deepEqual(settings, { color: "#ff6600", theme: "dark", radius: 4, mode: "window", greetingCard: true, placeholder: "Ask us", suggestions: ["How much?"] });
+  for (const body of [{ color: "blue" }, { position: "top" }, { theme: "neon" }, { launcher: "banner" }, { mode: "bar" }, { mode: "card" }, { greetingCard: "yes" }, { greetingCard: 1 }, { radius: 25 }, { radius: 2.5 }, { radius: "4" }, { placeholder: "x".repeat(61) }, { suggestions: "a" }, { suggestions: ["1", "2", "3", "4", "5"] }, { suggestions: ["x".repeat(81)] }]) {
     assert.throws(() => applyAppearance({}, body), Error, JSON.stringify(body));
   }
   applyAppearance(settings, { suggestions: [] });
@@ -113,4 +112,53 @@ test("appearance: the dark-background logo (W-21) is used only on dark surfaces,
   assert.equal(logoFor(dark, true), "/logo-dark");
   assert.equal(logoFor(dark, false), null);
   assert.equal(logoFor(widgetLook({}, "Acme", null), true), null);
+});
+
+test("D-89: old stored launchers read as a mode and a greeting card switch (bar → island)", () => {
+  const read = (s: Record<string, unknown>) => {
+    const look = widgetLook(s, "Acme", null);
+    return [look.mode, look.greetingCard, look.launcher];
+  };
+  assert.deepEqual(read({ launcher: "island" }), ["island", true, "island"]);
+  assert.deepEqual(read({ launcher: "bar" }), ["island", true, "island"]);
+  assert.deepEqual(read({ launcher: "card" }), ["window", true, "card"]);
+  assert.deepEqual(read({ launcher: "button" }), ["window", false, "button"]);
+  assert.deepEqual(read({}), ["window", true, "card"], "the same visible default as before");
+  assert.deepEqual(read({ launcher: "rocket" }), ["window", true, "card"]);
+  // The new keys win over an old launcher; unreadable ones fall back to it.
+  assert.deepEqual(read({ launcher: "card", mode: "island" }), ["island", true, "island"]);
+  assert.deepEqual(read({ launcher: "button", mode: "window", greetingCard: true }), ["window", true, "card"]);
+  assert.deepEqual(read({ launcher: "button", mode: "bar", greetingCard: "on" }), ["window", false, "button"]);
+  assert.deepEqual(read({ mode: "window", greetingCard: false }), ["window", false, "button"]);
+  // /config always has a launcher today's cached loaders understand (never "bar").
+  for (const launcher of ["island", "bar", "card", "button", undefined, 7]) {
+    assert.ok(["island", "card", "button"].includes(widgetLook({ launcher }, "Acme", null).launcher), String(launcher));
+  }
+  assert.equal(launcherOf("island", false), "island");
+  assert.equal(launcherOf("window", true), "card");
+  assert.equal(launcherOf("window", false), "button");
+  assert.deepEqual(modeOf({}), { mode: APPEARANCE_DEFAULTS.mode, greetingCard: APPEARANCE_DEFAULTS.greetingCard });
+});
+
+test("D-89: a settings update stores mode + greetingCard; the old launcher key is still taken and mapped", () => {
+  const patch = (settings: Record<string, unknown>, body: Record<string, unknown>) => {
+    applyAppearance(settings, body);
+    return settings;
+  };
+  assert.deepEqual(patch({}, { launcher: "bar" }), { mode: "island", greetingCard: true });
+  assert.deepEqual(patch({}, { launcher: "island" }), { mode: "island", greetingCard: true });
+  assert.deepEqual(patch({}, { launcher: "card" }), { mode: "window", greetingCard: true });
+  assert.deepEqual(patch({}, { launcher: "button" }), { mode: "window", greetingCard: false });
+  // A stored old launcher is replaced by the new keys, keeping what it meant.
+  assert.deepEqual(patch({ launcher: "button" }, { mode: "island" }), { mode: "island", greetingCard: false });
+  assert.deepEqual(patch({ launcher: "card" }, { greetingCard: false }), { mode: "window", greetingCard: false });
+  // Switching to the island with an old launcher keeps the window's greeting card switch for later.
+  assert.deepEqual(patch({ mode: "window", greetingCard: false }, { launcher: "island" }), { mode: "island", greetingCard: false });
+  // The new keys win over launcher in one body.
+  assert.deepEqual(patch({}, { launcher: "card", mode: "island", greetingCard: false }), { mode: "island", greetingCard: false });
+  // Untouched when none of the three is in the body.
+  assert.deepEqual(patch({ launcher: "button" }, { color: "#000000" }), { launcher: "button", color: "#000000" });
+  assert.throws(() => applyAppearance({}, { launcher: "banner" }), /Launcher must be island, card or button/);
+  assert.throws(() => applyAppearance({}, { mode: "bar" }), /Mode must be island or window\./);
+  assert.throws(() => applyAppearance({}, { greetingCard: "off" }), /The greeting card must be on or off/);
 });

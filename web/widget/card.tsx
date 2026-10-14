@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 
-// W-04 "card" launcher (D-34): the closed state of the earlier Jun widget, a welcome card
-// (its `.mini`) or, once dismissed, a "Chat with us" pill, drawn by the frame itself. Like the
-// bar (bar.tsx), the frame tells the loader its size and place (`jun:css`); open, it hands back
+// W-04 the chat window's greeting card (D-34, D-89: mode `window` with `greetingCard` on, the
+// `card` launcher internally): the closed state of the earlier Jun widget, a welcome card (its
+// `.mini`) or, once dismissed, a "Chat with us" pill, drawn by the frame itself. Like the island
+// (island.tsx), the frame tells the loader its size and place (`jun:css`); open, it hands back
 // to the loader's panel rules. Styles: `.w-mini*` in widget.css.
 
 const postToHost = (message: unknown) => window.parent !== window && window.parent.postMessage(message, "*");
@@ -100,9 +101,11 @@ export function MiniCard({
         <button className="w-mini-act" onClick={onContact}>Contact the team</button>
         <button className="w-mini-act" onClick={onNewChat}>Start a new chat</button>
       </div>
+      {/* The open chat's composer as a picture (same "+", placeholder and empty Send): one look closed and open. */}
       <button className="w-mini-composer" onClick={onOpen}>
+        <span className="w-mini-plus">{icon("M12 5v14M5 12h14")}</span>
         <span className="w-mini-ph">{placeholder}</span>
-        <span className="w-mini-send">{icon("M5 12h14M13 6l6 6-6 6")}</span>
+        <span className="w-mini-send">{icon("M12 19V5M5 12l7-7 7 7")}</span>
       </button>
       <Badge mini />
     </div>

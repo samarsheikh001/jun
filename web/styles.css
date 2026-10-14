@@ -364,7 +364,6 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .kb-forms summary { cursor: pointer; color: var(--accent); }
 .hits { padding-left: 18px; display: grid; gap: 10px; margin-top: 12px; }
 .hits p { margin: 4px 0 0; }
-.w-human { padding: 6px 12px; text-align: center; background: var(--surface); border-top: 1px solid var(--border); }
 
 /* Agent config (AI-18) */
 .agent-page { flex: 1; display: grid; grid-template-columns: 240px minmax(0, 1fr) 260px; min-height: 0; }

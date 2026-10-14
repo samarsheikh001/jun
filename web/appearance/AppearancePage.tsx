@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, logoFor, textOn, widgetLook, type ButtonStyle, type IslandSurface, type LauncherStyle, type WidgetTheme } from "../../shared/appearance.ts";
+import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGESTIONS_MAX, TEXT_LIMITS, logoFor, modeOf, textOn, widgetLook, type ButtonStyle, type IslandSurface, type WidgetMode, type WidgetTheme } from "../../shared/appearance.ts";
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
@@ -60,8 +60,9 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab }: { works
 
 // W-04 Look: settings on the left, and on the right the real widget (/widget in an
 // iframe, preview mode) showing the unsaved draft, so the preview can't drift from what
-// visitors get. Only the launcher button and greeting card around it are drawn here: they
-// live in the loader on customers' pages (public/widget.js), and this copies its styles.
+// visitors get. Only the chat window's round button is drawn here: it lives in the loader on
+// customers' pages (public/widget.js), and this copies its styles. The frame draws the greeting
+// card and the island itself.
 
 /** The appearance fields of the widget inbox's settings (what this page edits). */
 interface Draft {
@@ -74,7 +75,9 @@ interface Draft {
   position?: "left" | "right";
   theme?: WidgetTheme;
   radius?: number;
-  launcher?: LauncherStyle;
+  /** D-89: island or chat window, and the window's greeting card. */
+  mode?: WidgetMode;
+  greetingCard?: boolean;
   buttonStyle?: ButtonStyle;
   neon?: boolean;
   islandSurface?: IslandSurface;
@@ -84,8 +87,10 @@ interface Draft {
   logoDarkKey?: string;
 }
 
-const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "launcher", "buttonStyle", "neon", "islandSurface", "sound", "csat"] as const;
+const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "mode", "greetingCard", "buttonStyle", "neon", "islandSurface", "sound", "csat"] as const;
 const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !== undefined).map((f) => [f, s[f]])) as Draft;
+/** Stored settings with the mode and greeting card spelled out (a desk saved before D-89 has `launcher`). */
+const withMode = (s: Draft): Draft => ({ ...s, ...modeOf(s as Record<string, unknown>) });
 const same = (a: Draft, b: Draft) => FIELDS.every((f) => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 
 function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
@@ -100,8 +105,8 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
     api<{ inbox: { widgetKey: string; settings: Draft } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
       if (!r.inbox) return;
       setWidgetKey(r.inbox.widgetKey);
-      setSaved(r.inbox.settings);
-      setDraft(pick(r.inbox.settings));
+      setSaved(withMode(r.inbox.settings));
+      setDraft(pick(withMode(r.inbox.settings)));
     }, () => {});
   }, [workspaceId]);
 
@@ -129,8 +134,8 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         sound: draft.sound !== false,
       };
       const r = await api<{ settings: Draft }>(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body });
-      setSaved(r.settings);
-      setDraft(pick(r.settings));
+      setSaved(withMode(r.settings));
+      setDraft(pick(withMode(r.settings)));
       setStatus("Saved. Visitors see it within a minute; no need to change the snippet.");
     });
 
@@ -203,7 +208,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 <SelectOption value="dark">Dark</SelectOption>
               </SelectField>
             </Field>
-            <Field label="Brand colour" hint="The launcher, the card's buttons and the send button. Text on it switches between dark and white to stay readable." htmlFor="appear-color">
+            <Field label="Brand colour" hint="The chat button, the card's buttons and the send button. Text on it switches between dark and white to stay readable." htmlFor="appear-color">
               <div className="appear-color">
                 <input type="color" value={look.color} disabled={off} onChange={(e) => edit({ color: e.target.value })} aria-label="Pick a brand colour" />
                 <Input id="appear-color" value={draft.color ?? APPEARANCE_DEFAULTS.color} maxLength={7} spellCheck={false} disabled={off} onChange={(e) => edit({ color: e.target.value.trim() })} aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color ?? APPEARANCE_DEFAULTS.color)} />
@@ -212,38 +217,28 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
           </section>
 
           <section className="appear-group">
-            <h2>Shape and placement</h2>
-            <Field label="Corner rounding" hint="The chat window, message bubbles and buttons." htmlFor="appear-radius">
-              <div className="appear-range">
-                <input id="appear-radius" type="range" min={0} max={RADIUS_MAX} step={1} value={look.radius} disabled={off} onChange={(e) => edit({ radius: Number(e.target.value) })} />
-                <output htmlFor="appear-radius">{look.radius}px</output>
-              </div>
-            </Field>
-            <Field label="Side of the page" htmlFor="appear-side">
-              <SelectField id="appear-side" value={look.position} disabled={off} onValueChange={(value) => edit({ position: value as "left" | "right" })}>
-                <SelectOption value="right">Right</SelectOption>
-                <SelectOption value="left">Left</SelectOption>
-              </SelectField>
-            </Field>
+            <h2>Mode and shape</h2>
             <Field
-              label="Closed state"
+              label="Mode"
               hint={
-                look.launcher === "bar"
-                  ? "An \"Ask anything…\" bar instead of a button, showing your suggested questions. The chat opens above it on dark glass. Theme and rounding don't apply to it."
-                  : look.launcher === "island"
-                    ? "A small pill at the bottom centre that changes shape with each moment: it opens into a question box, shrinks to a status line while the assistant works, grows around the answer, and offers help as one line. Uses your brand colour and rounding; the side doesn't apply. \"/\" opens it."
-                    : "The greeting card shows your greeting above the button until the visitor dismisses it or opens the chat (once per visit)."
+                look.mode === "island"
+                  ? "One pill at the bottom centre that turns into the question, the progress and the answer. \"/\" opens it."
+                  : "A button in the corner that opens a chat window."
               }
-              htmlFor="appear-launcher"
+              htmlFor="appear-mode"
             >
-              <SelectField id="appear-launcher" value={look.launcher} disabled={off} onValueChange={(value) => { edit({ launcher: value as LauncherStyle }); setOpen(false); }}>
-                <SelectOption value="button">Chat button only</SelectOption>
-                <SelectOption value="card">Greeting card</SelectOption>
-                <SelectOption value="bar">Ask bar</SelectOption>
+              <SelectField id="appear-mode" value={look.mode} disabled={off} onValueChange={(value) => { edit({ mode: value as WidgetMode }); setOpen(false); }}>
                 <SelectOption value="island">Island</SelectOption>
+                <SelectOption value="window">Chat window</SelectOption>
               </SelectField>
             </Field>
-            {look.launcher === "button" && (
+            {look.mode === "window" && (
+              <label className="appear-switch">
+                <Switch checked={look.greetingCard} disabled={off} onCheckedChange={(checked) => { edit({ greetingCard: checked }); setOpen(false); }} />
+                <span>Show a greeting card (your logo, greeting and reply time in place of the button; once dismissed, a "{BUTTON_TEXT}" pill)</span>
+              </label>
+            )}
+            {look.mode === "window" && !look.greetingCard && (
               <Field label="Button shows" hint={look.logoUrl ? "Your logo, or the words." : "Your logo once you upload one (a chat bubble until then), or the words."} htmlFor="appear-button">
                 <SelectField id="appear-button" value={look.buttonStyle} disabled={off} onValueChange={(value) => edit({ buttonStyle: value as ButtonStyle })}>
                   <SelectOption value="logo">Company logo</SelectOption>
@@ -251,7 +246,15 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 </SelectField>
               </Field>
             )}
-            {look.launcher === "island" && (
+            {look.mode === "window" && (
+              <Field label="Side of the page" htmlFor="appear-side">
+                <SelectField id="appear-side" value={look.position} disabled={off} onValueChange={(value) => edit({ position: value as "left" | "right" })}>
+                  <SelectOption value="right">Right</SelectOption>
+                  <SelectOption value="left">Left</SelectOption>
+                </SelectField>
+              </Field>
+            )}
+            {look.mode === "island" && (
               <Field label="Island colour" hint={look.islandSurface === "dark" ? "Near-black with white text on every page, whatever the theme." : "Follows the Theme above, like the rest of the widget."} htmlFor="appear-island">
                 <SelectField id="appear-island" value={look.islandSurface} disabled={off} onValueChange={(value) => edit({ islandSurface: value as IslandSurface })}>
                   <SelectOption value="dark">Dark (like Dynamic Island)</SelectOption>
@@ -259,12 +262,18 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 </SelectField>
               </Field>
             )}
-            {look.launcher === "island" && (
+            {look.mode === "island" && (
               <label className="appear-switch">
                 <Switch checked={draft.neon !== false} disabled={off} onCheckedChange={(checked) => edit({ neon: checked })} />
                 <span>Neon border (a slowly turning multi-colour glow around the island)</span>
               </label>
             )}
+            <Field label="Corner rounding" hint={look.mode === "island" ? "The island's open shapes, message bubbles and buttons." : "The chat window, message bubbles and buttons."} htmlFor="appear-radius">
+              <div className="appear-range">
+                <input id="appear-radius" type="range" min={0} max={RADIUS_MAX} step={1} value={look.radius} disabled={off} onChange={(e) => edit({ radius: Number(e.target.value) })} />
+                <output htmlFor="appear-radius">{look.radius}px</output>
+              </div>
+            </Field>
             <label className="appear-switch">
               <Switch checked={draft.sound !== false} disabled={off} onCheckedChange={(checked) => edit({ sound: checked })} />
               <span>Play a sound for new replies (a soft chime for a teammate's reply, and for the AI's while the chat is closed or the visitor is on another tab)</span>
@@ -316,7 +325,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         {canEdit && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
-            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, launcher: APPEARANCE_DEFAULTS.launcher, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
+            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, mode: APPEARANCE_DEFAULTS.mode, greetingCard: APPEARANCE_DEFAULTS.greetingCard, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
             <span className={error ? "error small" : "muted small"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}
@@ -336,7 +345,7 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
   );
 }
 
-/** The real widget frame with the draft look (it draws the bar and the closed card itself), plus a copy of the loader's button. */
+/** The real widget frame with the draft look (it draws the island and the greeting card itself), plus a copy of the loader's button. */
 function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: ReturnType<typeof widgetLook>; open: boolean; onOpen: (open: boolean) => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // The frame asks for the look when it's ready (also after reloading itself).
@@ -355,10 +364,13 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
         post({ type: openRef.current ? "jun:open" : "jun:close" });
       }
       if (data?.type === "jun:close") onOpen(false);
-      // The bar and the card open themselves, and size and place their frame like the loader does.
+      // The island and the card open themselves, and size and place their frame like the loader does.
       if (data?.type === "jun:open") onOpen(true);
       if (data?.type === "jun:css" && frame.current) {
         frame.current.style.cssText = String((data as { css?: unknown }).css ?? "");
+        // The card places itself on a side; the preview keeps it centred (the island already is).
+        if (launcher.current !== "island") Object.assign(frame.current.style, { left: "50%", right: "auto", translate: "-50% 0" });
+        else frame.current.style.translate = "none";
         frame.current.dataset.sized = "";
       }
       // No host page here, so no debug context: answer at once instead of letting it time out.
@@ -371,8 +383,8 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
   useEffect(() => post({ type: "jun:preview", look }), [look, post]);
   useEffect(() => post({ type: open ? "jun:open" : "jun:close" }), [open, post]);
   const button = look.launcher === "button";
-  // Changing the launcher, or closing a chat opened from the button: drop the size the frame gave
-  // itself (the frame sends its own again). The bar and the card keep theirs when they close: they
+  // Changing the mode or the greeting card, or closing a chat opened from the button: drop the size
+  // the frame gave itself (the frame sends its own again). The island and the card keep theirs when they close: they
   // send their closed size and clip with the close, and wiping it would leave a full, white frame.
   const launcher = useRef(look.launcher);
   useEffect(() => {
@@ -388,10 +400,11 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
   const buttonLogo = logoFor(look, textOn(look.color) === "#ffffff");
   return (
     <div className="appear-preview" aria-label="Preview">
-      <div className={`appear-stage ${look.position} ${look.theme} ${look.launcher}`} style={brand}>
+      {/* Always centred: the preview shows the look; the side only applies on the website. */}
+      <div className={`appear-stage ${look.theme} ${look.launcher}`} style={brand}>
         <iframe
           ref={frame}
-          className="appear-frame"
+          className={`appear-frame${open && look.launcher !== "island" ? " opening" : ""}`}
           title="Widget preview"
           src={`/widget?key=${encodeURIComponent(widgetKey)}&preview=1&persist=0`}
           hidden={!open && button}

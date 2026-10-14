@@ -2,10 +2,14 @@
 // Markdown, text, DOCX and PDF fixtures (scripts/fixtures/kb), see them indexed and searchable,
 // the AI answers from one in a widget chat (E2E_AI_PROVIDER, default ChatGPT), limits and roles,
 // W-15 suggested questions drafted from the indexed knowledge, and delete. PDFs are converted by
-// Workers AI (toMarkdown), so this needs Cloudflare access.
+// Workers AI (toMarkdown), so this needs Cloudflare access. D-88: a stuck website sync (rows written
+// with wrangler into the e2e database) is finished by the watchdog when the list opens.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AI_PROVIDER, BASE, Client, cookieHeader, SETUP_TOKEN, SoftAuthenticator, step, summary, TestSocket } from "./e2e-lib.ts";
 
 const owner = new Client();
@@ -224,6 +228,53 @@ await step("delete removes the file from the list, search and storage; non-admin
   assert.equal((await owner.call(`${kb()}/${id}`, { method: "DELETE" })).status, 404);
   // The others are still there.
   assert.ok((await search("Orbit API keys rotate")).some((h) => /45 days/.test(h.text)));
+});
+
+// D-88: no route makes a sync stuck, so the rows are written into the e2e database with wrangler
+// (JUN_STATE_DIR, default .wrangler/e2e-state), as a crawl killed mid-way leaves them.
+const STATE_DIR = process.env.JUN_STATE_DIR ?? ".wrangler/e2e-state";
+function d1(sql: string): void {
+  // From a file: on Windows npx runs through a shell, which would mangle the SQL's quotes.
+  const dir = mkdtempSync(join(tmpdir(), "jun-e2e-"));
+  try {
+    writeFileSync(join(dir, "stuck.sql"), sql);
+    execFileSync(`npx wrangler d1 execute DB --local --persist-to "${STATE_DIR}" --file "${join(dir, "stuck.sql")}"`, { stdio: "pipe", shell: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+await step("D-88: a website sync stuck for 20+ minutes is finished when the Knowledge list opens", async () => {
+  const old = Date.now() - 4 * 86_400_000;
+  const [stuck, empty] = [`src_e2estuck${run}`, `src_e2eempty${run}`];
+  const token = `sync_e2e${run}`;
+  const settings = JSON.stringify({ maxPages: 200, syncToken: token, startedAt: old }).replace(/'/g, "''");
+  const docs = (source: string, n: number, read: number) =>
+    Array.from({ length: n }, (_, i) => `('doc_${source}_${i}', '${workspaceId}', '${source}', 'https://stuck.example/${i}', ${i < read ? "'hash'" : "NULL"}, '${token}', ${old + i})`).join(", ");
+  try {
+    d1(
+      `INSERT INTO kb_sources (id, workspace_id, kind, url, title, status, pending_jobs, settings, created_at) VALUES ` +
+        `('${stuck}', '${workspaceId}', 'website', 'https://stuck.example/', 'stuck.example ${run}', 'syncing', 5, '${settings}', ${old}), ` +
+        `('${empty}', '${workspaceId}', 'website', 'https://empty.example/', 'empty.example ${run}', 'syncing', 0, '${settings}', ${old}); ` +
+        `INSERT INTO kb_documents (id, workspace_id, source_id, url, content_hash, sync_token, updated_at) VALUES ${docs(stuck, 4, 3)}, ${docs(empty, 2, 0)};`,
+    );
+  } catch (error) {
+    console.log(`    skipped: couldn't write to the e2e database with wrangler (${(error as Error).message.split("\n")[0]})`);
+    return;
+  }
+  const list = await sources();
+  const a = list.find((s) => s.id === stuck) as SourceRow & { pageCount: number; pendingJobs: number };
+  const b = list.find((s) => s.id === empty)!;
+  assert.equal(a.status, "ready", JSON.stringify(a));
+  assert.equal(a.pageCount, 3);
+  assert.equal(a.pendingJobs, 0);
+  assert.equal(a.error, "Finished with 1 page not read (the crawl was interrupted). Sync again to retry it.");
+  assert.equal(b.status, "error", JSON.stringify(b));
+  assert.match(b.error ?? "", /interrupted before any page was read/);
+  // Running again changes nothing (finished once).
+  const again = (await sources()).find((s) => s.id === stuck)!;
+  assert.equal(again.error, a.error);
+  for (const id of [stuck, empty]) assert.equal((await owner.call(`${kb()}/${id}`, { method: "DELETE" })).status, 200);
 });
 
 summary();

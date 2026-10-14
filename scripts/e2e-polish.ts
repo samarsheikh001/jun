@@ -76,7 +76,7 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { suggestions: ["1", "2", "3", "4", "5"] } })).status, 400);
   const ok = await agent.call(inbox, {
     method: "PATCH",
-    body: { color: "#FF6600", position: "left", greeting: "Hey there 👋", replyTime: "Replies in under an hour", displayName: "Acme Help", theme: "dark", radius: 6, launcher: "card", placeholder: "Ask us anything", suggestions: ["How much is it?", " "] },
+    body: { color: "#FF6600", position: "left", greeting: "Hey there 👋", replyTime: "Replies in under an hour", displayName: "Acme Help", theme: "dark", radius: 6, mode: "window", greetingCard: true, placeholder: "Ask us anything", suggestions: ["How much is it?", " "] },
   });
   assert.equal(ok.status, 200, JSON.stringify(ok.json));
 
@@ -91,7 +91,9 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal(c.logoUrl, null);
   assert.equal(c.theme, "dark");
   assert.equal(c.radius, 6);
-  assert.equal(c.launcher, "card");
+  assert.equal(c.mode, "window");
+  assert.equal(c.greetingCard, true);
+  assert.equal(c.launcher, "card", "D-89: loaders cached in visitors' browsers still read launcher");
   assert.equal(c.placeholder, "Ask us anything");
   assert.deepEqual(c.suggestions, ["How much is it?"]);
   // The loader's text colour on the button comes from the desk, for a data-color override too.
@@ -99,12 +101,20 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   const light = (await (await fetch(`${BASE}/api/widget/${widgetKey}/config?color=%23ffe066`)).json()) as Record<string, unknown>;
   assert.equal(light.text, "#1c1c1a");
   assert.equal(light.color, "#ff6600", "the override changes only the text colour it's paired with");
-  // D-32: the "Ask anything…" bar launcher.
+  const cfg = async () => (await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>;
+  // D-89: the chat window without its greeting card is the round button.
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { greetingCard: false } })).status, 200);
+  assert.deepEqual([(await cfg()).mode, (await cfg()).launcher], ["window", "button"]);
+  // The old launcher key is still taken (older dashboards and scripts); the removed bar becomes the island.
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "bar" } })).status, 200);
-  assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).launcher, "bar");
+  assert.deepEqual([(await cfg()).mode, (await cfg()).launcher], ["island", "island"]);
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "card" } })).status, 200);
+  assert.deepEqual([(await cfg()).mode, (await cfg()).greetingCard, (await cfg()).launcher], ["window", true, "card"]);
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { mode: "bar" } })).status, 400);
   // D-39: the morphing island.
-  assert.equal((await agent.call(inbox, { method: "PATCH", body: { launcher: "island" } })).status, 200);
-  const islandCfg = (await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>;
+  assert.equal((await agent.call(inbox, { method: "PATCH", body: { mode: "island" } })).status, 200);
+  const islandCfg = await cfg();
+  assert.equal(islandCfg.mode, "island");
   assert.equal(islandCfg.launcher, "island");
   assert.equal(islandCfg.neon, true, "the neon border is on unless turned off");
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { neon: false } })).status, 200);
@@ -155,7 +165,7 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal((await fetch(`${BASE}${both.logoUrl}`)).status, 200);
   assert.equal((await agent.call(`${inbox}/logo`, { method: "DELETE" })).status, 200);
   // Back to defaults for the other suites.
-  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, launcher: "card", neon: true, sound: true, placeholder: "", suggestions: [] } });
+  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, mode: "window", greetingCard: true, neon: true, sound: true, placeholder: "", suggestions: [] } });
 });
 
 await step("I-10: outside business hours a chat with the team gets one away reply; the widget says when you're back", async () => {

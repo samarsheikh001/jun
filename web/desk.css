@@ -417,16 +417,18 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .cv-page {
   --page-x: 32px;
   --colors: color, background-color, border-color, text-decoration-color, fill, stroke;
-  padding: 24px var(--page-x) 64px; line-height: 1.55; letter-spacing: 0.02em;
+  padding: 0 var(--page-x) 64px; line-height: 1.55; letter-spacing: 0.02em;
 }
+/* The page's top space is inside the sticky header, so once scrolled the title keeps it instead of
+   sitting against the top edge (the tabs stick right under the header: its height less 8px). */
 .cv-header {
   position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
-  margin: 0 calc(-1 * var(--page-x)) 18px; padding: 4px var(--page-x) 16px; background: var(--background);
+  margin: 0 calc(-1 * var(--page-x)) 18px; padding: 28px var(--page-x) 16px; background: var(--background);
 }
 .cv-header h1 { margin: 0 0 6px; font-size: 24px; font-weight: 525; line-height: 1.2; letter-spacing: inherit; color: var(--foreground); }
 .cv-header p { margin: 0; max-width: 620px; font-size: 14px; line-height: 1.625; color: var(--muted-foreground); }
 .cv-tabs {
-  position: sticky; top: 70px; z-index: 10; display: flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 8px 4px;
+  position: sticky; top: 94px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 4px;
   margin: 0 -4px 16px; padding: 4px 4px 8px; border-bottom: 1px solid var(--border); background: var(--background);
 }
 .cv-tab {
@@ -1399,6 +1401,13 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 .visitor-globe-host { width: 100%; height: 100%; font: inherit; }
 .visitor-globe-host .maplibregl-canvas { cursor: grab; }
 .visitor-globe-host .maplibregl-canvas:active { cursor: grabbing; }
+/* Until the globe has drawn: a pulsing sphere where it will be; the canvas fades in over it. */
+.visitor-globe-host { opacity: 0; transition: opacity 0.5s ease; }
+.visitor-globe-host[data-ready] { opacity: 1; }
+.visitor-globe-skel { position: absolute; inset: 7%; z-index: -1; border-radius: 50%; pointer-events: none; background: radial-gradient(circle at 35% 30%, color-mix(in oklab, var(--muted) 55%, transparent), var(--muted) 70%); animation: globe-skel 1.6s ease-in-out infinite; transition: opacity 0.5s ease; }
+.visitor-globe-skel[data-done] { opacity: 0; animation: none; }
+@keyframes globe-skel { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .visitor-globe-skel { animation: none; } .visitor-globe-host { transition: none; } }
 .visitor-globe-failed { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
 .globe-marker { position: relative; width: 12px; height: 12px; transition: opacity 0.3s; }
 .globe-marker:hover, .globe-marker[data-focus] { z-index: 1; }
@@ -1463,16 +1472,19 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 .appear-note { margin: 0; text-align: center; }
 /* A stand-in for the customer's page. The frame, button and card copy public/widget.js's styles
    (its .frame, .btn and .nudge rules) but sit inside this box instead of the viewport. Above the
-   settings column's scrollbar (ScrollArea's z-10), which the open bar is wide enough to overlap. */
+   settings column's scrollbar (ScrollArea's z-10), which the open island is wide enough to overlap. */
 .appear-stage { --c: #2f5bea; --t: #fff; --r: 16px; position: relative; z-index: 20; flex: 1; min-height: 520px; }
 /* Copies of public/widget.js (D-34): the open chat takes the launcher's corner, with a soft shadow and no border. */
-.appear-frame, .appear-launcher { position: absolute; right: 22px; bottom: 22px; }
-.appear-stage.left > * { right: auto; left: 22px; }
+.appear-frame, .appear-launcher { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; }
+/* As the loader: the chat grows in from its corner when it opens. */
+.appear-frame.opening { animation: appear-open 280ms cubic-bezier(0.23, 1, 0.32, 1); }
+@keyframes appear-open { from { opacity: 0; transform: translateY(10px) scale(0.96); } }
+@media (prefers-reduced-motion: reduce) { .appear-frame.opening { animation: none; } }
 .appear-frame { width: min(380px, max(300px, 32vw), calc(100% - 44px)); height: min(540px, calc(100% - 44px)); max-height: calc(100% - 44px); border: 0; border-radius: var(--r); background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16); }
 .appear-stage.dark .appear-frame { background: #171717; color: #f5f5f5; }
-.appear-stage.bar .appear-frame, .appear-stage.island .appear-frame { box-shadow: none; background: none; }
+.appear-stage.island .appear-frame { box-shadow: none; background: none; }
 /* As the loader: unseen until the frame has sized itself, or it flashes as the default white panel. */
-.appear-stage:is(.bar, .island, .card) .appear-frame:not([data-sized]) { visibility: hidden; }
+.appear-stage:is(.island, .card) .appear-frame:not([data-sized]) { visibility: hidden; }
 .appear-launcher { width: 52px; height: 52px; border: 0; border-radius: var(--r); display: grid; place-items: center; background: var(--c); color: var(--t); box-shadow: none; cursor: pointer; }
 /* The loader's button: the logo filling it, or "Chat with us" (keep in step with public/widget.js). */
 .appear-launcher:has(img) { padding: 0; overflow: hidden; }

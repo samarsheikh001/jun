@@ -183,7 +183,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
       </div>
 
       <section className="dash-card dash-hero visitor-hero">
-        <Suspense fallback={<div className="visitor-globe" />}>
+        <Suspense fallback={<div className="visitor-globe"><div className="visitor-globe-skel" aria-hidden="true" /></div>}>
           <VisitorGlobe spots={spots} countries={countries.map(([code]) => code)} focus={hovered} />
         </Suspense>
         <div className="visitor-hero-stats">

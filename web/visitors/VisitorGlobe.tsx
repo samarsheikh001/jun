@@ -111,6 +111,7 @@ let worldRequest: Promise<World> | null = null;
 const loadWorld = () => (worldRequest ??= fetch(WORLD_URL).then((r) => (r.ok ? (r.json() as Promise<World>) : Promise.reject(new Error(`HTTP ${r.status}`)))));
 
 export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; countries: string[]; focus: string | null }) {
+  const [ready, setReady] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MapLibre | null>(null);
   const markersRef = useRef(new Map<string, { marker: Marker; el: HTMLElement }>());
@@ -190,7 +191,10 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
           }
           frame = requestAnimationFrame(tick);
         };
-        m.once("load", () => (frame = requestAnimationFrame(tick)));
+        m.once("load", () => {
+          frame = requestAnimationFrame(tick);
+          setReady(true);
+        });
 
         const resize = new ResizeObserver(() => {
           m.resize();
@@ -266,9 +270,18 @@ export function VisitorGlobe({ spots, countries, focus }: { spots: GlobeSpot[]; 
 
   return (
     <div className="visitor-globe">
-      {failed ? <p className="muted small visitor-globe-failed">{failed}</p> : <div ref={hostRef} className="visitor-globe-host" />}
+      {failed ? <p className="muted small visitor-globe-failed">{failed}</p> : <div ref={hostRef} className="visitor-globe-host" data-ready={ready || undefined} />}
+      {!failed && <GlobeSkeleton done={ready} />}
     </div>
   );
+}
+
+/**
+ * The globe's place while MapLibre and the world map load: a softly pulsing sphere at the globe's
+ * size (also the lazy chunk's fallback), fading out as the drawn globe fades in.
+ */
+export function GlobeSkeleton({ done = false }: { done?: boolean }) {
+  return <div className="visitor-globe-skel" data-done={done || undefined} aria-hidden="true" />;
 }
 
 export default VisitorGlobe;

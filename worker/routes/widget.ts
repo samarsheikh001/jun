@@ -98,7 +98,8 @@ widget.get("/widget/:key/config", async (c) => {
   const override = c.req.query("color");
   return c.json(
     {
-      // W-04 appearance: name, greeting, colour, side, logo, theme, rounding, launcher, placeholder, suggestions.
+      // W-04 appearance: name, greeting, colour, side, logo, theme, rounding, mode + greetingCard (D-89) and
+      // the launcher they make (island | card | button: loaders cached in visitors' browsers read it), placeholder, suggestions.
       ...look,
       // Readable text on the button's colour (the loader keeps no colour maths of its own).
       text: textOn(override && /^#[0-9a-f]{6}$/i.test(override) ? override : look.color),

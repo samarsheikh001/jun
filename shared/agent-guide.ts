@@ -154,7 +154,8 @@ How each action registered by the customer's website runs: a map of action name 
 
 The desk's settings. A key or section left out stays as it is on the desk. Sections: \`ai\`
 (\`enabled\`, \`model\`, \`models\`, \`monthlyReplyCap\`), \`chat\` (the chat widget: \`name\`, \`color\`,
-\`launcher\`, \`theme\`, \`greeting\`, \`suggestedQuestions\`, \`allowedWebsites\`, \`openers\`, …),
+\`mode\` (island or window), \`greetingCard\`, \`theme\`, \`greeting\`, \`suggestedQuestions\`,
+\`allowedWebsites\`, \`openers\`, …),
 \`hours\` (\`enabled\`, \`timeZone\`, \`days\`, \`awayMessage\`), \`inbox\` (\`assignment\`: \`mode\`,
 \`capacity\`). Check the full key list in the docs before adding a key.`;
 
@@ -287,6 +288,13 @@ How changes work:
   preview_widget renders a card. history lists versions; restore brings an old one back as a new version.
 - Ask the person before making changes live if they haven't said to, and add a test case for each
   behaviour you add or fix.
+
+Knowledge (the websites and documents the AI answers from) is separate from these files:
+- list_knowledge shows each source and its state. add_website crawls a site (maxPages: 1 for one page) and
+  add_document adds text or a small file; both run in the background, so check list_knowledge until ready.
+- Knowledge isn't versioned: no history or restore. remove_source can't be undone, so ask the person first.
+- Before writing a task to answer a question, run search_knowledge with it: if the AI already finds the
+  answer in the knowledge, it doesn't need a task.
 
 Hard rules:
 - Never put keys, tokens or passwords in any file: use \`{secrets.NAME}\` in an action's headers and store

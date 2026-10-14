@@ -58,7 +58,7 @@ export function Composer({
    */
   suggestScroller?: ComponentType<{ className: string; children: ReactNode }>;
   /**
-   * The widget's composer (the chat window and the W-04 bar, D-32): one box with "+" (files,
+   * The widget's composer (the chat window and the island): one box with "+" (files,
    * screenshot), the input and Send; the input moves above the buttons once the text wraps.
    */
   pill?: boolean;
@@ -220,7 +220,7 @@ export function Composer({
     }
   };
 
-  // Focus stays on "+" while the file picker or the capture prompt is up, so the bar (which
+  // Focus stays on "+" while the file picker or the capture prompt is up, so the island (which
   // folds when the frame loses focus) can tell it apart from a click elsewhere on the page.
   const tools = [
     { key: "files", label: "Add photos & files", desc: "From your device", icon: CLIP, run: () => fileInput.current?.click() },
@@ -361,7 +361,7 @@ export function Composer({
                   setTool((i) => (i + (e.key === "ArrowDown" ? 1 : tools.length - 1)) % tools.length);
                 } else if (e.key === "Escape" || e.key === "Tab") {
                   e.preventDefault();
-                  e.nativeEvent.stopImmediatePropagation(); // Esc closes the menu, not the bar
+                  e.nativeEvent.stopImmediatePropagation(); // Esc closes the menu, not the island
                   setPlusOpen(false);
                   plus.current?.focus();
                 }

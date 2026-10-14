@@ -1,4 +1,5 @@
 import { newId } from "../lib/crypto.ts";
+import { interruptedNote, STUCK_AFTER_MS, syncIsStuck } from "./crawl-watchdog.ts";
 import { blocksFromText, chunkBlocks, contentHash, decodeEntities, type Block } from "./chunk.ts";
 import { embed } from "./embeddings.ts";
 import { extractPage } from "./extract.ts";
@@ -39,6 +40,8 @@ interface SourceRow {
 export interface SourceSettings {
   maxPages?: number;
   syncToken?: string;
+  /** D-88: when the current sync started (the watchdog's first sign of life). */
+  startedAt?: number;
   disallow?: string[];
   /** K-04: pages the admin left out. Full URLs match exactly; "/path" entries are path prefixes ("*" = any). */
   exclude?: string[];
@@ -337,8 +340,18 @@ async function claimAndEnqueue(env: Env, source: SourceRow, settings: SourceSett
     jobs.push({ type: "page", sourceId: source.id, syncToken, url: href, depth, follow });
   }
   if (jobs.length === 0) return 0;
+  // Counted before sending: a page job can finish (and decrement) before sendBatch returns. What
+  // couldn't be sent is given back, so the count can still reach 0.
   await env.DB.prepare("UPDATE kb_sources SET pending_jobs = pending_jobs + ? WHERE id = ?").bind(jobs.length, source.id).run();
-  for (let i = 0; i < jobs.length; i += 100) await env.CRAWL_QUEUE.sendBatch(jobs.slice(i, i + 100).map((body) => ({ body })));
+  let sent = 0;
+  try {
+    for (; sent < jobs.length; sent += 100) await env.CRAWL_QUEUE.sendBatch(jobs.slice(sent, sent + 100).map((body) => ({ body })));
+  } catch (error) {
+    const unsent = jobs.length - sent;
+    await env.DB.prepare("UPDATE kb_sources SET pending_jobs = pending_jobs - ? WHERE id = ?").bind(unsent, source.id).run();
+    console.error(`crawl ${source.id}: ${unsent} page jobs not queued:`, error);
+    return sent;
+  }
   return jobs.length;
 }
 
@@ -357,7 +370,7 @@ async function runSync(env: Env, sourceId: string): Promise<void> {
   }
 
   const robots = await readRobots(start.origin);
-  const settings: SourceSettings = { ...(JSON.parse(source.settings) as SourceSettings), syncToken: newId("sync"), disallow: robots.disallow };
+  const settings: SourceSettings = { ...(JSON.parse(source.settings) as SourceSettings), syncToken: newId("sync"), startedAt: Date.now(), disallow: robots.disallow };
   await env.DB.prepare("UPDATE kb_sources SET status = 'syncing', error = NULL, pending_jobs = 0, settings = ? WHERE id = ?")
     .bind(JSON.stringify(settings), sourceId)
     .run();
@@ -413,6 +426,8 @@ async function runPage(env: Env, job: Extract<CrawlJob, { type: "page" }>): Prom
     // Remembered so a crawl that reads nothing can say why.
     await env.DB.prepare("UPDATE kb_sources SET error = ? WHERE id = ?").bind(`${job.url}: ${(error as Error).message}`.slice(0, 300), source.id).run();
   } finally {
+    // D-88: every finished page job is a sign of life for the watchdog, read or not.
+    await env.DB.prepare("UPDATE kb_documents SET updated_at = ? WHERE source_id = ? AND url = ?").bind(Date.now(), source.id, job.url).run();
     const row = await env.DB.prepare("UPDATE kb_sources SET pending_jobs = pending_jobs - 1 WHERE id = ? RETURNING pending_jobs")
       .bind(source.id)
       .first<{ pending_jobs: number }>();
@@ -420,25 +435,78 @@ async function runPage(env: Env, job: Extract<CrawlJob, { type: "page" }>): Prom
   }
 }
 
-/** After the last page: drop pages that disappeared from the site and mark the source ready. */
-async function finishSync(env: Env, source: SourceRow, settings: SourceSettings): Promise<void> {
+/**
+ * After the last page: drop pages that disappeared from the site and mark the source ready. Safe to run
+ * twice (D-88: a late page job after the watchdog, or two last jobs): only a run that moves this sync
+ * out of 'syncing' counts, and nothing happens once a newer sync has started. `note` (the watchdog's)
+ * replaces the error on a source with pages; without pages the source is an error either way.
+ */
+async function finishSync(env: Env, source: SourceRow, settings: SourceSettings, note?: string | null): Promise<boolean> {
+  const token = settings.syncToken;
+  if (!token) return false;
+  const current = await env.DB.prepare("SELECT status, json_extract(settings, '$.syncToken') AS token FROM kb_sources WHERE id = ?")
+    .bind(source.id)
+    .first<{ status: string; token: string | null }>();
+  if (!current || current.status !== "syncing" || current.token !== token) return false;
   const stale = await env.DB.prepare("SELECT c.id FROM kb_chunks c JOIN kb_documents d ON d.id = c.document_id WHERE d.source_id = ? AND d.sync_token IS NOT ?")
-    .bind(source.id, settings.syncToken)
+    .bind(source.id, token)
     .all<{ id: string }>();
   if (stale.results.length) await index(env, source.workspace_id).deleteChunks(stale.results.map((r) => r.id));
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM kb_documents WHERE source_id = ? AND sync_token IS NOT ?").bind(source.id, settings.syncToken),
+  const read = "(SELECT COUNT(*) FROM kb_documents WHERE source_id = ?2 AND sync_token = ?3 AND content_hash IS NOT NULL)";
+  const [finished] = await env.DB.batch([
     // A crawl that indexed nothing is an error the admin should see, not "ready, 0 pages".
     env.DB.prepare(
-      `UPDATE kb_sources SET last_synced_at = ?1,
-         page_count = (SELECT COUNT(*) FROM kb_documents WHERE source_id = ?2 AND content_hash IS NOT NULL),
-         status = CASE WHEN (SELECT COUNT(*) FROM kb_documents WHERE source_id = ?2 AND content_hash IS NOT NULL) > 0 THEN 'ready' ELSE 'error' END,
-         error = CASE WHEN (SELECT COUNT(*) FROM kb_documents WHERE source_id = ?2 AND content_hash IS NOT NULL) > 0 THEN NULL
+      `UPDATE kb_sources SET last_synced_at = ?1, pending_jobs = 0,
+         page_count = ${read},
+         status = CASE WHEN ${read} > 0 THEN 'ready' ELSE 'error' END,
+         error = CASE WHEN ?4 IS NOT NULL THEN ?4
+                      WHEN ${read} > 0 THEN NULL
                       ELSE COALESCE('No readable pages. Last error: ' || error, 'No readable pages found at this URL.') END
-       WHERE id = ?2`,
-    ).bind(Date.now(), source.id),
+       WHERE id = ?2 AND status = 'syncing' AND json_extract(settings, '$.syncToken') = ?3`,
+    ).bind(Date.now(), source.id, token, note ?? null),
+    env.DB.prepare(
+      "DELETE FROM kb_documents WHERE source_id = ?1 AND sync_token IS NOT ?2 AND EXISTS (SELECT 1 FROM kb_sources WHERE id = ?1 AND json_extract(settings, '$.syncToken') = ?2)",
+    ).bind(source.id, token),
   ]);
+  if (!finished?.meta.changes) return false;
   await fillMissingVectors(env, source.workspace_id, source.id);
+  return true;
+}
+
+/**
+ * D-88: the watchdog. A website sync with no sign of life for STUCK_AFTER_MS (a page job killed before
+ * its `finally`, dropped queue messages, a sync job that died after claiming its pages) is finished
+ * with the pages read so far: ready with a note saying how many weren't read, or an error if none
+ * were. Run by the 15-minute cron for every workspace, and by the Knowledge list for its own.
+ */
+export async function finishStuckSyncs(env: Env, workspaceId?: string): Promise<number> {
+  const rows = await env.DB.prepare(
+    `SELECT s.id, s.workspace_id, s.kind, s.url, s.title, s.body, s.settings, s.created_at AS createdAt, s.last_synced_at AS lastSyncedAt,
+            (SELECT MAX(d.updated_at) FROM kb_documents d WHERE d.source_id = s.id AND d.sync_token = json_extract(s.settings, '$.syncToken')) AS lastActivity
+     FROM kb_sources s WHERE s.kind = 'website' AND s.status = 'syncing'${workspaceId ? " AND s.workspace_id = ?" : ""}`,
+  )
+    .bind(...(workspaceId ? [workspaceId] : []))
+    .all<SourceRow & { createdAt: number; lastSyncedAt: number | null; lastActivity: number | null }>();
+  const now = Date.now();
+  let finished = 0;
+  for (const row of rows.results) {
+    const settings = JSON.parse(row.settings) as SourceSettings;
+    if (!settings.syncToken) continue;
+    // Syncs from before startedAt existed fall back to the source's own timestamps.
+    const signals = settings.startedAt ? [settings.startedAt, row.lastActivity] : [row.lastActivity, row.lastSyncedAt, row.createdAt];
+    if (!syncIsStuck(now, signals)) continue;
+    const counts = await env.DB.prepare(
+      "SELECT COUNT(*) AS claimed, COUNT(content_hash) AS indexed FROM kb_documents WHERE source_id = ? AND sync_token = ?",
+    )
+      .bind(row.id, settings.syncToken)
+      .first<{ claimed: number; indexed: number }>();
+    const note = interruptedNote(counts?.indexed ?? 0, (counts?.claimed ?? 0) - (counts?.indexed ?? 0));
+    if (await finishSync(env, row, settings, note)) {
+      finished++;
+      console.warn(`crawl ${row.id}: finished a stuck sync (no activity for ${Math.round(STUCK_AFTER_MS / 60_000)}+ min): ${note ?? "every page read"}`);
+    }
+  }
+  return finished;
 }
 
 /** Queue consumer. Every job is acknowledged; failures are logged, not retried forever. */

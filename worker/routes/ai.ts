@@ -1,8 +1,10 @@
 import { chatgptOAuth as oauth, tokensFromResponse, type ChatGPTCredentials } from "@jun/llm";
 import { Hono } from "hono";
-import { MAX_KB_FILE_BYTES, MAX_KB_FILES } from "../../shared/protocol.ts";
-import { sniffFormat, titleFromName, UnsupportedFile, type FileFormat } from "../ai/file-extract.ts";
-import { deleteSource, DEFAULT_MAX_PAGES, fileKey, indexSnippet, removeDocument, startFileIndex, startSync, type SourceSettings } from "../ai/knowledge.ts";
+import { MAX_KB_FILE_BYTES } from "../../shared/protocol.ts";
+import { titleFromName } from "../ai/file-extract.ts";
+import { deleteSource, DEFAULT_MAX_PAGES, finishStuckSyncs, indexSnippet, removeDocument, startFileIndex, type SourceSettings } from "../ai/knowledge.ts";
+import { cleanFileName, TOO_LARGE } from "../ai/knowledge-input.ts";
+import { addFileSource, addWebsite, assertRoomForFile, listSources, resyncSource } from "../ai/knowledge-sources.ts";
 import { effectiveModels, InvalidModelsError, JOB_DEFAULTS, parseJobModels, type JobModels } from "../ai/models.ts";
 import { DEFAULT_MODELS, isLoopback, loadAiSettings, type ProviderId } from "../ai/providers.ts";
 import { searchKnowledge } from "../ai/search.ts";
@@ -261,35 +263,15 @@ async function finishChatGPTSignIn(env: Env, params: URLSearchParams, workspaceI
 ai.get("/workspaces/:id/knowledge", async (c) => {
   const workspaceId = c.req.param("id");
   await memberRole(c, workspaceId);
-  const rows = await c.env.DB.prepare(
-    `SELECT id, kind, url, title, status, page_count AS pageCount, pending_jobs AS pendingJobs, error, last_synced_at AS lastSyncedAt, created_at AS createdAt,
-            json_extract(settings, '$.file.name') AS fileName, json_extract(settings, '$.file.size') AS fileSize,
-            (SELECT COUNT(*) FROM kb_chunks k WHERE k.source_id = s.id) AS chunkCount,
-            (SELECT COUNT(*) FROM kb_chunks k WHERE k.source_id = s.id AND k.embedded = 0) AS chunksWithoutVectors
-     FROM kb_sources s WHERE workspace_id = ? ORDER BY created_at DESC`,
-  )
-    .bind(workspaceId)
-    .all();
-  return c.json({ sources: rows.results });
+  // D-88: a sync stuck for 20+ minutes is finished now rather than at the next cron.
+  await finishStuckSyncs(c.env, workspaceId);
+  return c.json({ sources: await listSources(c.env, workspaceId) });
 });
 
 ai.post("/workspaces/:id/knowledge/websites", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  const body = await readJson(c.req);
-  let url: URL;
-  try {
-    url = new URL(text(body, "url", { max: 2000 }));
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
-  } catch {
-    throw new HttpError(400, "invalid_field", "Enter a full URL, like https://docs.example.com.");
-  }
-  const maxPages = Math.min(Math.max(Number(body.maxPages ?? DEFAULT_MAX_PAGES) || DEFAULT_MAX_PAGES, 1), 2000);
-  const id = newId("src");
-  await c.env.DB.prepare("INSERT INTO kb_sources (id, workspace_id, kind, url, title, settings, created_at) VALUES (?, ?, 'website', ?, ?, ?, ?)")
-    .bind(id, workspaceId, url.toString(), url.host + (url.pathname === "/" ? "" : url.pathname), JSON.stringify({ maxPages }), Date.now())
-    .run();
-  await startSync(c.env, id);
+  const { id } = await addWebsite(c.env, workspaceId, await readJson(c.req));
   return c.json({ id });
 });
 
@@ -306,15 +288,7 @@ ai.post("/workspaces/:id/knowledge/snippets", async (c) => {
 });
 
 // K-02: upload a file (raw body with X-Jun-Upload: 1 and a URI-encoded X-File-Name, like
-// attachments). The original goes to R2; a Queue job extracts and indexes it.
-const FILE_CONTENT_TYPES: Record<FileFormat, string> = {
-  pdf: "application/pdf",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  markdown: "text/markdown; charset=utf-8",
-  text: "text/plain; charset=utf-8",
-};
-const TOO_LARGE = `Files are limited to ${MAX_KB_FILE_BYTES / 1024 / 1024} MB.`;
-
+// attachments). The original goes to R2; a Queue job extracts and indexes it (addFileSource).
 ai.post("/workspaces/:id/knowledge/files", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
@@ -326,30 +300,11 @@ ai.post("/workspaces/:id/knowledge/files", async (c) => {
   } catch {
     // rejected below
   }
-  name = name.replace(/[\\/\r\n"\0]/g, "_").trim().slice(0, 200);
+  name = cleanFileName(name);
   if (!name) throw new HttpError(400, "invalid_field", "Send the file name in X-File-Name.");
-  const { n } = (await c.env.DB.prepare("SELECT COUNT(*) AS n FROM kb_sources WHERE workspace_id = ? AND kind = 'file'").bind(workspaceId).first<{ n: number }>())!;
-  if (n >= MAX_KB_FILES) throw new HttpError(400, "too_many_files", `A workspace can have up to ${MAX_KB_FILES} files. Remove some first.`);
-
+  await assertRoomForFile(c.env, workspaceId);
   const bytes = new Uint8Array(await c.req.arrayBuffer());
-  if (bytes.byteLength > MAX_KB_FILE_BYTES) throw new HttpError(400, "too_large", TOO_LARGE);
-  let format: FileFormat;
-  try {
-    format = sniffFormat(name, bytes);
-  } catch (error) {
-    if (error instanceof UnsupportedFile) throw new HttpError(400, "unsupported_file", error.message);
-    throw error;
-  }
-
-  const id = newId("src");
-  const key = fileKey(workspaceId, id);
-  const title = titleFromName(name);
-  await c.env.FILES.put(key, bytes, { httpMetadata: { contentType: FILE_CONTENT_TYPES[format] } });
-  await c.env.DB.prepare("INSERT INTO kb_sources (id, workspace_id, kind, title, settings, created_at) VALUES (?, ?, 'file', ?, ?, ?)")
-    .bind(id, workspaceId, title, JSON.stringify({ file: { key, name, format, size: bytes.byteLength } } satisfies SourceSettings), Date.now())
-    .run();
-  await startFileIndex(c.env, id);
-  return c.json({ id, title, format, size: bytes.byteLength });
+  return c.json(await addFileSource(c.env, workspaceId, { name, title: titleFromName(name), bytes }));
 });
 
 // K-02: the uploaded original, for the team (always a download).
@@ -376,11 +331,7 @@ ai.get("/workspaces/:id/knowledge/:sourceId/file", async (c) => {
 ai.post("/workspaces/:id/knowledge/:sourceId/sync", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  const source = await c.env.DB.prepare("SELECT kind FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(c.req.param("sourceId"), workspaceId).first<{ kind: string }>();
-  if (!source) throw new HttpError(404, "not_found", "Source not found.");
-  if (source.kind === "website") await startSync(c.env, c.req.param("sourceId"));
-  else if (source.kind === "file") await startFileIndex(c.env, c.req.param("sourceId"));
-  else await indexSnippet(c.env, c.req.param("sourceId"));
+  if (!(await resyncSource(c.env, workspaceId, c.req.param("sourceId")))) throw new HttpError(404, "not_found", "Source not found.");
   return c.json({ ok: true });
 });
 

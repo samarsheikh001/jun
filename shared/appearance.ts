@@ -5,12 +5,23 @@
 
 export type WidgetTheme = "auto" | "light" | "dark";
 /**
- * `bar`: an "Ask anything…" bar instead of the round button (the Fin-style launcher, D-32).
- * `island`: a pill at the bottom centre that morphs with each moment (D-39, `web/widget/island.tsx`).
+ * D-89: the widget's two modes. `island`: one pill at the bottom centre that morphs with each moment
+ * (D-39, `web/widget/island.tsx`). `window`: a button in the corner that opens a chat window, with
+ * or without a greeting card over the button (`greetingCard`, D-34's card).
  */
-export type LauncherStyle = "button" | "card" | "bar" | "island";
+export type WidgetMode = "island" | "window";
 /**
- * What the round button (launcher `button`) shows: the company logo (a chat bubble while none is
+ * What the frame and the loader draw closed, worked out from the mode and the greeting card switch:
+ * `island`, `card` (window + greeting card) or `button` (window, just the round button). Not stored
+ * any more (D-89), but still sent in /config, because loaders cached in visitors' browsers read it.
+ */
+export type LauncherStyle = "button" | "card" | "island";
+/**
+ * The stored `launcher` values before D-89: `bar` (the "Ask anything…" bar, removed) reads as the island.
+ */
+type LegacyLauncher = LauncherStyle | "bar";
+/**
+ * What the round button (window mode) shows: the company logo (a chat bubble while none is
  * uploaded), or the words BUTTON_TEXT.
  */
 export type ButtonStyle = "logo" | "text";
@@ -27,7 +38,9 @@ export const APPEARANCE_DEFAULTS = {
   /** Follows the visitor's system setting. */
   theme: "auto",
   radius: 16,
-  launcher: "card",
+  /** A desk that never chose has the chat window with its greeting card (the `card` launcher before D-89). */
+  mode: "window",
+  greetingCard: true,
   islandSurface: "dark",
   greeting: "Hi! How can we help?",
   replyTime: "We usually reply in a few minutes",
@@ -49,10 +62,15 @@ export interface WidgetLook {
   position: "left" | "right";
   replyTime: string;
   logoUrl: string | null;
-  /** W-21: an optional second logo for dark surfaces (the dark island, the dark theme, the bar's glass). */
+  /** W-21: an optional second logo for dark surfaces (the dark island, the dark theme, a dark button colour). */
   logoDarkUrl: string | null;
   theme: WidgetTheme;
   radius: number;
+  /** D-89: island or chat window. */
+  mode: WidgetMode;
+  /** Chat window: a welcome card over the button (on) or just the button (off). */
+  greetingCard: boolean;
+  /** Worked out from mode + greetingCard (`launcherOf`): what the frame and the loader draw closed. */
   launcher: LauncherStyle;
   placeholder: string;
   suggestions: string[];
@@ -60,16 +78,39 @@ export interface WidgetLook {
   neon: boolean;
   /** Island launcher: near-black (`dark`, the default) or following `theme` (`page`). */
   islandSurface: IslandSurface;
-  /** Button launcher: the logo or "Chat with us". */
+  /** Chat window: the round button shows the logo or "Chat with us". */
   buttonStyle: ButtonStyle;
-  /** W-20, all launchers: a soft chime for a new reply while the widget is folded or the tab hidden. On unless turned off. */
+  /** W-20, both modes: a soft chime for a new reply while the widget is folded or the tab hidden. On unless turned off. */
   sound: boolean;
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const THEMES: readonly WidgetTheme[] = ["auto", "light", "dark"];
-const LAUNCHERS: readonly LauncherStyle[] = ["button", "card", "bar", "island"];
+const MODES: readonly WidgetMode[] = ["island", "window"];
+const LEGACY_LAUNCHERS: readonly LegacyLauncher[] = ["button", "card", "bar", "island"];
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/** What the frame and the loader draw closed for a mode and its greeting card switch. */
+export function launcherOf(mode: WidgetMode, greetingCard: boolean): LauncherStyle {
+  return mode === "island" ? "island" : greetingCard ? "card" : "button";
+}
+
+/** A pre-D-89 `launcher` as a mode and greeting card switch (`bar` → the island). */
+function fromLauncher(launcher: LegacyLauncher): { mode: WidgetMode; greetingCard: boolean } {
+  return launcher === "island" || launcher === "bar" ? { mode: "island", greetingCard: APPEARANCE_DEFAULTS.greetingCard } : { mode: "window", greetingCard: launcher === "card" };
+}
+
+/**
+ * The mode and greeting card switch of stored (or draft) settings, lenient: `mode`/`greetingCard`
+ * when they're readable, else the old `launcher` mapped (island and bar → island, card → window
+ * with the card, button → window without), else the defaults.
+ */
+export function modeOf(s: Record<string, unknown>): { mode: WidgetMode; greetingCard: boolean } {
+  const legacy = LEGACY_LAUNCHERS.includes(s.launcher as LegacyLauncher) ? fromLauncher(s.launcher as LegacyLauncher) : null;
+  const mode = MODES.includes(s.mode as WidgetMode) ? (s.mode as WidgetMode) : (legacy?.mode ?? APPEARANCE_DEFAULTS.mode);
+  const greetingCard = typeof s.greetingCard === "boolean" ? s.greetingCard : legacy && legacy.mode === "window" ? legacy.greetingCard : APPEARANCE_DEFAULTS.greetingCard;
+  return { mode, greetingCard };
+}
 
 /** Readable text on a brand colour (the loader uses the same rule). */
 export function textOn(color: string): string {
@@ -90,6 +131,7 @@ export function radiusVars(radius: number): Record<"--r-md" | "--r-sm", string> 
 export function widgetLook(s: Record<string, unknown>, workspaceName: string, logoUrl: string | null, logoDarkUrl: string | null = null): WidgetLook {
   const text = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() ? v : fallback);
   const radius = Number(s.radius);
+  const { mode, greetingCard } = modeOf(s);
   return {
     workspaceName: text(s.displayName, workspaceName),
     greeting: text(s.greeting, APPEARANCE_DEFAULTS.greeting),
@@ -100,7 +142,9 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
     logoDarkUrl,
     theme: THEMES.includes(s.theme as WidgetTheme) ? (s.theme as WidgetTheme) : APPEARANCE_DEFAULTS.theme,
     radius: s.radius !== undefined && Number.isInteger(radius) && radius >= 0 && radius <= RADIUS_MAX ? radius : APPEARANCE_DEFAULTS.radius,
-    launcher: LAUNCHERS.includes(s.launcher as LauncherStyle) ? (s.launcher as LauncherStyle) : APPEARANCE_DEFAULTS.launcher,
+    mode,
+    greetingCard,
+    launcher: launcherOf(mode, greetingCard),
     placeholder: text(s.placeholder, APPEARANCE_DEFAULTS.placeholder),
     suggestions: Array.isArray(s.suggestions)
       ? s.suggestions.filter((q): q is string => typeof q === "string" && q.trim() !== "").map((q) => clean(q).slice(0, SUGGESTION_LIMIT)).slice(0, SUGGESTIONS_MAX)
@@ -137,9 +181,20 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
     if (!THEMES.includes(body.theme as WidgetTheme)) throw new Error("Theme must be auto, light or dark.");
     settings.theme = body.theme;
   }
-  if (body.launcher !== undefined) {
-    if (!LAUNCHERS.includes(body.launcher as LauncherStyle)) throw new Error("Launcher must be button, card, bar or island.");
-    settings.launcher = body.launcher;
+  // D-89: mode + greetingCard; the old `launcher` key is still taken (older dashboards and scripts):
+  // island and bar → island, card → window with the greeting card, button → window without.
+  if (body.launcher !== undefined || body.mode !== undefined || body.greetingCard !== undefined) {
+    if (body.launcher !== undefined && !LEGACY_LAUNCHERS.includes(body.launcher as LegacyLauncher)) throw new Error("Launcher must be island, card or button (or use mode: island or window).");
+    if (body.mode !== undefined && !MODES.includes(body.mode as WidgetMode)) throw new Error("Mode must be island or window.");
+    if (body.greetingCard !== undefined && typeof body.greetingCard !== "boolean") throw new Error("The greeting card must be on or off (true or false).");
+    const now = modeOf(settings);
+    const legacy = body.launcher !== undefined ? fromLauncher(body.launcher as LegacyLauncher) : null;
+    const mode = (body.mode as WidgetMode | undefined) ?? legacy?.mode ?? now.mode;
+    // An old `launcher: island` leaves the greeting card switch as it was (it's the window's).
+    const greetingCard = (body.greetingCard as boolean | undefined) ?? (legacy && legacy.mode === "window" ? legacy.greetingCard : now.greetingCard);
+    settings.mode = mode;
+    settings.greetingCard = greetingCard;
+    delete settings.launcher;
   }
   if (body.buttonStyle !== undefined) {
     if (body.buttonStyle !== "logo" && body.buttonStyle !== "text") throw new Error("The button shows the logo or text.");

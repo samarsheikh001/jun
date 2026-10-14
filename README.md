@@ -167,12 +167,13 @@ ai:
 chat:                       # the chat widget (the Chat widget page)
   name: Acme                # "" = your workspace's name
   color: "#5b4cff"
-  launcher: island          # island | bar | card | button
-  island: { surface: dark, glow: true }
-  button: logo              # logo | text
+  mode: island              # island | window (a corner button that opens a chat window)
+  greetingCard: true        # window: a greeting card over the button
+  button: logo              # window: logo | text
+  position: right           # window: left | right
+  island: { surface: dark, glow: true }   # island only
   theme: auto               # auto | light | dark
   rounding: 16              # 0 to 24
-  position: right
   sound: true
   greeting: Hi! How can we help?
   replyTime: Usually replies in a few minutes

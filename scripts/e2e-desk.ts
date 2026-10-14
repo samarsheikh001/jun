@@ -40,7 +40,9 @@ await step("a config without desk.yaml gets one written from the current setting
   const desk = parse(res.files["desk.yaml"]);
   const look = await widgetConfig();
   assert.equal(desk.chat.color, look.color);
-  assert.equal(desk.chat.launcher, look.launcher);
+  assert.equal(desk.chat.mode, look.mode);
+  assert.equal(desk.chat.greetingCard, look.greetingCard);
+  assert.equal(desk.chat.launcher, undefined, "D-89: the old key is never written");
   assert.equal(desk.ai.enabled, original.ai.enabled);
   assert.equal(desk.ai.monthlyReplyCap, original.ai.monthlyReplyCap);
   assert.match(res.files["desk.yaml"], /^# desk\.yaml/);
@@ -54,7 +56,7 @@ await step("pushing desk.yaml changes the widget's public config and the AI sett
 chat:
   color: "#5b4cff"  # brand purple
   greeting: Hello from desk.yaml
-  launcher: island
+  mode: island
   suggestedQuestions: [How much is it?, Can I invite my team?]
 ai:
   monthlyReplyCap: 1234
@@ -73,6 +75,8 @@ ai:
   const look = await widgetConfig();
   assert.equal(look.color, "#5b4cff");
   assert.equal(look.greeting, "Hello from desk.yaml");
+  assert.equal(look.mode, "island");
+  // Loaders cached in visitors' browsers still read launcher (D-89).
   assert.equal(look.launcher, "island");
   assert.deepEqual(look.suggestions, ["How much is it?", "Can I invite my team?"]);
   const ai = (await agent.call(`/workspaces/${workspaceId}/ai`)).json.settings;
@@ -135,6 +139,25 @@ await step("an Agent draft from an older version still saves when it changed oth
   assert.equal(conflict.json.error.code, "conflict");
 });
 
+await step("D-89: an older desk.yaml's launcher still works (bar is the island), and a mode change rewrites it as mode + greetingCard", async () => {
+  const live = (await config()).json;
+  const pushed = await put({ ...live.files, "desk.yaml": "chat:\n  launcher: button  # from an older folder\n" }, live.version, "old launcher");
+  assert.equal(pushed.status, 200, JSON.stringify(pushed.json));
+  let look = await widgetConfig();
+  assert.deepEqual([look.mode, look.greetingCard, look.launcher], ["window", false, "button"]);
+  const bar = await put({ ...(await config()).json.files, "desk.yaml": "chat:\n  launcher: bar\n" }, (await config()).json.version, "old bar");
+  assert.equal(bar.status, 200, JSON.stringify(bar.json));
+  look = await widgetConfig();
+  assert.deepEqual([look.mode, look.launcher], ["island", "island"]);
+  // The Chat widget page saves the mode: the file's launcher gives way to the new keys.
+  const res = await agent.call(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { mode: "window", greetingCard: true } });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  const text = (await config()).json.files["desk.yaml"] as string;
+  assert.ok(!/launcher/.test(text), text);
+  assert.deepEqual([parse(text).chat.mode, parse(text).chat.greetingCard], ["window", true]);
+  assert.equal((await widgetConfig()).launcher, "card");
+});
+
 await step("put the desk back as it was", async () => {
   const s = original.inbox;
   const res = await agent.call(`/workspaces/${workspaceId}/inbox`, {
@@ -142,7 +165,8 @@ await step("put the desk back as it was", async () => {
     body: {
       color: s.color ?? "#2f5bea",
       theme: s.theme ?? "auto",
-      launcher: s.launcher ?? "card",
+      // D-89: a desk saved before has launcher (still taken), a newer one mode + greetingCard.
+      ...(s.mode ? { mode: s.mode, greetingCard: s.greetingCard ?? true } : { launcher: s.launcher ?? "card" }),
       greeting: s.greeting ?? "",
       suggestions: s.suggestions ?? [],
       ...(s.hours ? { hours: s.hours } : {}),

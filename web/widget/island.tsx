@@ -1,9 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Typewriter } from "./bar.tsx";
 
-// W-04 "island" launcher (D-39): one small control at the bottom centre of the page that changes
-// shape to fit each moment and always returns to a resting pill. Like the bar (bar.tsx) the frame
-// is transparent and always shown; it tells the loader its size and the part of it that's drawn
+// W-04 "island" mode (D-39, D-89): one small control at the bottom centre of the page that changes
+// shape to fit each moment and always returns to a resting pill. The frame is transparent and always shown; it tells the loader its size and the part of it that's drawn
 // (`jun:css`), which the loader applies as the frame's inline style. Everything happens inside
 // the frame: the page itself is never touched. Styles: `widget.css` (`html.island`; on the
 // near-black surface, the default, also `html.island-dark`).
@@ -16,6 +14,39 @@ import { Typewriter } from "./bar.tsx";
 
 const postToHost = (message: unknown) => window.parent !== window && window.parent.postMessage(message, "*");
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * The resting pill's hint: types each suggested question out (about 42ms a letter), then the next
+ * one every 5.7s. Without suggestions it shows the placeholder.
+ */
+function Typewriter({ phrases, fallback }: { phrases: string[]; fallback: string }) {
+  const [index, setIndex] = useState(0);
+  const [length, setLength] = useState(0);
+  const phrase = phrases.length ? phrases[index % phrases.length]! : fallback;
+  const animate = phrases.length > 0 && !reducedMotion();
+
+  useEffect(() => {
+    if (!animate) return;
+    setLength(0);
+    let typed = 0;
+    const typer = setInterval(() => {
+      typed += 1;
+      setLength(typed);
+      if (typed >= phrase.length) clearInterval(typer);
+    }, 42);
+    const next = setTimeout(() => setIndex((i) => i + 1), 5670);
+    return () => {
+      clearInterval(typer);
+      clearTimeout(next);
+    };
+  }, [animate, phrase]);
+
+  return (
+    <div className="i-hint" aria-hidden="true">
+      <span key={index} className="i-hint-text">{animate ? phrase.slice(0, length) : phrase}</span>
+    </div>
+  );
+}
 
 /**
  * rest: the pill (or, with a chat, a one-line summary of its last answer). nudge: a one-line offer

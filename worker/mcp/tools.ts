@@ -4,6 +4,10 @@ import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "
 import { DESK_PATH, parseDeskFile, updateDeskText, type DeskFile } from "../ai/desk-file.ts";
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
+import { deleteSource, DEFAULT_MAX_PAGES, finishStuckSyncs } from "../ai/knowledge.ts";
+import { documentInput, DocumentInputError, sourceState, sourceType } from "../ai/knowledge-input.ts";
+import { addFileSource, addWebsite, listSources, resyncSource, type SourceListRow } from "../ai/knowledge-sources.ts";
+import { searchKnowledge } from "../ai/search.ts";
 import { runTestChat } from "../ai/test-chat.ts";
 import { runTool } from "../ai/tools.ts";
 import { recordUsage } from "../ai/topics.ts";
@@ -26,7 +30,7 @@ import {
   cardControls, cardFromShape, checkExamples, nodeText, parseWidgetFile, previewWidget, renderSummary, renderWidget, starterWidget, toolButtonInputs, widgetSchema, type WidgetNode,
 } from "../../shared/widgets.ts";
 import { JUN_VERSION } from "../../shared/version.ts";
-import type { Role } from "../types.ts";
+import { HttpError, type Role } from "../types.ts";
 import { ToolError, type JsonSchema, type McpResource, type McpServer, type McpTool, type ToolAnnotations, type ToolResult } from "./server.ts";
 
 // D-86: the MCP server's tools. Each one does what the Agent page does, through the same functions
@@ -35,6 +39,8 @@ import { ToolError, type JsonSchema, type McpResource, type McpServer, type McpT
 // must, is checked by parseConfig and saved as a new version (source "mcp") that goes live at once;
 // `dryRun` shows the result without saving. desk.yaml changes are applied like a save on the desk.
 // Reading needs any member's token; changing, Try it and the test chat need an owner's or admin's.
+// D-87: knowledge tools too, through the Knowledge page's functions (knowledge-sources.ts); knowledge
+// isn't versioned, so they change it directly (no commit) and remove_source asks for confirm: true.
 
 export interface McpContext {
   env: Env;
@@ -1411,7 +1417,7 @@ const DESK: Tool[] = [
   tool({
     name: "update_desk_settings",
     title: "Update the desk settings",
-    description: "Changes desk settings by section; only the keys you pass change (comments stay), and they apply to the desk at once. Sections: ai { enabled, model, models, monthlyReplyCap }, chat { name, color, launcher, theme, greeting, replyTime, placeholder, suggestedQuestions, askForRating, allowedWebsites, offerHelpOnErrors, openers, … }, hours { enabled, timeZone, days: { monday: \"09:00-17:30\" }, awayMessage }, inbox { assignment: { mode: manual|round_robin, capacity } }. ai.models and hours.days are replaced whole. get_desk_settings shows every key.",
+    description: "Changes desk settings by section; only the keys you pass change (comments stay), and they apply to the desk at once. Sections: ai { enabled, model, models, monthlyReplyCap }, chat { name, color, mode (island|window), greetingCard, button, position, island { surface, glow }, theme, greeting, replyTime, placeholder, suggestedQuestions, askForRating, allowedWebsites, offerHelpOnErrors, openers, … }, hours { enabled, timeZone, days: { monday: \"09:00-17:30\" }, awayMessage }, inbox { assignment: { mode: manual|round_robin, capacity } }. ai.models and hours.days are replaced whole. get_desk_settings shows every key.",
     inputSchema: schema({
       ai: S.object("AI switches: { enabled, model, models, monthlyReplyCap }."),
       chat: S.object("The chat widget: look, texts, allowed websites, openers."),
@@ -1434,7 +1440,149 @@ const DESK: Tool[] = [
   }),
 ];
 
-export const MCP_TOOLS: Tool[] = [...GENERAL, ...INSTRUCTIONS, ...TASKS, ...ACTIONS, ...WIDGETS, ...TESTS, ...WEBSITE, ...DESK];
+// ---------- knowledge (D-87) ----------
+
+/** Runs a Knowledge page function; its expected failures (HttpError) come back as messages the AI can act on. */
+async function knowledgeCall<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof HttpError || error instanceof DocumentInputError) fail(error.message);
+    throw error;
+  }
+}
+
+const when = (ms: number | null) => (ms ? new Date(ms).toISOString().replace(/\.\d+Z$/, "Z") : "never");
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function sourceLine(s: SourceListRow, maxPages: number | null): string {
+  const type = sourceType(s.kind, maxPages);
+  const state = sourceState(s.kind, s.status);
+  const where = s.kind === "website" ? s.url : s.fileName ? `"${s.title}" (${s.fileName})` : `"${s.title}"`;
+  const counts = [
+    ...(s.kind === "website" ? [`${plural(s.pageCount, "page")}${maxPages && type === "website" ? ` (up to ${maxPages})` : ""}`] : []),
+    plural(s.chunkCount, "chunk"),
+    ...(s.chunksWithoutVectors > 0 ? [`${s.chunksWithoutVectors} without vectors (keyword search only until a re-index)`] : []),
+  ];
+  return `- ${s.id} · ${type} · ${where} · ${state} · ${counts.join(", ")} · last sync ${when(s.lastSyncedAt)}${s.error ? ` · ${state === "failed" ? "error" : "note"}: ${s.error}` : ""}`;
+}
+
+const KNOWLEDGE: Tool[] = [
+  tool({
+    name: "list_knowledge",
+    title: "List the knowledge",
+    description: "The knowledge the AI answers from (the desk's Knowledge page): each source's id, type (website, page, file, text), URL or name, state (queued, crawling, indexing, ready, failed), page and chunk counts, last sync and any error. Crawls and indexing run in the background: call this again to follow them.",
+    inputSchema: schema({}),
+    annotations: READ,
+    async run(ctx) {
+      await finishStuckSyncs(ctx.env, ctx.workspaceId);
+      const sources = await listSources(ctx.env, ctx.workspaceId);
+      if (!sources.length) return done("No knowledge yet. add_website crawls a site; add_document adds text or a file.");
+      const caps = await ctx.env.DB.prepare("SELECT id, json_extract(settings, '$.maxPages') AS maxPages FROM kb_sources WHERE workspace_id = ? AND kind = 'website'")
+        .bind(ctx.workspaceId)
+        .all<{ id: string; maxPages: number | null }>();
+      const maxPages = new Map(caps.results.map((r) => [r.id, r.maxPages ?? DEFAULT_MAX_PAGES]));
+      return done(`${plural(sources.length, "source")}, newest first:\n${sources.map((s) => sourceLine(s, maxPages.get(s.id) ?? null)).join("\n")}`);
+    },
+  }),
+  tool({
+    name: "add_website",
+    title: "Add a website",
+    description: "Crawls a website (its sitemap, else links from the start page, within the start URL's folder) or one page into the knowledge, like Add website on the Knowledge page. Answers at once with the source's id; the crawl runs in the background (list_knowledge shows when it's ready).",
+    inputSchema: schema({
+      url: S.string("The start URL, like https://docs.example.com (http or https)."),
+      maxPages: S.int(`The most pages to read, 1–2000 (default ${DEFAULT_MAX_PAGES}). 1: only this page.`, { minimum: 1, maximum: 2000 }),
+    }, ["url"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const { id, title, maxPages } = await knowledgeCall(() => addWebsite(ctx.env, ctx.workspaceId, args));
+      return done(`Added ${maxPages === 1 ? "the page" : "the website"} ${title} (${id}): ${maxPages === 1 ? "reading it" : `crawling up to ${plural(maxPages, "page")}`} in the background. list_knowledge shows when it's ready.`);
+    },
+  }),
+  tool({
+    name: "add_document",
+    title: "Add a document",
+    description: "Adds a document to the knowledge, like a file upload on the Knowledge page: `name` plus either `text` (plain text or Markdown) or `base64` + `filename` for a file (PDF, DOCX, Markdown or plain text, up to 10 MB). Indexed in the background; list_knowledge shows when it's ready.",
+    inputSchema: schema({
+      name: S.string("The document's title in the Knowledge list (the AI's citations show it)."),
+      text: S.string("The content as plain text or Markdown (headings help the AI quote the right part)."),
+      base64: S.string("A file's bytes, base64-encoded (instead of text)."),
+      filename: S.string("With base64: the file's name, like returns-policy.pdf; its extension says what it is (.pdf, .docx, .md, .txt)."),
+    }, ["name"]),
+    annotations: WRITE,
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const added = await knowledgeCall(async () => {
+        const input = documentInput(args);
+        return addFileSource(ctx.env, ctx.workspaceId, { name: input.fileName, title: input.title, bytes: input.bytes });
+      });
+      return done(`Added "${added.title}" (${added.id}, ${added.format}, ${added.size} bytes): indexing in the background. list_knowledge shows when it's ready; then search_knowledge finds it.`);
+    },
+  }),
+  tool({
+    name: "resync_source",
+    title: "Re-sync a source",
+    description: "Re-crawls a website or re-indexes a file or text now, like the sync / re-index button on the Knowledge page (websites also re-sync daily on their own). Runs in the background.",
+    inputSchema: schema({ id: S.string("The source's id (list_knowledge shows it).") }, ["id"]),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const id = need(args, "id");
+      const kind = await resyncSource(ctx.env, ctx.workspaceId, id);
+      if (!kind) fail(`There's no source ${id}. list_knowledge shows the ids.`);
+      return done(kind === "snippet" ? `Re-indexed ${id}.` : `${kind === "website" ? "Re-crawling" : "Re-indexing"} ${id} in the background. list_knowledge shows when it's ready.`);
+    },
+  }),
+  tool({
+    name: "remove_source",
+    title: "Remove a source",
+    description: "Deletes a knowledge source and everything indexed from it (its pages, chunks, vectors and an uploaded file). Can't be undone: knowledge isn't versioned. Ask the person first, then pass confirm: true.",
+    inputSchema: schema({ id: S.string("The source's id (list_knowledge shows it)."), confirm: S.bool("true: the person agreed; remove it for good.") }, ["id"]),
+    annotations: REMOVE,
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const id = need(args, "id");
+      const source = await ctx.env.DB.prepare("SELECT url, title FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(id, ctx.workspaceId).first<{ url: string | null; title: string }>();
+      if (!source) fail(`There's no source ${id}. list_knowledge shows the ids.`);
+      const what = `"${source!.title}"${source!.url ? ` (${source!.url})` : ""}`;
+      if (args.confirm !== true) {
+        fail(`Not removed. Removing ${what} deletes it and everything indexed from it, and can't be undone: knowledge has no history or restore. Ask the person, then call remove_source again with confirm: true.`);
+      }
+      if (!(await deleteSource(ctx.env, ctx.workspaceId, id))) fail(`There's no source ${id}.`);
+      return done(`Removed ${what} (${id}) and its index. The AI no longer answers from it.`);
+    },
+  }),
+  tool({
+    name: "search_knowledge",
+    title: "Search the knowledge",
+    description: "Runs a question through the same search the support AI uses (meaning + keywords, reranked) and shows what it would get: each result's source, page title and URL, the text and its score. Use it to check whether the AI can already answer something before writing a task for it.",
+    inputSchema: schema({ query: S.string("A customer's question, in their words."), limit: S.int("How many results, 1–10 (default 5; the AI gets 5).", { minimum: 1, maximum: 10 }) }, ["query"]),
+    annotations: READ,
+    async run(ctx, args) {
+      const query = need(args, "query");
+      if (query.length > 1000) fail("query is at most 1000 characters.");
+      const limit = typeof args.limit === "number" ? Math.min(Math.max(Math.round(args.limit), 1), 10) : 5;
+      const hits = await searchKnowledge(ctx.env, ctx.workspaceId, query, limit);
+      if (!hits.length) return done("Nothing found: the AI has no knowledge for this. Add it (add_website, add_document) or write a task.");
+      const ids = hits.map((h) => h.id);
+      const rows = await ctx.env.DB.prepare(
+        `SELECT c.id, s.id AS sourceId, s.title FROM kb_chunks c JOIN kb_sources s ON s.id = c.source_id WHERE c.id IN (${ids.map(() => "?").join(",")})`,
+      )
+        .bind(...ids)
+        .all<{ id: string; sourceId: string; title: string }>();
+      const sources = new Map(rows.results.map((r) => [r.id, r]));
+      const lines = hits.map((h, i) => {
+        const source = sources.get(h.id);
+        const text = h.text.length > 600 ? `${h.text.slice(0, 600)}…` : h.text;
+        return `${i + 1}. ${h.title}${h.heading ? ` › ${h.heading}` : ""}${h.url ? ` (${h.url})` : ""} · score ${h.score.toFixed(3)}${source ? ` · source ${source.sourceId} "${source.title}"` : ""}\n${text}`;
+      });
+      return done(lines.join("\n\n"));
+    },
+  }),
+];
+
+export const MCP_TOOLS: Tool[] = [...GENERAL, ...INSTRUCTIONS, ...TASKS, ...ACTIONS, ...WIDGETS, ...TESTS, ...WEBSITE, ...DESK, ...KNOWLEDGE];
 
 // ---------- resources ----------
 

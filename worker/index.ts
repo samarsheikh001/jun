@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { handleCrawlBatch, resyncAll, type CrawlJob } from "./ai/knowledge.ts";
+import { finishStuckSyncs, handleCrawlBatch, resyncAll, type CrawlJob } from "./ai/knowledge.ts";
 import { labelAllWorkspaces } from "./ai/topics.ts";
 import { ai, handleChatGPTCallback } from "./routes/ai.ts";
 import { auth } from "./routes/auth.ts";
@@ -104,9 +104,11 @@ export default {
   async queue(batch, env) {
     await handleCrawlBatch(batch as MessageBatch<CrawlJob>, env);
   },
-  // Every 15 minutes, topic labels for quiet chats (A-02); once a day also the knowledge re-sync.
+  // Every 15 minutes, topic labels for quiet chats (A-02) and stuck website syncs finished (D-88); once a
+  // day also the knowledge re-sync.
   async scheduled(controller, env, ctx) {
     if (isDailyRun(controller.scheduledTime)) ctx.waitUntil(resyncAll(env));
     ctx.waitUntil(labelAllWorkspaces(env));
+    ctx.waitUntil(finishStuckSyncs(env));
   },
 } satisfies ExportedHandler<Env>;
