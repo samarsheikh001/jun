@@ -42,7 +42,7 @@ function widgetsOf(cfg: AgentConfig): WidgetItem[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The actions (tools/*.yaml) that show this widget. */
+/** The actions (actions/*.yaml) that show this widget. */
 function usedBy(cfg: AgentConfig, name: string): string[] {
   return Object.keys(cfg.draft)
     .filter((p) => TOOL.test(p))

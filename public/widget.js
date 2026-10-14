@@ -18,9 +18,9 @@
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
  * like everything else and kept in memory with the errors above.
  * Intents (AI-20): JunDesk.open({ intent: "cancel", onExit: function () { location.href = "/billing/cancel"; } })
- * opens a chat for a purpose. A skill in your agent config defines the intent (skills/<name>/SKILL.md
+ * opens a chat for a purpose. A task in your agent config defines the intent (tasks/<name>.md
  * frontmatter: intent, opening, replies, exit): the chat starts with its opening line and quick
- * replies, and the AI follows that skill. If it has an exit ("Cancel anyway"), that button stays
+ * replies, and the AI follows that task. If it has an exit ("Cancel anyway"), that button stays
  * visible for the whole chat; one click closes the chat and calls onExit(), where your app goes on
  * (e.g. to its own cancel screen). An intent with an exit but no onExit function opens a plain chat
  * instead (with a console warning): the flow never starts without a way out. Names: [a-z0-9_-], max 40

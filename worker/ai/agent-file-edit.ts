@@ -37,7 +37,7 @@ function contextOf(files: ConfigFiles, path: string, target: { kind: string; nam
   const { config } = parseConfig(files);
   const context: AgentFileContext = {
     actions: actionBriefs(config).filter((a) => !(target.kind === "action" && a.name === target.name)),
-    procedures: config.skills.filter((s) => `skills/${s.name}/SKILL.md` !== path).map((s) => ({ name: s.name, description: s.description })),
+    procedures: config.skills.filter((s) => `tasks/${s.name}.md` !== path).map((s) => ({ name: s.name, description: s.description })),
     widgets: config.widgets.map((w) => w.name),
   };
   if (target.kind === "action") {
@@ -72,14 +72,14 @@ export const TASK_EDIT_MAX_TOKENS = 8000;
  */
 export function taskEditMessages(input: { path: string; files: ConfigFiles; message: string; history: WidgetEditTurn[]; error?: { file: string; problems: string[] } }): { system: string; user: string } {
   const target = agentFileKind(input.path);
-  if (target?.kind !== "procedure") throw new AgentFileEditError("A task's chat edits its procedure (skills/<name>/SKILL.md).");
+  if (target?.kind !== "procedure") throw new AgentFileEditError("A task's chat edits its procedure (tasks/<name>.md).");
   const text = input.files[input.path];
   if (text === undefined) throw new AgentFileEditError("That file isn't in the draft.");
   const links = agentLinks(input.files);
   const named = [...input.message.matchAll(/@([a-z][a-z0-9_]*)/g)].map((m) => m[1]!);
   const actions: Record<string, string> = {};
   for (const name of new Set([...(links.procedureUses[target.name] ?? []), ...named])) {
-    const path = `tools/${name}.yaml`;
+    const path = `actions/${name}.yaml`;
     if (input.files[path] !== undefined) actions[path] = input.files[path]!;
   }
   return {

@@ -2,7 +2,7 @@
 // goes to `POST …/agent/test-chat` with the chat so far, the Worker runs the same `runAgent` live chats
 // use and streams back what the customer would see. Nothing is stored: no conversation, no inbox, no
 // audit row. By default it's safe: look-ups (GET) run for real, changes (POST) are answered without
-// being made. Pure: the shapes both sides share, and turning a chat into a test case (evals/*.yaml).
+// being made. Pure: the shapes both sides share, and turning a chat into a test case (tests/*.yaml).
 
 import type { AiStep } from "./protocol.ts";
 import type { MessageWidget, WidgetActionConfig } from "./widgets.ts";
@@ -71,7 +71,7 @@ export type TestChatEvent =
   | { type: "error"; message: string };
 
 /**
- * A test case (one entry of an evals/*.yaml list) from a test chat: what the customer said, and what
+ * A test case (one entry of a tests/*.yaml list) from a test chat: what the customer said, and what
  * the last reply did (its outcome, the actions it called, the card it showed, the website action it
  * asked for), so a later change that breaks it shows up on the Tests page.
  */

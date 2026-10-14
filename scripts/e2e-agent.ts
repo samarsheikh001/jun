@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -22,9 +22,9 @@ let token = "";
 
 const files = (extra: Record<string, string> = {}): Record<string, string> => ({
   "AGENTS.md": "---\nmaxReplies: 6\nhandoffTopics: [legal questions]\n---\nBe brief and friendly.",
-  "skills/order-status/SKILL.md":
+  "tasks/order-status.md":
     "---\nname: order-status\ndescription: The customer asks where their order is or when it will arrive.\n---\n1. If you don't have the order number, ask for it.\n2. Look it up with lookup_order.\n3. Tell them the status and the delivery estimate (eta) from the result.",
-  "tools/lookup_order.yaml": `description: Look up an order by its number. Returns the order's status and delivery estimate (eta).
+  "actions/lookup_order.yaml": `description: Look up an order by its number. Returns the order's status and delivery estimate (eta).
 url: ${ECHO_URL}/orders/{orderNumber}
 query:
   status: shipped
@@ -36,7 +36,7 @@ input:
 pick: [args]
 mock: { args: { status: shipped, eta: Friday } }
 `,
-  "evals/basics.yaml": "- name: asks for a human\n  message: can I talk to a real person please\n  expect:\n    outcome: handoff\n- name: order status uses the tool\n  message: Where is my order A-1042?\n  expect:\n    tools: [lookup_order]\n",
+  "tests/basics.yaml": "- name: asks for a human\n  message: can I talk to a real person please\n  expect:\n    outcome: handoff\n- name: order status uses the tool\n  message: Where is my order A-1042?\n  expect:\n    tools: [lookup_order]\n",
   ...extra,
 });
 
@@ -74,10 +74,10 @@ let version = 0;
 
 await step("push rejects invalid config with file-level errors, then accepts a valid one", async () => {
   const anon = new Client();
-  const bad = await anon.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", headers: bearer(), body: { files: { "AGENTS.md": "---\nmaxReplys: 2\n---\nx", "tools/x.yaml": "url: nope" }, base: null } });
+  const bad = await anon.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", headers: bearer(), body: { files: { "AGENTS.md": "---\nmaxReplys: 2\n---\nx", "actions/x.yaml": "url: nope" }, base: null } });
   assert.equal(bad.status, 400);
   assert.equal(bad.json.error.code, "invalid_config");
-  assert.ok(bad.json.error.issues.some((i: { path: string }) => i.path === "tools/x.yaml"));
+  assert.ok(bad.json.error.issues.some((i: { path: string }) => i.path === "actions/x.yaml"));
 
   const good = await anon.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", headers: bearer(), body: { files: files(), base: null, message: "order status tool" } });
   assert.equal(good.status, 200, JSON.stringify(good.json));
@@ -87,7 +87,7 @@ await step("push rejects invalid config with file-level errors, then accepts a v
 });
 
 await step("AI-25: Try it calls the draft's action for real; the answer can become a card", async () => {
-  const draft = files({ "tools/who_am_i.yaml": `description: Echo the customer\nurl: ${ECHO_URL}/me/{user.id}\nheaders:\n  Authorization: Bearer {user.secrets.TOKEN}\n` });
+  const draft = files({ "actions/who_am_i.yaml": `description: Echo the customer\nurl: ${ECHO_URL}/me/{user.id}\nheaders:\n  Authorization: Bearer {user.secrets.TOKEN}\n` });
   const res = await agent.call(`/workspaces/${workspaceId}/agent/try-action`, { body: { files: draft, name: "lookup_order", input: { orderNumber: "A-1042" } } });
   assert.equal(res.status, 200, JSON.stringify(res.json));
   assert.equal(res.json.status, "ok", JSON.stringify(res.json));
@@ -178,7 +178,7 @@ await step("eval streams test-case results and replays recent conversations", as
 });
 
 await step("eval refuses an invalid config", async () => {
-  const res = await new Client().call(`/workspaces/${workspaceId}/agent/eval`, { headers: bearer(), body: { files: { "AGENTS.md": "x", "skills/a/SKILL.md": "no frontmatter" } } });
+  const res = await new Client().call(`/workspaces/${workspaceId}/agent/eval`, { headers: bearer(), body: { files: { "AGENTS.md": "x", "tasks/a.md": "no frontmatter" } } });
   assert.equal(res.status, 400);
   assert.equal(res.json.error.code, "invalid_config");
 });
@@ -205,26 +205,35 @@ await step("the jun CLI: login, init, push, pull and eval", async () => {
 
   // init refuses a non-empty folder; pull fills one with the live config.
   assert.equal((await jun(["init", join(dir, "fresh")], env)).code, 0);
-  assert.match(await readFile(join(dir, "fresh", "skills", "refund", "SKILL.md"), "utf8"), /name: refund/);
+  assert.match(await readFile(join(dir, "fresh", "tasks", "refund.md"), "utf8"), /description: The customer asks for a refund/);
 
   const pull = await jun(["pull", join(dir, "live")], env);
   assert.equal(pull.code, 0, pull.out);
   assert.equal((await readFile(join(dir, "live", ".jun-version"), "utf8")).trim(), String(version));
-  assert.match(await readFile(join(dir, "live", "tools", "lookup_order.yaml"), "utf8"), /orderNumber/);
+  assert.match(await readFile(join(dir, "live", "actions", "lookup_order.yaml"), "utf8"), /orderNumber/);
 
   await writeFile(join(dir, "live", "AGENTS.md"), "---\nmaxReplies: 5\n---\nBe brief and friendly. Pushed from the CLI.");
+  // D-83: a file in the layout before the rename is still accepted and stored in the new one.
+  await mkdir(join(dir, "live", "skills", "old-layout"), { recursive: true });
+  await writeFile(join(dir, "live", "skills", "old-layout", "SKILL.md"), "---\nname: old-layout\ndescription: An old folder.\n---\n1. Still works.\n");
   const push = await jun(["push", join(dir, "live"), "-m", "from the CLI"], env);
   assert.equal(push.code, 0, push.out);
   assert.match(push.out, /Pushed version \d+/);
+  assert.match(push.out, /old layout/);
   const live = (await agent.call(`/workspaces/${workspaceId}/agent`)).json;
   assert.match(live.files["AGENTS.md"], /Pushed from the CLI/);
+  assert.match(live.files["tasks/old-layout.md"], /Still works/);
+  assert.equal(live.files["skills/old-layout/SKILL.md"], undefined);
   assert.equal(live.versions[0].message, "from the CLI");
   assert.equal(live.versions[0].source, "cli");
+  assert.equal((await jun(["pull", join(dir, "live")], env)).code, 0);
+  assert.match(await readFile(join(dir, "live", "tasks", "old-layout.md"), "utf8"), /Still works/);
+  await assert.rejects(access(join(dir, "live", "skills")), "pull moves the old folder away");
 
-  await writeFile(join(dir, "live", "tools", "broken.yaml"), "url: ftp://nope");
+  await writeFile(join(dir, "live", "actions", "broken.yaml"), "url: ftp://nope");
   const rejected = await jun(["push", join(dir, "live")], env);
   assert.equal(rejected.code, 1);
-  assert.match(rejected.out, /tools\/broken\.yaml/);
+  assert.match(rejected.out, /actions\/broken\.yaml/);
 
   const evalRun = await jun(["eval", join(dir, "fresh"), "--sample", "0", "--mock-tools"], env);
   assert.match(evalRun.out, /asks for a human/, evalRun.out);
@@ -240,7 +249,7 @@ headers:
 input:
   tracking: { type: string, description: "The tracking number, like ZX-99" }
 `;
-  const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...live.files, "tools/track_parcel.yaml": tool }, base: live.version, message: "track_parcel" } });
+  const saved = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...live.files, "actions/track_parcel.yaml": tool }, base: live.version, message: "track_parcel" } });
   assert.equal(saved.status, 200, JSON.stringify(saved.json));
   const ask = async () => {
     const visitor = new Client();

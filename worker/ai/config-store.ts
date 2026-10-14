@@ -1,5 +1,5 @@
 import { newId } from "../lib/crypto.ts";
-import { defaultFiles, parseConfig, type AgentConfig, type ConfigFiles, type ConfigIssue } from "./config.ts";
+import { defaultFiles, parseConfig, withCurrentPaths, type AgentConfig, type ConfigFiles, type ConfigIssue } from "./config.ts";
 
 // Agent config versions in D1 (AI-18). Git is where teams keep history; the desk keeps
 // every saved version too, so dashboard edits and `jun push` never silently overwrite each other.
@@ -26,7 +26,8 @@ export async function loadConfigFiles(env: Env, workspaceId: string, version?: n
   )
     .bind(...(version === undefined ? [workspaceId] : [workspaceId, version]))
     .first<{ version: number; files: string }>();
-  if (row) return { version: row.version, files: JSON.parse(row.files) as ConfigFiles };
+  // D-83: versions saved before the rename read in the current layout.
+  if (row) return { version: row.version, files: withCurrentPaths(JSON.parse(row.files) as ConfigFiles) };
   const legacy = await env.DB.prepare("SELECT instructions FROM ai_settings WHERE workspace_id = ?").bind(workspaceId).first<{ instructions: string }>();
   return { version: null, files: defaultFiles(legacy?.instructions ?? "") };
 }
@@ -52,7 +53,8 @@ export async function saveConfig(
   workspaceId: string,
   input: { files: ConfigFiles; base: number | null; force?: boolean; message: string; source: ConfigVersion["source"]; userId: string },
 ): Promise<{ version: number; issues: [] } | { version: null; issues: ConfigIssue[] }> {
-  const { issues } = parseConfig(input.files);
+  const files = withCurrentPaths(input.files); // D-83: an old folder from `jun push`
+  const { issues } = parseConfig(files);
   if (issues.length) return { version: null, issues };
   const current = await env.DB.prepare(
     "SELECT MAX(version) AS v, MAX(CASE WHEN source = 'dashboard' THEN version END) AS d FROM agent_configs WHERE workspace_id = ?",
@@ -70,7 +72,7 @@ export async function saveConfig(
   await env.DB.prepare(
     "INSERT INTO agent_configs (id, workspace_id, version, files, message, source, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(newId("cfg"), workspaceId, version, JSON.stringify(input.files), input.message.slice(0, 500), input.source, input.userId, Date.now())
+    .bind(newId("cfg"), workspaceId, version, JSON.stringify(files), input.message.slice(0, 500), input.source, input.userId, Date.now())
     .run();
   return { version, issues: [] };
 }

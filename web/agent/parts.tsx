@@ -27,10 +27,10 @@ export function slug(raw: string, sep: "-" | "_"): string {
   return sep === "_" ? name.replace(/^[^a-z]+/, "") : name;
 }
 
-export const SKILL = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
-export const TOOL = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
+export const SKILL = /^tasks\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
+export const TOOL = /^actions\/([a-z][a-z0-9_]*)\.ya?ml$/;
 export const WIDGET = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
-export const EVAL = /^evals\/([a-zA-Z0-9_-]+)\.ya?ml$/;
+export const EVAL = /^tests\/([a-zA-Z0-9_-]+)\.ya?ml$/;
 
 /** The page a file is edited on (as a form, or in Code). Files of no known kind are under Instructions. */
 export function routeFor(path: string): string {

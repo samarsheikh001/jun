@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
-import { parseConfig, type ConfigFiles } from "../ai/config.ts";
+import { parseConfig, withCurrentPaths, type ConfigFiles } from "../ai/config.ts";
 import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "../ai/config-store.ts";
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
@@ -71,7 +71,7 @@ function readFiles(body: Record<string, unknown>): ConfigFiles {
     if (typeof content !== "string") throw new HttpError(400, "invalid_field", `${path}: file content must be text.`);
     out[path.replace(/\\/g, "/")] = content;
   }
-  return out;
+  return withCurrentPaths(out); // D-83: files in the layout before the rename (an old `jun push`)
 }
 
 function summary(files: ConfigFiles) {
@@ -262,7 +262,7 @@ agent.post("/workspaces/:id/agent/try-action", async (c) => {
   const { config, issues } = parseConfig(files);
   const spec = config.tools.find((t) => t.name === name);
   if (!spec) {
-    const problem = issues.find((i) => i.path === `tools/${name}.yaml`);
+    const problem = issues.find((i) => i.path === `actions/${name}.yaml`);
     throw new HttpError(400, "invalid_config", problem ? `Fix this first: ${problem.message}` : "There's no action with this name in the draft.");
   }
   const input = isObject(body.input) ? body.input : {};
@@ -375,7 +375,7 @@ agent.post("/workspaces/:id/agent/file-edit", async (c) => {
   await requireAdmin(c, workspaceId);
   const body = await readJson(c.req);
   const path = text(body, "path", { max: 200 });
-  if (!agentFileKind(path)) throw new HttpError(400, "invalid_field", "path must be an action (tools/<name>.yaml) or a procedure (skills/<name>/SKILL.md).");
+  if (!agentFileKind(path)) throw new HttpError(400, "invalid_field", "path must be an action (actions/<name>.yaml) or a task (tasks/<name>.md).");
   const files = readFiles(body);
   const message = text(body, "message", { max: MAX_EDIT_MESSAGE });
   const raw = body.error as { file?: unknown; problems?: unknown } | undefined;

@@ -5,7 +5,7 @@ import { checkData } from "../../shared/widget-schema.ts";
 import { scrubValues } from "../lib/scrub.ts";
 import { DEFAULT_TOOL_STATUS, fillTemplate, type ToolSpec, type ToolUser } from "./config.ts";
 
-// HTTP tools (AI-05): each tools/<name>.yaml becomes a tool the model can call.
+// HTTP tools (AI-05): each actions/<name>.yaml becomes a tool the model can call.
 // Every call is reported through onAction for the audit log (AI-11).
 
 export const TOOL_TIMEOUT_MS = 10_000;

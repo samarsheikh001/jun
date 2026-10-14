@@ -23,7 +23,7 @@ export function useMentionActions(cfg: AgentConfig): MentionAction[] {
         .filter((n): n is string => Boolean(n))
         .sort()
         .map((name) => {
-          const data = readYaml(cfg.draft[`tools/${name}.yaml`] ?? cfg.draft[`tools/${name}.yml`] ?? "") as { description?: unknown } | null;
+          const data = readYaml(cfg.draft[`actions/${name}.yaml`] ?? cfg.draft[`actions/${name}.yml`] ?? "") as { description?: unknown } | null;
           return { name, description: typeof data?.description === "string" ? data.description : "" };
         })
         // W-29: the AI's own tool for cards it fills in itself, when a card allows it.

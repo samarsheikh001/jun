@@ -1,5 +1,5 @@
 // AI-20 intent-launched conversations (D-37). The host app opens the widget for a purpose,
-// JunDesk.open({ intent: "cancel", onExit }), and a skill in the agent config defines that
+// JunDesk.open({ intent: "cancel", onExit }), and a task in the agent config defines that
 // intent in its frontmatter (opening line, quick replies, exit action) with the procedure as its
 // body. Pure; shared by the Worker (config, prompt, routes), the widget and tests.
 

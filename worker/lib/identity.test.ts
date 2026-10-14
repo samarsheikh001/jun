@@ -56,10 +56,10 @@ test("identity tokens are rejected when forged, expired, unsigned or incomplete"
 test("tools can use the verified customer, and refuse when nobody is signed in", () => {
   const { config, issues } = parseConfig({
     "AGENTS.md": "x",
-    "tools/my_account.yaml": "description: The signed-in customer's account.\nurl: https://api.acme.test/accounts/{user.id}\nquery:\n  plan: '{user.plan}'\n",
-    "tools/bad.yaml": "description: d\nurl: https://x.test/{user.}",
+    "actions/my_account.yaml": "description: The signed-in customer's account.\nurl: https://api.acme.test/accounts/{user.id}\nquery:\n  plan: '{user.plan}'\n",
+    "actions/bad.yaml": "description: d\nurl: https://x.test/{user.}",
   });
-  assert.deepEqual(issues.map((i) => i.path), ["tools/bad.yaml"]);
+  assert.deepEqual(issues.map((i) => i.path), ["actions/bad.yaml"]);
   const spec = config.tools[0]!;
   const user = { id: "u 1", email: "ada@acme.test", name: "Ada", attributes: { plan: "pro" } };
   assert.equal(buildRequest(spec, {}, () => undefined, user).url, "https://api.acme.test/accounts/u%201?plan=pro");

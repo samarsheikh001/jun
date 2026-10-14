@@ -28,6 +28,6 @@ test("D-62: an action or procedure answer: unchanged is done, else checked like 
   assert.deepEqual(readAgentFileEdit("a: 1\n", "<reply>Fine as it is.</reply>\n<file>\na: 1\n</file>"), { result: { reply: "Fine as it is.", file: "a: 1\n", changed: false } });
   assert.deepEqual(readAgentFileEdit("a: 1\n", "<reply>Two now.</reply>\n<file>\na: 2\n</file>"), { check: { reply: "Two now.", file: "a: 2\n" } });
   assert.ok("failed" in readAgentFileEdit("a: 1\n", "no file"));
-  const files = { "skills/refund/SKILL.md": "---\nname: refund\ndescription: Refunds.\n---\n1. Check the order with @lookup_order.\n" };
+  const files = { "tasks/refund.md": "---\nname: refund\ndescription: Refunds.\n---\n1. Check the order with @lookup_order.\n" };
   assert.match(withMissingNote(files, "refund", "Done."), /@lookup_order isn't an action yet/);
 });

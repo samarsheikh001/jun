@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { systemPrompt } from "./agent.ts";
-import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, NotSignedInError, parseConfig, splitFrontmatter } from "./config.ts";
+import { DEFAULT_MAX_REPLIES, defaultFiles, fillTemplate, intentSkill, NotSignedInError, parseConfig, splitFrontmatter, withCurrentPaths } from "./config.ts";
 import { TEMPLATE } from "../../packages/cli/src/template.ts";
 import { buildRequest, httpTools, runTool, shapeOutput, showWidgetTool, WIDGET_SHOWN_NOTE, type ToolAction } from "./tools.ts";
 import { starterWidget } from "../../shared/widgets.ts";
@@ -28,6 +28,56 @@ pick: [status, orderedOn, total]
 mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00", internalNote: "x" }
 `;
 
+test("D-83: withCurrentPaths moves the layout before the rename; the new path wins", () => {
+  const files = withCurrentPaths({
+    "AGENTS.md": "x",
+    "README.md": "r",
+    "website-actions.yaml": "w",
+    "skills/refund/SKILL.md": "old refund",
+    "skills/cancel/SKILL.md": "old cancel",
+    "tasks/cancel.md": "new cancel",
+    "tools/lookup_order.yaml": "old lookup",
+    "tools/legacy.yml": "old yml",
+    "actions/lookup_order.yaml": "new lookup",
+    "evals/basics.yaml": "old tests",
+    "evals/more.yml": "old yml tests",
+    "widgets/order.widget": "{}",
+    "skills/refund/notes.md": "not a config file",
+  });
+  assert.deepEqual(files, {
+    "AGENTS.md": "x",
+    "README.md": "r",
+    "website-actions.yaml": "w",
+    "tasks/cancel.md": "new cancel",
+    "actions/lookup_order.yaml": "new lookup",
+    "widgets/order.widget": "{}",
+    "skills/refund/notes.md": "not a config file",
+    "tasks/refund.md": "old refund",
+    "actions/legacy.yml": "old yml",
+    "tests/basics.yaml": "old tests",
+    "tests/more.yml": "old yml tests",
+  });
+  // An old config (name frontmatter, as SKILL.md required) parses cleanly once moved.
+  const old = withCurrentPaths({ "AGENTS.md": "x", "skills/refund/SKILL.md": REFUND_SKILL, "tools/lookup_order.yaml": ORDER_TOOL, "evals/a.yaml": "- name: a\n  message: hi\n" });
+  const { config, issues } = parseConfig(old);
+  assert.deepEqual(issues, []);
+  assert.deepEqual(config.skills.map((s) => s.name), ["refund"]);
+  assert.equal(config.tools[0]!.name, "lookup_order");
+  assert.equal(config.evals.length, 1);
+  // Already current: unchanged.
+  assert.deepEqual(withCurrentPaths({ "AGENTS.md": "x", "tasks/a.md": "t" }), { "AGENTS.md": "x", "tasks/a.md": "t" });
+});
+
+test("a task's name is its file name; name frontmatter is optional and must match", () => {
+  const task = (front: string) => parseConfig({ "AGENTS.md": "x", "tasks/order-status.md": `---\n${front}description: Where is my order.\n---\n1. Look it up.\n` });
+  const bare = task("");
+  assert.deepEqual(bare.issues, []);
+  assert.equal(bare.config.skills[0]!.name, "order-status");
+  assert.deepEqual(task("name: order-status\n").issues, []);
+  assert.match(task("name: orders\n").issues[0]!.message, /name must match the file name \("order-status"\)/);
+  assert.match(parseConfig({ "AGENTS.md": "x", "skills/a/SKILL.md": "---\ndescription: d\n---\nx" }).issues[0]!.message, /Unknown file.*tasks\/<name>\.md/);
+});
+
 test("default config turns the old guidance into AGENTS.md and parses cleanly", () => {
   const files = defaultFiles("Always mention our status page.");
   const { config, issues } = parseConfig(files);
@@ -41,9 +91,9 @@ test("default config turns the old guidance into AGENTS.md and parses cleanly", 
 test("a full config parses: skills, tools, evals", () => {
   const { config, issues } = parseConfig({
     "AGENTS.md": "---\nmaxReplies: 4\n---\nBe brief.",
-    "skills/refund/SKILL.md": REFUND_SKILL,
-    "tools/lookup_order.yaml": ORDER_TOOL,
-    "evals/refunds.yaml": `- name: old order\n  message: Refund for A-1042?\n  expect:\n    outcome: answer\n    tools: [lookup_order]\n    criteria: Offers account credit\n`,
+    "tasks/refund.md": REFUND_SKILL,
+    "actions/lookup_order.yaml": ORDER_TOOL,
+    "tests/refunds.yaml": `- name: old order\n  message: Refund for A-1042?\n  expect:\n    outcome: answer\n    tools: [lookup_order]\n    criteria: Offers account credit\n`,
   });
   assert.deepEqual(issues, []);
   assert.equal(config.maxReplies, 4);
@@ -53,7 +103,7 @@ test("a full config parses: skills, tools, evals", () => {
   assert.equal(config.tools[0]!.method, "GET");
   assert.equal(config.tools[0]!.input.orderNumber!.required, true);
   assert.deepEqual(config.evals[0], {
-    file: "evals/refunds.yaml",
+    file: "tests/refunds.yaml",
     name: "old order",
     messages: ["Refund for A-1042?"],
     expect: { outcome: "answer", tools: ["lookup_order"], criteria: "Offers account credit" },
@@ -63,21 +113,21 @@ test("a full config parses: skills, tools, evals", () => {
 test("config errors name the file and the problem", () => {
   const { config, issues } = parseConfig({
     "AGENTS.md": "---\nmaxReplys: 4\n---\nhi",
-    "skills/refund/SKILL.md": "---\nname: refunds\n---\nsteps",
-    "tools/lookup.yaml": "url: ftp://x\ninput:\n  id: string\nheaders:\n  X: '{token}'",
-    "tools/leaky.yaml": "description: d\nurl: https://x.test/?key={secrets.KEY}",
-    "tools/handoff.yaml": "description: d\nurl: https://x.test/",
+    "tasks/refund.md": "---\nname: refunds\n---\nsteps",
+    "actions/lookup.yaml": "url: ftp://x\ninput:\n  id: string\nheaders:\n  X: '{token}'",
+    "actions/leaky.yaml": "description: d\nurl: https://x.test/?key={secrets.KEY}",
+    "actions/handoff.yaml": "description: d\nurl: https://x.test/",
     "notes.txt": "hello",
   });
   const text = issues.map((i) => `${i.path}: ${i.message}`).join("\n");
-  assert.match(text, /tools\/handoff\.yaml: "handoff" is a built-in tool name/);
+  assert.match(text, /actions\/handoff\.yaml: "handoff" is a built-in action name/);
   assert.match(text, /AGENTS\.md: Unknown key "maxReplys"/);
-  assert.match(text, /skills\/refund\/SKILL\.md: name must match the folder name/);
-  assert.match(text, /skills\/refund\/SKILL\.md: description is required/);
-  assert.match(text, /tools\/lookup\.yaml: description is required/);
-  assert.match(text, /tools\/lookup\.yaml: url must start with https/);
-  assert.match(text, /tools\/lookup\.yaml: \{token\} isn't an input/);
-  assert.match(text, /tools\/leaky\.yaml: Put secrets in headers/);
+  assert.match(text, /tasks\/refund\.md: name must match the file name/);
+  assert.match(text, /tasks\/refund\.md: description is required/);
+  assert.match(text, /actions\/lookup\.yaml: description is required/);
+  assert.match(text, /actions\/lookup\.yaml: url must start with https/);
+  assert.match(text, /actions\/lookup\.yaml: \{token\} isn't an input/);
+  assert.match(text, /actions\/leaky\.yaml: Put secrets in headers/);
   assert.match(text, /notes\.txt: Unknown file/);
   assert.equal(config.maxReplies, DEFAULT_MAX_REPLIES);
   assert.deepEqual(config.tools, []);
@@ -90,7 +140,7 @@ test("frontmatter is optional and CRLF-safe", () => {
 });
 
 test("tool requests fill inputs (encoded in URLs) and secrets (headers only)", async () => {
-  const spec = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
+  const spec = parseConfig({ "AGENTS.md": "x", "actions/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
   const request = buildRequest(spec, { orderNumber: "A 1/2" }, (name) => (name === "ACME_KEY" ? "s3cret" : undefined));
   assert.equal(request.url, "https://api.acme.test/orders/A%201%2F2");
   assert.equal(request.headers.get("authorization"), "Bearer s3cret");
@@ -100,19 +150,19 @@ test("tool requests fill inputs (encoded in URLs) and secrets (headers only)", a
 
 test("AI-24: the customer's own key ({user.secrets.NAME}) goes in headers only, never replaced by the workspace's", async () => {
   const tool = "description: d\nurl: https://api.acme.test/me\nheaders:\n  Authorization: Bearer {user.secrets.API_TOKEN}\n";
-  const spec = parseConfig({ "AGENTS.md": "x", "tools/me.yaml": tool }).config.tools[0]!;
+  const spec = parseConfig({ "AGENTS.md": "x", "actions/me.yaml": tool }).config.tools[0]!;
   const ada = { id: "42", email: null, name: null, attributes: {} };
   const request = buildRequest(spec, {}, () => "workspace-key", { ...ada, secrets: { API_TOKEN: "usr_tok_abcdef" } });
   assert.equal(request.headers.get("authorization"), "Bearer usr_tok_abcdef");
   assert.throws(() => buildRequest(spec, {}, () => "workspace-key", ada), /sign in again/);
   assert.throws(() => buildRequest(spec, {}, () => "workspace-key", null), NotSignedInError);
-  const misplaced = parseConfig({ "AGENTS.md": "x", "tools/me.yaml": "description: d\nurl: https://api.acme.test/me?t={user.secrets.API_TOKEN}\n" });
+  const misplaced = parseConfig({ "AGENTS.md": "x", "actions/me.yaml": "description: d\nurl: https://api.acme.test/me?t={user.secrets.API_TOKEN}\n" });
   assert.match(misplaced.issues.map((i) => i.message).join(" "), /headers only/);
-  assert.match(parseConfig({ "AGENTS.md": "x", "tools/me.yaml": "description: d\nurl: https://a.test\nheaders:\n  X: '{user.secrets.token}'\n" }).issues[0]!.message, /UPPER_SNAKE_CASE/);
+  assert.match(parseConfig({ "AGENTS.md": "x", "actions/me.yaml": "description: d\nurl: https://a.test\nheaders:\n  X: '{user.secrets.token}'\n" }).issues[0]!.message, /UPPER_SNAKE_CASE/);
 });
 
 test("AI-24: a key an API echoes back is masked before the AI, the log or a card sees it", async () => {
-  const spec = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
+  const spec = parseConfig({ "AGENTS.md": "x", "actions/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
   const actions: ToolAction[] = [];
   const tools = httpTools([spec], {
     secrets: () => "sk_live_123456",
@@ -126,7 +176,7 @@ test("AI-24: a key an API echoes back is masked before the AI, the log or a card
 test("POST tools send typed JSON bodies", async () => {
   const { config } = parseConfig({
     "AGENTS.md": "x",
-    "tools/find_user.yaml": "description: d\nmethod: POST\nurl: https://x.test/graphql\nbody:\n  query: user(id)\n  variables: { id: '{id}', label: 'user {id}' }\ninput:\n  id: { type: integer }",
+    "actions/find_user.yaml": "description: d\nmethod: POST\nurl: https://x.test/graphql\nbody:\n  query: user(id)\n  variables: { id: '{id}', label: 'user {id}' }\ninput:\n  id: { type: integer }",
   });
   const request = buildRequest(config.tools[0]!, { id: 7 }, () => undefined);
   assert.deepEqual(await request.json(), { query: "user(id)", variables: { id: 7, label: "user 7" } });
@@ -136,7 +186,7 @@ test("tool output is picked and capped; calls are reported", async () => {
   assert.equal(shapeOutput('{"a":1,"b":2,"c":3}', ["a", "c"]), '{"a":1,"c":3}');
   assert.equal(shapeOutput("x".repeat(5000)).length, 4000 + "… (truncated)".length);
 
-  const spec = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
+  const spec = parseConfig({ "AGENTS.md": "x", "actions/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!;
   const actions: unknown[] = [];
   const tools = httpTools([spec], {
     secrets: () => "k",
@@ -155,12 +205,12 @@ test("tool output is picked and capped; calls are reported", async () => {
 });
 
 test("tool status: optional one-line label for visitors, validated", () => {
-  const ok = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": `${ORDER_TOOL}status: "  Checking your order  "\n` });
+  const ok = parseConfig({ "AGENTS.md": "x", "actions/lookup_order.yaml": `${ORDER_TOOL}status: "  Checking your order  "\n` });
   assert.deepEqual(ok.issues, []);
   assert.equal(ok.config.tools[0]!.status, "Checking your order");
-  assert.equal(parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!.status, undefined);
+  assert.equal(parseConfig({ "AGENTS.md": "x", "actions/lookup_order.yaml": ORDER_TOOL }).config.tools[0]!.status, undefined);
 
-  const bad = (status: string) => parseConfig({ "AGENTS.md": "x", "tools/t.yaml": `description: d\nurl: https://x.test\n${status}\n` });
+  const bad = (status: string) => parseConfig({ "AGENTS.md": "x", "actions/t.yaml": `description: d\nurl: https://x.test\n${status}\n` });
   for (const [yaml, message] of [
     ["status: ''", /status must be a short text/],
     ["status: 42", /status must be a short text/],
@@ -175,8 +225,8 @@ test("tool status: optional one-line label for visitors, validated", () => {
 });
 
 test("tool calls report visitor-safe steps: the label only, running then done, also on failure", async () => {
-  const spec = parseConfig({ "AGENTS.md": "x", "tools/lookup_order.yaml": `${ORDER_TOOL}status: Checking your order\n` }).config.tools[0]!;
-  const plain = parseConfig({ "AGENTS.md": "x", "tools/other.yaml": "description: d\nurl: https://x.test/secret-path" }).config.tools[0]!;
+  const spec = parseConfig({ "AGENTS.md": "x", "actions/lookup_order.yaml": `${ORDER_TOOL}status: Checking your order\n` }).config.tools[0]!;
+  const plain = parseConfig({ "AGENTS.md": "x", "actions/other.yaml": "description: d\nurl: https://x.test/secret-path" }).config.tools[0]!;
   const steps: unknown[] = [];
   const tools = httpTools([spec, plain], {
     secrets: () => "k",
@@ -198,8 +248,8 @@ test("tool calls report visitor-safe steps: the label only, running then done, a
 test("prompt includes procedures, tools, handoff topics and today's date", () => {
   const { config } = parseConfig({
     "AGENTS.md": "---\nhandoffTopics: [legal questions]\n---\nBe warm.",
-    "skills/refund/SKILL.md": REFUND_SKILL,
-    "tools/lookup_order.yaml": ORDER_TOOL,
+    "tasks/refund.md": REFUND_SKILL,
+    "actions/lookup_order.yaml": ORDER_TOOL,
   });
   const prompt = systemPrompt({
     workspaceName: "Acme",
@@ -232,7 +282,7 @@ Too expensive: offer 50% off for 3 months (offer: discount_50_3m). Nothing else.
 `;
 
 test("AI-20: a skill's frontmatter defines an intent (opening, replies, exit)", () => {
-  const { config, issues } = parseConfig({ "AGENTS.md": "Be kind.", "skills/cancellation/SKILL.md": CANCEL_SKILL, "skills/refund/SKILL.md": REFUND_SKILL });
+  const { config, issues } = parseConfig({ "AGENTS.md": "Be kind.", "tasks/cancellation.md": CANCEL_SKILL, "tasks/refund.md": REFUND_SKILL });
   assert.deepEqual(issues, []);
   assert.deepEqual(intentSkill(config, "cancel")?.intent, {
     name: "cancel",
@@ -243,7 +293,7 @@ test("AI-20: a skill's frontmatter defines an intent (opening, replies, exit)", 
   assert.equal(intentSkill(config, "refund"), null);
   assert.equal(config.skills.find((s) => s.name === "refund")!.intent, undefined);
   // A bare intent (no opening, replies or exit) is fine.
-  const bare = parseConfig({ "AGENTS.md": "x", "skills/upgrade/SKILL.md": "---\nname: upgrade\ndescription: Upgrading.\nintent: upgrade\n---\nHelp them pick a plan.\n" });
+  const bare = parseConfig({ "AGENTS.md": "x", "tasks/upgrade.md": "---\nname: upgrade\ndescription: Upgrading.\nintent: upgrade\n---\nHelp them pick a plan.\n" });
   assert.deepEqual(bare.issues, []);
   assert.deepEqual(bare.config.skills[0]!.intent, { name: "upgrade", opening: null, replies: [], exit: null });
 });
@@ -251,7 +301,7 @@ test("AI-20: a skill's frontmatter defines an intent (opening, replies, exit)", 
 test("AI-20: intent frontmatter is validated, one skill per intent", () => {
   const skill = (folder: string, extra: string) => `---\nname: ${folder}\ndescription: d\n${extra}\n---\nSteps.\n`;
   const check = (extra: string, pattern: RegExp) => {
-    const { config, issues } = parseConfig({ "AGENTS.md": "x", "skills/a/SKILL.md": skill("a", extra) });
+    const { config, issues } = parseConfig({ "AGENTS.md": "x", "tasks/a.md": skill("a", extra) });
     assert.equal(config.skills.length, 0, extra);
     assert.match(issues.map((i) => i.message).join("\n"), pattern, extra);
   };
@@ -261,22 +311,22 @@ test("AI-20: intent frontmatter is validated, one skill per intent", () => {
   check(`intent: cancel\nopening: Why?\nreplies: [${Array.from({ length: 9 }, (_, i) => `r${i}`).join(", ")}]`, /at most 8/);
   check("intent: cancel\nexit: [x]", /exit must be a short button label/);
   check(`intent: cancel\nexit: ${"x".repeat(41)}`, /exit must be a short button label/);
-  const dup = parseConfig({ "AGENTS.md": "x", "skills/a/SKILL.md": skill("a", "intent: cancel"), "skills/b/SKILL.md": skill("b", "intent: cancel") });
+  const dup = parseConfig({ "AGENTS.md": "x", "tasks/a.md": skill("a", "intent: cancel"), "tasks/b.md": skill("b", "intent: cancel") });
   assert.deepEqual(dup.config.skills.map((s) => s.name), ["a"]);
-  assert.match(dup.issues[0]!.message, /already defined by skills\/a\/SKILL\.md/);
-  assert.equal(dup.issues[0]!.path, "skills/b/SKILL.md");
+  assert.match(dup.issues[0]!.message, /already defined by tasks\/a\.md/);
+  assert.equal(dup.issues[0]!.path, "tasks/b.md");
 });
 
 test("AI-20: eval cases can run as an intent chat", () => {
-  const ok = parseConfig({ "AGENTS.md": "x", "evals/c.yaml": "- name: c\n  intent: cancel\n  message: Too expensive\n" });
+  const ok = parseConfig({ "AGENTS.md": "x", "tests/c.yaml": "- name: c\n  intent: cancel\n  message: Too expensive\n" });
   assert.deepEqual(ok.issues, []);
   assert.equal(ok.config.evals[0]!.intent, "cancel");
-  const bad = parseConfig({ "AGENTS.md": "x", "evals/c.yaml": "- name: c\n  intent: Cancel!\n  message: hi\n" });
+  const bad = parseConfig({ "AGENTS.md": "x", "tests/c.yaml": "- name: c\n  intent: Cancel!\n  message: hi\n" });
   assert.match(bad.issues[0]!.message, /intent must be an intent name/);
 });
 
 test("AI-20: the prompt follows the intent's skill once, with the exit and offer rules", () => {
-  const { config } = parseConfig({ "AGENTS.md": "x", "skills/cancellation/SKILL.md": CANCEL_SKILL, "skills/refund/SKILL.md": REFUND_SKILL });
+  const { config } = parseConfig({ "AGENTS.md": "x", "tasks/cancellation.md": CANCEL_SKILL, "tasks/refund.md": REFUND_SKILL });
   const prompt = systemPrompt({ workspaceName: "Acme", persona: "", skills: config.skills, hits: [], intent: { name: "cancel", skill: intentSkill(config, "cancel") } });
   assert.match(prompt, /opened it from Acme's app with the intent "cancel"/);
   assert.match(prompt, /fixed question "Sorry to see you go\. What's the main reason\?" and quick replies \(Too expensive, Other\)/);
@@ -326,13 +376,13 @@ test("Workers AI stream dedupe drops the legacy copies of each chunk", async () 
 test("W-09 widgets: widgets/<name>.widget files, `widget:` on a tool, checked against each other", () => {
   const widget = starterWidget("Subscription");
   const tool = "description: The customer's plan\nurl: https://api.example.com/plan\nwidget: subscription\n";
-  const ok = parseConfig({ "AGENTS.md": "x", "widgets/subscription.widget": widget, "tools/plan.yaml": tool });
+  const ok = parseConfig({ "AGENTS.md": "x", "widgets/subscription.widget": widget, "actions/plan.yaml": tool });
   assert.deepEqual(ok.issues, []);
   assert.equal(ok.config.widgets[0]!.name, "subscription");
   assert.equal(ok.config.tools[0]!.widget, "subscription");
 
-  const missing = parseConfig({ "AGENTS.md": "x", "tools/plan.yaml": tool });
-  assert.match(missing.issues.map((i) => `${i.path}: ${i.message}`).join("\n"), /tools\/plan\.yaml: widget: there's no widgets\/subscription\.widget/);
+  const missing = parseConfig({ "AGENTS.md": "x", "actions/plan.yaml": tool });
+  assert.match(missing.issues.map((i) => `${i.path}: ${i.message}`).join("\n"), /actions\/plan\.yaml: widget: there's no widgets\/subscription\.widget/);
   // A widget whose sample doesn't render is an error on its file.
   const broken = parseConfig({ "AGENTS.md": "x", "widgets/x.widget": JSON.stringify({ version: "1.0", template: '{"type":"Text","value":"x"}', sample: {} }) });
   assert.match(broken.issues[0]!.message, /root must be/);
@@ -343,7 +393,7 @@ test("W-09: a tool with a widget shows its result as a card (step, onWidget) and
   const { config } = parseConfig({
     "AGENTS.md": "x",
     "widgets/subscription.widget": starterWidget("Subscription"),
-    "tools/plan.yaml": "description: d\nurl: https://api.example.com/plan\npick: [plan]\nwidget: subscription\nstatus: Checking your plan\n",
+    "actions/plan.yaml": "description: d\nurl: https://api.example.com/plan\npick: [plan]\nwidget: subscription\nstatus: Checking your plan\n",
   });
   const steps: unknown[] = [];
   const shown: unknown[] = [];
@@ -382,8 +432,8 @@ test("W-17: a widget's `tool:<name>` button must name a tool; runTool runs one f
     sample: { sku: "R1" },
   });
   const tool = "description: Add to the cart\nmethod: POST\nurl: https://shop.test/cart\ninput:\n  sku: { type: string }\n  size: { type: string, required: false }\n";
-  assert.match(parseConfig({ "AGENTS.md": "x", "widgets/shop.widget": widget }).issues.map((i) => i.message).join("\n"), /tool:add_to_cart: there's no tools\/add_to_cart\.yaml/);
-  const { config, issues } = parseConfig({ "AGENTS.md": "x", "widgets/shop.widget": widget, "tools/add_to_cart.yaml": tool });
+  assert.match(parseConfig({ "AGENTS.md": "x", "widgets/shop.widget": widget }).issues.map((i) => i.message).join("\n"), /tool:add_to_cart: there's no actions\/add_to_cart\.yaml/);
+  const { config, issues } = parseConfig({ "AGENTS.md": "x", "widgets/shop.widget": widget, "actions/add_to_cart.yaml": tool });
   assert.deepEqual(issues, []);
 
   let sent: unknown;
@@ -406,7 +456,7 @@ test("W-17: a widget's `tool:<name>` button must name a tool; runTool runs one f
 test("W-27: an action's card lines (widget_done, widget_failed) are short Jinja lines", () => {
   const ok = parseConfig({
     "AGENTS.md": "Hi",
-    "tools/book_demo.yaml": `description: Book a demo
+    "actions/book_demo.yaml": `description: Book a demo
 method: POST
 url: https://api.acme.test/demos
 widget_done: "Thanks {{ name }}, we'll call you today."
@@ -416,7 +466,7 @@ widget_failed: That didn't go through. Please try again.
   assert.deepEqual(ok.issues, []);
   assert.equal(ok.config.tools[0]!.widgetDone, "Thanks {{ name }}, we'll call you today.");
   assert.equal(ok.config.tools[0]!.widgetFailed, "That didn't go through. Please try again.");
-  const bad = parseConfig({ "AGENTS.md": "Hi", "tools/x.yaml": `description: X\nurl: https://a.test\nwidget_done: "{% if %}"\nwidget_failed: "${"a".repeat(201)}"\n` });
+  const bad = parseConfig({ "AGENTS.md": "Hi", "actions/x.yaml": `description: X\nurl: https://a.test\nwidget_done: "{% if %}"\nwidget_failed: "${"a".repeat(201)}"\n` });
   assert.deepEqual(bad.issues.map((i) => i.message.split(":")[0]), ["widget_done", "widget_failed must be one short line for the customer (at most 200 characters), like \"Thanks {{ name }}, we'll be in touch.\""]);
 });
 
@@ -425,7 +475,7 @@ test("W-28: an action that only shows a widget needs no address; any other needs
   const { config, issues } = parseConfig({
     "AGENTS.md": "Hi",
     "widgets/player.widget": card,
-    "tools/show_player.yaml": "description: Show the player card.\nwidget: player\ninput:\n  name: { type: string, required: false }\n",
+    "actions/show_player.yaml": "description: Show the player card.\nwidget: player\ninput:\n  name: { type: string, required: false }\n",
   });
   assert.deepEqual(issues, []);
   // Nothing is called: the widget's example data, with what the AI filled in on top.
@@ -435,16 +485,16 @@ test("W-28: an action that only shows a widget needs no address; any other needs
   assert.match(JSON.stringify(shown.widget?.root), /Ana #22/);
 
   const messages = (files: Record<string, string>) => parseConfig({ "AGENTS.md": "Hi", ...files }).issues.map((i) => i.message);
-  assert.match(messages({ "tools/x.yaml": "description: X\n" }).join(), /url is required/);
-  assert.match(messages({ "tools/x.yaml": "description: X\nurl: https://\n" }).join(), /isn't a whole address yet/);
-  assert.deepEqual(messages({ "tools/x.yaml": "description: X\nurl: https://api.acme.test/orders/{id}\ninput:\n  id: string\n" }), []);
+  assert.match(messages({ "actions/x.yaml": "description: X\n" }).join(), /url is required/);
+  assert.match(messages({ "actions/x.yaml": "description: X\nurl: https://\n" }).join(), /isn't a whole address yet/);
+  assert.deepEqual(messages({ "actions/x.yaml": "description: X\nurl: https://api.acme.test/orders/{id}\ninput:\n  id: string\n" }), []);
 });
 
 test("W-29: show_widget fills a card the AI may fill itself; bad data comes back as an error to fix", async () => {
   const card = (aiFill: boolean, sample = true) =>
     JSON.stringify({ version: "1.0", name: "Player", template: '{"type":"Card","children":[{"type":"Title","value":{{ (name ~ " #" ~ number) | tojson }}}{% for s in stats %},{"type":"Text","value":{{ (s.label ~ " " ~ s.value) | tojson }}}{% endfor %}]}', ...(sample ? { sample: { name: "Froge", number: "22", stats: [{ value: "18", label: "PTS" }] } } : {}), ...(aiFill ? { aiFill: true } : {}) });
   assert.match(parseConfig({ "AGENTS.md": "Hi", "widgets/player.widget": card(true, false) }).issues.map((i) => i.message).join(), /aiFill needs example data/);
-  assert.match(parseConfig({ "AGENTS.md": "Hi", "tools/show_widget.yaml": "description: x\nurl: https://a.test\n" }).issues.map((i) => i.message).join(), /show_widget/);
+  assert.match(parseConfig({ "AGENTS.md": "Hi", "actions/show_widget.yaml": "description: x\nurl: https://a.test\n" }).issues.map((i) => i.message).join(), /show_widget/);
   const { config, issues } = parseConfig({ "AGENTS.md": "Hi", "widgets/player.widget": card(true), "widgets/plain.widget": card(false) });
   assert.deepEqual(issues, []);
   assert.deepEqual(config.widgets.map((w) => [w.name, Boolean(w.aiFill)]), [["plain", false], ["player", true]]);

@@ -249,7 +249,7 @@ export function rankActions(actions: PageAction[], question: string): PageAction
 }
 
 /**
- * Page patterns, as the loader and `tools/*.yaml` use them: an exact path, or a prefix ending in
+ * Page patterns, as the loader and `actions/*.yaml` use them: an exact path, or a prefix ending in
  * `*` ("/plans/*" matches "/plans/pro" and "/plans/"). No patterns means everywhere. Keep in step
  * with `matches` in public/widget-actions.js.
  */

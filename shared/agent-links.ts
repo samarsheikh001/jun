@@ -1,13 +1,13 @@
 // W-25: how the agent's parts point at each other, worked out from the files (the saved config or the
 // admin's draft), so each page can show what it's connected to:
-// - an action shows its result as a widget (`widget:` in tools/<name>.yaml; checked on save),
+// - an action shows its result as a widget (`widget:` in actions/<name>.yaml; checked on save),
 // - a widget's buttons run actions (`tool:<name>` actions in its template; checked on save),
 // - a procedure's steps mention actions by name (free text the AI reads; not checked on save, so
 //   names that look like an action but aren't one are reported here as gentle warnings).
 // Pure: no rendering, no YAML parsing beyond the one `widget:` line.
 
-const ACTION_FILE = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
-const PROCEDURE_FILE = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
+const ACTION_FILE = /^actions\/([a-z][a-z0-9_]*)\.ya?ml$/;
+const PROCEDURE_FILE = /^tasks\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
 const WIDGET_FILE = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
 
 export interface AgentLinks {

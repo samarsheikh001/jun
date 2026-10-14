@@ -124,7 +124,7 @@ export function NewActionDialog({ open, onClose, cfg, keys, names, initial }: {
     setBusy(true);
     setError(null);
     try {
-      const path = `tools/${fileName}.yaml`;
+      const path = `actions/${fileName}.yaml`;
       if (req) await addCurlAction(cfg, keys, path, req);
       else cfg.setFile(path, `description: ""\nstatus: Working on it\nmethod: GET\nurl: https://\n`);
       askOnOpen(path, firstAsk(what.trim(), req ? "" : how.trim(), req));

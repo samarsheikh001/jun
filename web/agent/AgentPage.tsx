@@ -16,10 +16,10 @@ import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
 
 // The Agent page (AI-18). Plain views, one URL each, for the people who run support:
 //   /agent              Instructions: how the AI talks, when it hands over (AGENTS.md)
-//   /agent/tasks        tasks: when, steps and the actions they use (skills/*/SKILL.md; AI-27)
-//   /agent/actions      requests to your systems (tools/*.yaml)
+//   /agent/tasks        tasks: when, steps and the actions they use (tasks/*.md; AI-27)
+//   /agent/actions      requests to your systems (actions/*.yaml)
 //   /agent/widgets      how an action's result is shown (widgets/*.widget)
-//   /agent/tests        test cases and "Run tests" (evals/*.yaml)
+//   /agent/tests        test cases and "Run tests" (tests/*.yaml)
 // Each page has a Form / Code switch (remembered, not in the URL): Code shows the same item's file as
 // text, exactly as `jun pull` / `jun push` see it. Every view edits one shared draft; one save makes
 // it a new version.
@@ -52,7 +52,11 @@ export function movedFromAgentCode(path: string): string | null {
   if (/^\/agent\/settings\/?$/.test(path)) return "/settings/ai";
   if (!/^\/agent\/code(\/|$)/.test(path)) return null;
   setCodeView(true, true);
-  const file = decodeURIComponent(path.slice("/agent/code/".length));
+  // D-83: these links can name a file by its path from before the rename.
+  const file = decodeURIComponent(path.slice("/agent/code/".length))
+    .replace(/^skills\/([^/]+)\/SKILL\.md$/, "tasks/$1.md")
+    .replace(/^tools\//, "actions/")
+    .replace(/^evals\//, "tests/");
   return file ? routeFor(file) : "/agent";
 }
 

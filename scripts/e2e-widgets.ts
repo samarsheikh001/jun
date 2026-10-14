@@ -31,7 +31,7 @@ const widgetFile = JSON.stringify({ version: "1.0", name: "Plan", template, samp
 
 const files = {
   "AGENTS.md": "# How to talk to customers\n\n- Be brief.\n- When the customer asks about their plan or subscription, call plan_status.\n- When they press a button on a card, confirm in one sentence what happens next.\n",
-  "tools/plan_status.yaml": [
+  "actions/plan_status.yaml": [
     "description: The customer's current plan, its status and renewal date.",
     "status: Checking your plan",
     "url: https://httpbin.org/anything",
@@ -149,7 +149,7 @@ const cart = '{"type":"Card","size":"sm","children":[{"type":"Row","children":[{
 const shopFiles = {
   ...files,
   "AGENTS.md": `${files["AGENTS.md"]}- When the customer asks to see dresses or products, call find_dresses.\n`,
-  "tools/find_dresses.yaml": [
+  "actions/find_dresses.yaml": [
     "description: The dresses in the shop, with prices.",
     "status: Finding dresses",
     "method: POST",
@@ -163,7 +163,7 @@ const shopFiles = {
     "widget: dresses",
     "",
   ].join("\n"),
-  "tools/add_to_cart.yaml": ["description: Add a product to the customer's cart.", "status: Adding to your cart", "method: POST", "url: https://httpbin.org/anything", "input:", "  sku: { type: string }", "pick: [json]", "widget: cart", ""].join("\n"),
+  "actions/add_to_cart.yaml": ["description: Add a product to the customer's cart.", "status: Adding to your cart", "method: POST", "url: https://httpbin.org/anything", "input:", "  sku: { type: string }", "pick: [json]", "widget: cart", ""].join("\n"),
   "widgets/dresses.widget": JSON.stringify({ version: "1.0", name: "Dresses", template: dresses, sample: { json: { products: [{ sku: "R1", name: "Red", price: "$1" }] } } }),
   "widgets/cart.widget": JSON.stringify({ version: "1.0", name: "Cart", template: cart, sample: { json: { sku: "R1" } } }),
 };
@@ -172,9 +172,9 @@ let shopSocket: TestSocket;
 let list: any;
 
 await step("W-17: a product list; each row's Add button names a tool, which must exist", async () => {
-  const bad = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...shopFiles, "tools/add_to_cart.yaml": undefined }, base: null, force: true, message: "x" } });
+  const bad = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: { ...shopFiles, "actions/add_to_cart.yaml": undefined }, base: null, force: true, message: "x" } });
   assert.equal(bad.status, 400);
-  assert.match(JSON.stringify(bad.json), /tool:add_to_cart: there's no tools\/add_to_cart\.yaml/);
+  assert.match(JSON.stringify(bad.json), /tool:add_to_cart: there's no actions\/add_to_cart\.yaml/);
   const res = await agent.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files: shopFiles, base: null, force: true, message: "shop" } });
   assert.equal(res.status, 200, JSON.stringify(res.json));
 
@@ -239,7 +239,7 @@ const quote = [
 const quoteFiles = {
   ...files,
   "AGENTS.md": `${files["AGENTS.md"]}- When the customer asks what seats cost, call seat_quote.\n`,
-  "tools/seat_quote.yaml": ["description: A price quote for a number of seats.", "status: Getting a quote", "method: POST", "url: https://httpbin.org/anything", "input:", "  seats: { type: integer }", "pick: [json]", "widget: seat_quote", ""].join("\n"),
+  "actions/seat_quote.yaml": ["description: A price quote for a number of seats.", "status: Getting a quote", "method: POST", "url: https://httpbin.org/anything", "input:", "  seats: { type: integer }", "pick: [json]", "widget: seat_quote", ""].join("\n"),
   "widgets/seat_quote.widget": JSON.stringify({ version: "1.0", name: "Seat quote", template: quote, sample: { json: { seats: 5 } } }),
 };
 
@@ -297,8 +297,8 @@ const demo = [
 const demoFiles = {
   ...files,
   "AGENTS.md": `${files["AGENTS.md"]}- When the customer wants to talk to sales or book a demo, call sales_form.\n`,
-  "tools/sales_form.yaml": ["description: Shows the customer a form to book a demo with sales.", "status: Opening the form", "url: https://httpbin.org/anything", "widget: demo", ""].join("\n"),
-  "tools/book_demo.yaml": [
+  "actions/sales_form.yaml": ["description: Shows the customer a form to book a demo with sales.", "status: Opening the form", "url: https://httpbin.org/anything", "widget: demo", ""].join("\n"),
+  "actions/book_demo.yaml": [
     "description: Books a demo with sales.",
     "method: POST",
     "url: https://httpbin.org/anything",
@@ -309,7 +309,7 @@ const demoFiles = {
     'widget_done: "Thanks {{ json.name }}, we\'ll email {{ email }} today."',
     "",
   ].join("\n"),
-  "tools/old_form.yaml": ["description: The old sales form.", "method: POST", "url: https://httpbin.org/status/500", "input:", "  name: { type: string }", 'widget_failed: "Sorry {{ name }}, that didn\'t go through. Try Book a demo."', ""].join("\n"),
+  "actions/old_form.yaml": ["description: The old sales form.", "method: POST", "url: https://httpbin.org/status/500", "input:", "  name: { type: string }", 'widget_failed: "Sorry {{ name }}, that didn\'t go through. Try Book a demo."', ""].join("\n"),
   "widgets/demo.widget": JSON.stringify({ version: "1.0", name: "Talk to sales", template: demo, sample: {} }),
 };
 

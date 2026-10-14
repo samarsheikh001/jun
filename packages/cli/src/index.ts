@@ -21,10 +21,10 @@ Support agent as code (talks to your deployed desk):
   jun init [dir]                         Start a config folder (default: support-agent)
   jun pull [dir]                         Download the desk's live agent config
   jun push [dir] [-m "message"]          Validate and make the folder's config live (--force overwrites dashboard edits)
-  jun eval [dir]                         Run evals/*.yaml and replay recent conversations against the folder's config
+  jun eval [dir]                         Run tests/*.yaml and replay recent conversations against the folder's config
       --sample <n>       conversations to replay (default 20, 0 to skip)
-      --mock-tools       use each tool's mock: response instead of calling it
-      --no-cases         skip evals/*.yaml          --json   one JSON event per line
+      --mock-tools       use each action's mock: response instead of calling it
+      --no-cases         skip tests/*.yaml          --json   one JSON event per line
       --fail-on-change   exit 1 if any replayed answer changes (for CI)
   In CI, set JUN_DESK_URL and JUN_DESK_TOKEN instead of running jun login.
 

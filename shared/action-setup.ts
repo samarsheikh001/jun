@@ -1,4 +1,4 @@
-// AI-24: whether an action (tools/<name>.yaml) can work yet. One that can't is never offered to
+// AI-24: whether an action (actions/<name>.yaml) can work yet. One that can't is never offered to
 // the AI (it could only fail, and the AI guessed wrong with placeholders: it once called the
 // starter's lookup with a widget's name), and the Agent page says what's missing. Pure; used by the
 // Worker (runAgent) and the dashboard.

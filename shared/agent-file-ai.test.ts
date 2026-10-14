@@ -3,10 +3,10 @@ import { test } from "node:test";
 import { agentFileEditInput, agentFileEditPrompt, agentFileKind, parseAgentFileEdit } from "./agent-file-ai.ts";
 
 test("agent file AI: only actions and procedures, with their names", () => {
-  assert.deepEqual(agentFileKind("tools/add_seats.yaml"), { kind: "action", name: "add_seats" });
-  assert.deepEqual(agentFileKind("tools/lookup.yml"), { kind: "action", name: "lookup" });
-  assert.deepEqual(agentFileKind("skills/change-plan/SKILL.md"), { kind: "procedure", name: "change-plan" });
-  for (const path of ["AGENTS.md", "widgets/order.widget", "evals/basic.yaml", "tools/../x.yaml", "skills/x/README.md"]) {
+  assert.deepEqual(agentFileKind("actions/add_seats.yaml"), { kind: "action", name: "add_seats" });
+  assert.deepEqual(agentFileKind("actions/lookup.yml"), { kind: "action", name: "lookup" });
+  assert.deepEqual(agentFileKind("tasks/change-plan.md"), { kind: "procedure", name: "change-plan" });
+  for (const path of ["AGENTS.md", "widgets/order.widget", "tests/basic.yaml", "actions/../x.yaml", "tasks/x/README.md"]) {
     assert.equal(agentFileKind(path), null, path);
   }
 });
@@ -33,7 +33,7 @@ test("agent file AI: the request carries the file, the desk's other parts, recen
   const input = agentFileEditInput({
     kind: "action",
     name: "add_seats",
-    path: "tools/add_seats.yaml",
+    path: "actions/add_seats.yaml",
     text: "description: Add seats\n",
     context: {
       actions: [

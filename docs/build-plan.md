@@ -102,7 +102,7 @@
 
 ## M5 — P3: support agent as code ⭐
 
-*Demo: edit `support-agent/skills/refund/SKILL.md` in git, run `jun eval`, and see which past answers change before `jun push`.*
+*Demo: edit `support-agent/tasks/refund.md` in git, run `jun eval`, and see which past answers change before `jun push`.*
 
 **Status (2026-10-05): deployed.** Engine and format: D-22.
 

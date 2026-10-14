@@ -1,5 +1,5 @@
-// AI-27: a task's AI chat. A task is a procedure (skills/<name>/SKILL.md: when it applies, the steps)
-// with the actions its steps use (tools/<name>.yaml). One request may change the procedure, change
+// AI-27: a task's AI chat. A task is a procedure (tasks/<name>.md: when it applies, the steps)
+// with the actions its steps use (actions/<name>.yaml). One request may change the procedure, change
 // those actions and create new ones, so the admin sets up the whole job in one place. The answer
 // carries one <file path="…"> per file it writes; the browser checks them all together like a save
 // (shared/edit-finish.ts) before they reach the draft. Pure.
@@ -9,7 +9,7 @@ import { describeActions } from "./action-brief.ts";
 import type { WidgetEditTurn } from "./widget-ai.ts";
 
 /** An action file a task's answer may write. */
-export const TASK_ACTION_FILE = /^tools\/([a-z][a-z0-9_]*)\.yaml$/;
+export const TASK_ACTION_FILE = /^actions\/([a-z][a-z0-9_]*)\.yaml$/;
 /** AI-30: a new card's name, as in widgets/<name>.widget (lowercase, a letter first). */
 const CARD_NAME = /^[a-z][a-z0-9_-]{0,59}$/;
 
@@ -26,7 +26,7 @@ Rules:
 - Before a step that uses an action, make sure the AI has the action's required inputs: add a step to ask the customer for the ones they may not have given yet, in plain words. Never ask for what an action already knows about the signed-in customer.
 - Before an action that changes something (POST), the AI must tell the customer what will happen and wait for a clear yes. A lookup (GET) needs no yes.
 - An action that shows a widget already shows its result to the customer: don't repeat that result in the steps.
-- If a step needs an action the desk doesn't have, create it: write its file as tools/<snake_case_name>.yaml and name it in the step as @snake_case_name. Never invent API addresses, keys or response fields the business didn't give: use a clear placeholder address (https://api.example.com/…) and say in the reply that it needs the real one.
+- If a step needs an action the desk doesn't have, create it: write its file as actions/<snake_case_name>.yaml and name it in the step as @snake_case_name. Never invent API addresses, keys or response fields the business didn't give: use a clear placeholder address (https://api.example.com/…) and say in the reply that it needs the real one.
 ${ACTION_RULES}
 - Other tasks may use the same actions: change an existing action only when the request needs it.
 - Widgets (AI-30): when the customer should see something as a widget, a card in the chat (an order's details, a list, a choice to make with buttons), the action that shows it names the widget with widget: <snake_case_name>: one of the desk's widgets if one fits, else a new one. For a new widget, don't write its file: add a <card name="snake_case_name"> block describing it in plain words: what it shows (which fields of the action's result, with an example of that data) and each button and what it runs: one of the desk's actions as tool:<name> (its fields named after that action's inputs), an action on the customer's website as page:<name>, a link as open_url. The desk builds the widget from your description. A widget that only shows something, with nothing to call, is an action with no url and widget: <name>.
@@ -34,10 +34,10 @@ ${ACTION_RULES}
 
 Answer in exactly this shape, nothing before or after:
 <reply>One or two short sentences for the admin: what you changed.</reply>
-<file path="skills/NAME/SKILL.md">
+<file path="tasks/NAME.md">
 the whole new file
 </file>
-<file path="tools/NAME.yaml">
+<file path="actions/NAME.yaml">
 the whole new file
 </file>
 <card name="NAME">what the new card shows and what its buttons do (only for a new card)</card>

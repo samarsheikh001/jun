@@ -27,7 +27,7 @@ import type { AgentConfig } from "./useAgentConfig.ts";
 // and the unsaved draft to …/agent/test-chat, which runs the live chats' runAgent and streams back what
 // the customer would see (shared/test-chat.ts). Nothing is stored. Safe by default: look-ups run for
 // real, changes are answered without being made; "Use my real systems" makes them too. A chat can be
-// kept as a test case (evals/*.yaml). The chat lives for this visit, per task.
+// kept as a test case (tests/*.yaml). The chat lives for this visit, per task.
 
 interface ChatState {
   turns: TestTurn[];
@@ -53,7 +53,7 @@ function withCard(turns: TestTurn[], press: TestPress, change: (w: MessageWidget
 }
 
 const pageTheme = () => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-const NEW_TESTS_FILE = "evals/tests.yaml";
+const NEW_TESTS_FILE = "tests/tests.yaml";
 
 /** What happened behind a reply, in a line per call. */
 function Calls({ reply }: { reply: TestReply }) {
@@ -124,7 +124,7 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
   const update = (patch: Partial<ChatState>) => setChat(key, { ...(chats.get(key) ?? EMPTY), ...patch });
 
   // {user.*} in any action: the test needs a customer to act as.
-  const refs = useMemo(() => customerRefs(Object.entries(cfg.draft).filter(([p]) => p.startsWith("tools/")).map(([, t]) => t)), [cfg.draft]);
+  const refs = useMemo(() => customerRefs(Object.entries(cfg.draft).filter(([p]) => p.startsWith("actions/")).map(([, t]) => t)), [cfg.draft]);
   const handedOff = state.turns.at(-1)?.role === "ai" && (state.turns.at(-1) as { reply: TestReply }).reply.handoff !== undefined;
 
   /**

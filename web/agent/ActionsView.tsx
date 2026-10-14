@@ -15,7 +15,7 @@ import { WebsiteActions } from "./WebsiteActions.tsx";
 import { TryAction } from "./TryAction.tsx";
 import { NewActionDialog } from "./NewActionDialog.tsx";
 
-// /agent/actions[/<name>]: tools/<name>.yaml. An action is a request to the customer's own systems
+// /agent/actions[/<name>]: actions/<name>.yaml. An action is a request to the customer's own systems
 // the AI can make: look something up (GET) or change something (POST). /agent/actions lists them as
 // cards; an action's page is laid out like a widget's (FileStudio): AI and Code on the left, the form
 // on the right (W-24).
@@ -69,7 +69,7 @@ export function ActionsView({ cfg, canEdit, selected }: { cfg: AgentConfig; canE
   if (code) {
     // website-actions.yaml (D-74) belongs here too: the "On your website" cards edit it.
     const files = [...items.map((i) => i.path), ...("website-actions.yaml" in cfg.draft ? ["website-actions.yaml"] : [])];
-    return <FilesCode cfg={cfg} files={files} canEdit={canEdit} empty="No actions yet. Switch to Form and press New action, or add tools/<name>.yaml with jun push." />;
+    return <FilesCode cfg={cfg} files={files} canEdit={canEdit} empty="No actions yet. Switch to Form and press New action, or add actions/<name>.yaml with jun push." />;
   }
   return (
     <>

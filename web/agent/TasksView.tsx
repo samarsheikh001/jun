@@ -24,7 +24,7 @@ import { TryAction } from "./TryAction.tsx";
 import { useSeenPageActions } from "./WebsiteActions.tsx";
 
 // /agent/tasks[/<name>] (AI-27, D-67): a task is one job the AI does for customers, like a refund or a
-// plan change. It's a procedure, skills/<name>/SKILL.md (when it applies, the steps, and folded away
+// plan change. It's a procedure, tasks/<name>.md (when it applies, the steps, and folded away
 // how the customer's app can open a chat with it, AI-20), shown with what its steps use: each action
 // with whether it's set up, what it shows and Try it, and Create it for a name that isn't one yet.
 // Its AI chat edits the steps and those actions together (shared/task-ai.ts). The word "procedure"
@@ -60,7 +60,7 @@ export function TasksView({ cfg, canEdit, selected }: { cfg: AgentConfig; canEdi
       />
     );
   }
-  if (code) return <FilesCode cfg={cfg} files={items.map((i) => i.path)} canEdit={canEdit} empty="No tasks yet. Switch to Form and press New task, or add skills/<name>/SKILL.md with jun push." />;
+  if (code) return <FilesCode cfg={cfg} files={items.map((i) => i.path)} canEdit={canEdit} empty="No tasks yet. Switch to Form and press New task, or add tasks/<name>.md with jun push." />;
   return (
     <>
       <ItemIndex
@@ -174,7 +174,7 @@ function CardUse({ cfg, widget, keys, seen }: { cfg: AgentConfig; widget: string
             let what: ReactNode;
             let state: { ok: boolean; text: string } | null = null;
             if (d.kind === "tool") {
-              const actionText = cfg.draft[`tools/${d.name}.yaml`] ?? cfg.draft[`tools/${d.name}.yml`];
+              const actionText = cfg.draft[`actions/${d.name}.yaml`] ?? cfg.draft[`actions/${d.name}.yml`];
               what = <>runs your action <Go to={`/agent/actions/${d.name}`}>{humanize(d.name)}</Go></>;
               state = actionText === undefined ? { ok: false, text: "No such action" } : setupProblems(actionText, keys).length ? { ok: false, text: "Not set up" } : { ok: true, text: "Ready" };
             } else if (d.kind === "page") {
@@ -231,7 +231,7 @@ function TaskUses({ cfg, canEdit, name, body, keys }: { cfg: AgentConfig; canEdi
     <Field label="What it uses" hint="The actions and widgets its steps use. Each action has to be set up before the AI can use it; try it to see what it returns.">
       <div className="agent-uses">
         {uses.map((action) => {
-          const path = cfg.draft[`tools/${action}.yaml`] !== undefined ? `tools/${action}.yaml` : `tools/${action}.yml`;
+          const path = cfg.draft[`actions/${action}.yaml`] !== undefined ? `actions/${action}.yaml` : `actions/${action}.yml`;
           const text = cfg.draft[path] ?? "";
           const data = readYaml(text);
           const method = isRecord(data) && typeof data.method === "string" ? data.method.toUpperCase() : "GET";
@@ -348,8 +348,8 @@ function NewTaskDialog({ open, onClose, cfg, keys, taken }: { open: boolean; onC
   }, [open]);
   const curl = useCurl(how);
   const req = curl && "req" in curl ? curl.req : null;
-  const folder = slug(named ? name : taskName(when), "-");
-  const nameProblem = !when.trim() && !named ? null : !folder ? "Use letters or numbers." : taken.has(folder) ? "There's already a task with this name." : null;
+  const taskFile = slug(named ? name : taskName(when), "-");
+  const nameProblem = !when.trim() && !named ? null : !taskFile ? "Use letters or numbers." : taken.has(taskFile) ? "There's already a task with this name." : null;
   const ready = when.trim().length > 0 && what.trim().length > 0 && !nameProblem && !(curl && "error" in curl) && !busy;
 
   const create = async () => {
@@ -362,14 +362,14 @@ function NewTaskDialog({ open, onClose, cfg, keys, taken }: { open: boolean; onC
         const base = curlActionName(req) || "new_action";
         action = base;
         for (let n = 2; Object.keys(cfg.draft).some((p) => TOOL.exec(p)?.[1] === action); n++) action = `${base}_${n}`;
-        await addCurlAction(cfg, keys, `tools/${action}.yaml`, req);
+        await addCurlAction(cfg, keys, `actions/${action}.yaml`, req);
       }
-      const path = `skills/${folder}/SKILL.md`;
+      const path = `tasks/${taskFile}.md`;
       // The admin's own words are the first steps; the AI rewrites them.
-      cfg.setFile(path, `---\n${stringify({ name: folder, description: when.trim() })}---\n${what.trim()}\n`);
+      cfg.setFile(path, `---\n${stringify({ description: when.trim() })}---\n${what.trim()}\n`);
       askOnOpen(path, firstAsk(when.trim(), what.trim(), req ? "" : how.trim(), action));
       onClose();
-      go(`/agent/tasks/${folder}`);
+      go(`/agent/tasks/${taskFile}`);
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -409,7 +409,7 @@ function NewTaskDialog({ open, onClose, cfg, keys, taken }: { open: boolean; onC
           </UiField>
           <UiField data-invalid={nameProblem ? true : undefined}>
             <FieldLabel htmlFor="task-name">Name</FieldLabel>
-            <Input id="task-name" className="mono" value={named ? name : folder} maxLength={60} placeholder="order-status" spellCheck={false} onChange={(e) => { setNamed(true); setName(e.target.value); }} />
+            <Input id="task-name" className="mono" value={named ? name : taskFile} maxLength={60} placeholder="order-status" spellCheck={false} onChange={(e) => { setNamed(true); setName(e.target.value); }} />
             {nameProblem ? <FieldError>{nameProblem}</FieldError> : <FieldDescription>Nothing changes for customers until you save.</FieldDescription>}
           </UiField>
           {error && <p className="error small" role="alert">{error}</p>}

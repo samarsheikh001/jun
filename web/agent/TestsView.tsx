@@ -12,10 +12,10 @@ import { PixelLoader } from "../components/PixelLoader.tsx";
 import { CodeEditor, EVAL, Field, FilePicker, Problems, TOOL, Unreadable, WIDGET, humanize, setCodeView, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 
-// /agent/tests: the cases of every evals/*.yaml in one list, each a form (what the customer says,
+// /agent/tests: the cases of every tests/*.yaml in one list, each a form (what the customer says,
 // what a good reply does), and "Run tests" that grades the unsaved draft like `jun eval` does.
 
-const NEW_FILE = "evals/tests.yaml";
+const NEW_FILE = "tests/tests.yaml";
 
 const OUTCOMES = [
   { value: "", label: "Anything" },

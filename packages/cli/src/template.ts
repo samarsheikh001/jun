@@ -8,10 +8,10 @@ This folder is your Jun support agent, as code. Edit it like any other code: in 
 | File | What it does |
 |---|---|
 | \`AGENTS.md\` | Persona, tone and rules. Frontmatter sets guardrails (\`maxReplies\`, \`handoffTopics\`). |
-| \`skills/<name>/SKILL.md\` | Procedures in plain language ("refund requests: first…"). \`description\` says when one applies. With \`intent:\`, your app can open a chat straight into it (see below). |
-| \`tools/<name>.yaml\` | HTTP lookups the AI may call (order status, plan, usage…). |
-| \`evals/<name>.yaml\` | Test cases: a customer message and what a good reply does. |
-| \`widgets/<name>.widget\` | Cards a tool's result is shown as (OpenAI's ChatKit widget format). Design one in ChatKit Studio (widgets.chatkit.studio) and download it, then add \`widget: <name>\` to the tool. |
+| \`tasks/<name>.md\` | Tasks: procedures in plain language ("refund requests: first…"). \`description\` says when one applies. With \`intent:\`, your app can open a chat straight into it (see below). |
+| \`actions/<name>.yaml\` | HTTP lookups the AI may call (order status, plan, usage…). |
+| \`tests/<name>.yaml\` | Test cases: a customer message and what a good reply does. |
+| \`widgets/<name>.widget\` | Cards an action's result is shown as (OpenAI's ChatKit widget format). Design one in ChatKit Studio (widgets.chatkit.studio) and download it, then add \`widget: <name>\` to the action. |
 
 \`\`\`sh
 jun eval .        # run the test cases and replay recent real conversations against these files
@@ -19,23 +19,23 @@ jun push . -m "…" # make it live (the dashboard shows each version)
 jun pull .        # bring dashboard edits back here
 \`\`\`
 
-To add a tool, copy \`tools/lookup_order.yaml.example\` to \`tools/lookup_order.yaml\`, point it at your API,
+To add an action, copy \`actions/lookup_order.yaml.example\` to \`actions/lookup_order.yaml\`, point it at your API,
 and set its secret on the Worker: \`npx wrangler secret put JUN_SECRET_ACME_API_KEY\`.
 To show its result as a card, also copy \`widgets/order.widget.example\` to \`widgets/order.widget\` and
-uncomment \`widget: order\` in the tool. A card's buttons send the customer's choice back to the AI.
+uncomment \`widget: order\` in the action. A card's buttons send the customer's choice back to the AI.
 
 ## Intents: open a chat for a purpose
 
-\`skills/cancellation/SKILL.md\` is an example. Your app's "Cancel subscription" button calls
+\`tasks/cancellation.md\` is an example. Your app's "Cancel subscription" button calls
 
 \`\`\`js
 JunDesk.open({ intent: "cancel", onExit: () => { location.href = "/billing/cancel"; } });
 \`\`\`
 
-The chat starts with the skill's \`opening\` and \`replies\` (no AI needed), the AI follows the skill, and
+The chat starts with the task's \`opening\` and \`replies\` (no AI needed), the AI follows the task, and
 the \`exit\` button ("Cancel anyway") stays on screen: one click closes the chat and calls \`onExit\`.
-Offers come only from your skill and tools: copy \`tools/apply_save_offer.yaml.example\` to
-\`tools/apply_save_offer.yaml\` to let the AI apply one after the customer says yes.
+Offers come only from your task and actions: copy \`actions/apply_save_offer.yaml.example\` to
+\`actions/apply_save_offer.yaml\` to let the AI apply one after the customer says yes.
 `,
   "AGENTS.md": `---
 # Guardrails. Remove a line to use the default.
@@ -49,16 +49,14 @@ handoffTopics:           # always hand these to a person
 - Use the customer's name if you know it.
 - Don't promise refunds, credits, discounts or timelines unless a procedure says you can.
 `,
-  "skills/refund/SKILL.md": `---
-name: refund
+  "tasks/refund.md": `---
 description: The customer asks for a refund, their money back, or to cancel a charge.
 ---
 1. Ask for the order or invoice number if they haven't given it.
 2. Explain that refunds are reviewed by the billing team within one business day.
 3. Hand off to a person with the order number in the reason.
 `,
-  "skills/cancellation/SKILL.md": `---
-name: cancellation
+  "tasks/cancellation.md": `---
 description: The customer wants to cancel their subscription or close their account.
 # Intent (AI-20): your app opens this chat with JunDesk.open({ intent: "cancel", onExit }).
 intent: cancel
@@ -76,12 +74,12 @@ exit: Cancel anyway       # always on screen, one click: closes the chat and cal
    - Not using it enough: pause the subscription for up to 3 months (offer: pause_3m).
    - Missing a feature, switching to another tool, or other: no offer. Ask what would have made them stay.
 4. Before applying an offer with apply_save_offer, say exactly what changes and wait for a clear yes.
-   If that tool isn't set up, hand off to a person with the accepted offer in the reason.
+   If that action isn't set up, hand off to a person with the accepted offer in the reason.
 5. If they say no or still want to cancel, thank them and point them to the "Cancel anyway" button
    (or, if there isn't one in this chat, to Settings → Billing). Never argue or push again.
 `,
-  "tools/apply_save_offer.yaml.example": `# Rename to apply_save_offer.yaml to enable. It changes the customer's subscription, so the
-# cancellation skill only calls it after the customer says yes to that exact offer. It needs a
+  "actions/apply_save_offer.yaml.example": `# Rename to apply_save_offer.yaml to enable. It changes the customer's subscription, so the
+# cancellation task only calls it after the customer says yes to that exact offer. It needs a
 # signed-in customer ({user.id} comes from your identity token, never from the chat).
 description: Apply a retention offer the customer accepted to their own subscription. Only after a clear yes.
 status: Applying your offer                       # what the customer sees while it runs
@@ -100,7 +98,7 @@ body:
 pick: [ok, message]                               # only these fields reach the AI
 mock: { ok: true, message: "Offer applied" }      # used by jun eval --mock-tools
 `,
-  "tools/lookup_order.yaml.example": `# Rename to lookup_order.yaml to enable. The AI calls it when a customer asks about an order.
+  "actions/lookup_order.yaml.example": `# Rename to lookup_order.yaml to enable. The AI calls it when a customer asks about an order.
 description: Look up an order by its number. Returns status, order date and total.
 status: Checking your order                      # what the customer sees while it runs (default "Looking that up")
 method: GET
@@ -129,7 +127,7 @@ mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }   # used b
   }
 }
 `,
-  "evals/basics.yaml": `- name: greeting
+  "tests/basics.yaml": `- name: greeting
   message: hi there
   expect:
     outcome: answer
@@ -144,7 +142,7 @@ mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }   # used b
   expect:
     outcome: handoff
 `,
-  "evals/cancellation.yaml": `- name: cancel, too expensive gets the matching offer only
+  "tests/cancellation.yaml": `- name: cancel, too expensive gets the matching offer only
   intent: cancel
   message: Too expensive
   expect:

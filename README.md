@@ -97,9 +97,9 @@ const remove = JunDesk.registerAction({
 });
 ```
 
-In React, `useJunAction({ … }, [product.id])` from `@jun/widget-react` (in `packages/widget-react`, MIT) registers while the component is on screen and waits for the loader if it hasn't loaded yet. With many actions on a page, the ones the visitor's question names and the ones on screen are offered first (at most 30 per reply). Server tools can be scoped the same way with `pages:` in `tools/<name>.yaml`. You can also pick or make the card on the desk instead of in code: Agent → Actions → "On your website" lists the actions the desk has seen, and once one has run it can make a first card from the shape of its result (field names and types; the values are never kept).
+In React, `useJunAction({ … }, [product.id])` from `@jun/widget-react` (in `packages/widget-react`, MIT) registers while the component is on screen and waits for the loader if it hasn't loaded yet. With many actions on a page, the ones the visitor's question names and the ones on screen are offered first (at most 30 per reply). Server tools can be scoped the same way with `pages:` in `actions/<name>.yaml`. You can also pick or make the card on the desk instead of in code: Agent → Actions → "On your website" lists the actions the desk has seen, and once one has run it can make a first card from the shape of its result (field names and types; the values are never kept).
 
-Agents see every run in the conversation's AI actions; `evals/*.yaml` cases take an `actions:` list, a `page:` path, and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
+Agents see every run in the conversation's AI actions; `tests/*.yaml` cases take an `actions:` list, a `page:` path, and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
 
 **Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. If your API only accepts the user's own key, add a `secrets` claim (`{ API_TOKEN: "…" }`) and write `{user.secrets.API_TOKEN}` in an action's headers: it's kept only until the token expires (or `JunDesk.logout()`), never shown to agents or the AI. Without a valid token, visitors stay anonymous.
 
@@ -144,9 +144,9 @@ npm run jun -- push support-agent -m "Refund window is now 30 days"
 | File | What |
 |---|---|
 | `AGENTS.md` | Tone and rules. Frontmatter: `maxReplies`, `handoffTopics` |
-| `skills/<name>/SKILL.md` | Tasks (procedures) in plain language: when they apply and the steps, in the [Agent Skills](https://agentskills.io) format |
-| `tools/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`). `status:` is the one line the customer sees while it runs ("Checking your order"; default "Looking that up"); they never see the tool's name, inputs or results |
-| `evals/<name>.yaml` | A customer message and what a good reply does: outcome, tools called, or criteria |
+| `tasks/<name>.md` | Tasks (procedures) in plain language: a `description` frontmatter saying when one applies, then the steps. The file name is the task's name |
+| `actions/<name>.yaml` | HTTP lookups the AI may call, e.g. order status. Secrets go in headers as `{secrets.NAME}` (Worker secret `JUN_SECRET_NAME`). `status:` is the one line the customer sees while it runs ("Checking your order"; default "Looking that up"); they never see the tool's name, inputs or results |
+| `tests/<name>.yaml` | A customer message and what a good reply does: outcome, tools called, or criteria |
 | `website-actions.yaml` | How each action on your website runs, over what your site asked for: `auto` (without asking), `confirm` (the customer confirms first) or `human` (a person does it), and optionally the line shown while it runs (`set_pickup: { run: auto, status: "Setting your pickup" }`). Set it under Actions → On your website |
 
 Every save is a version you can restore, and every tool call is logged next to the conversation. In CI, set `JUN_DESK_URL` and `JUN_DESK_TOKEN` and run `jun eval --fail-on-change`.

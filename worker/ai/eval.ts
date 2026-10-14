@@ -9,7 +9,7 @@ import { completeText, type AgentModel } from "./providers.ts";
 import { runAgent, type RunResult } from "./run.ts";
 
 // `jun eval` (AI-19): before a config change goes live, run it against
-//  1. the config's own test cases (evals/*.yaml): pass/fail, and
+//  1. the config's own test cases (tests/*.yaml): pass/fail, and
 //  2. recent real conversations, replayed with the live config and the candidate:
 //     which answers would change.
 // Results stream back as NDJSON events so the CLI can print as it goes.

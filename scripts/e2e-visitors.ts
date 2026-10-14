@@ -180,7 +180,7 @@ await step("the AI looks up the signed-in customer's own account with {user.id},
   const live = (await agent.call(`/workspaces/${workspaceId}/agent`)).json;
   const files = {
     ...live.files,
-    "tools/my_account.yaml": `description: The signed-in customer's own account (plan, seats). Use it for questions about their plan or account.
+    "actions/my_account.yaml": `description: The signed-in customer's own account (plan, seats). Use it for questions about their plan or account.
 url: ${ECHO_URL}/accounts/{user.id}
 headers:
   X-Desk-Key: '{secrets.DESK_KEY}'

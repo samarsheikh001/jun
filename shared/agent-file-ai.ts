@@ -1,4 +1,4 @@
-// W-24: edit an action (tools/<name>.yaml) or a procedure (skills/<name>/SKILL.md) by chatting, as
+// W-24: edit an action (actions/<name>.yaml) or a procedure (tasks/<name>.md) by chatting, as
 // widgets are edited (W-22). The admin asks for a change in plain words; the model rewrites the whole
 // file; the result must pass the agent's config checker (worker/ai/config.ts) before it reaches the
 // unsaved draft. Pure: which files can be edited, the prompts, the request, parsing the answer.
@@ -8,8 +8,8 @@ import type { WidgetEditTurn } from "./widget-ai.ts";
 
 export type AgentFileKind = "action" | "procedure";
 
-const ACTION_FILE = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
-const PROCEDURE_FILE = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
+const ACTION_FILE = /^actions\/([a-z][a-z0-9_]*)\.ya?ml$/;
+const PROCEDURE_FILE = /^tasks\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
 
 /** What kind of file the chat edits, and its name; null for files it doesn't edit. */
 export function agentFileKind(path: string): { kind: AgentFileKind; name: string } | null {
@@ -52,17 +52,16 @@ mock: { status: delivered, orderedOn: "2026-09-02", total: "$49.00" }
 
 An action that changes something (a refund, a plan change) should say in its description that the AI must only call it after the customer clearly says yes.`;
 
-export const PROCEDURE_FORMAT = `A procedure is a SKILL.md file: the steps the support AI follows in one situation.
+export const PROCEDURE_FORMAT = `A procedure is a Markdown file (tasks/<name>.md, the file name is its name): the steps the support AI follows in one situation.
 
 It starts with YAML frontmatter between --- lines:
-- name (required): exactly the folder's name.
+- name: leave it out (if a file already has it, keep it exactly the file's name).
 - description (required, at most 1024 characters): when this procedure applies, in the customer's terms. The AI reads only this to decide when to follow it.
 - Optional, only for a chat the business's app opens on purpose (JunDesk.open({ intent })): intent (a short lowercase name like cancel), opening (one line the chat opens with), replies (a list of short answers to that opening), exit (a short button label like "Cancel anyway"). Don't add these unless asked.
 Below the frontmatter: the steps, as a numbered list in plain words. Refer to an action as @ and its exact name (like @lookup_order), say when to ask the customer, when to wait for a clear yes, and when to hand over to a person.
 
 Example:
 ---
-name: refund
 description: The customer asks for a refund, their money back, or to cancel a charge.
 ---
 1. Ask for the order or invoice number if they haven't given it.

@@ -47,7 +47,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 /** An action's inputs in the draft (required unless it says not), or null when there's no such action. */
 export function inputsOf(draft: Record<string, string>, tool: string): Record<string, { required: boolean }> | null {
-  const text = draft[`tools/${tool}.yaml`] ?? draft[`tools/${tool}.yml`];
+  const text = draft[`actions/${tool}.yaml`] ?? draft[`actions/${tool}.yml`];
   if (text === undefined) return null;
   let data: unknown;
   try {
@@ -64,7 +64,7 @@ export function inputsOf(draft: Record<string, string>, tool: string): Record<st
  * it fits, or there's no widget, mock or schema to compare.
  */
 function mockMisfit(draft: Record<string, string>, action: string): { widget: string; problems: string[] } | null {
-  const text = draft[`tools/${action}.yaml`] ?? draft[`tools/${action}.yml`];
+  const text = draft[`actions/${action}.yaml`] ?? draft[`actions/${action}.yml`];
   if (text === undefined) return null;
   let data: unknown;
   try {
@@ -258,7 +258,7 @@ export function Connections({ cfg, kind, name, canEdit }: { cfg: AgentConfig; ki
               variant="outline"
               size="sm"
               onClick={() => {
-                cfg.setFile(`tools/${m}.yaml`, NEW_ACTION);
+                cfg.setFile(`actions/${m}.yaml`, NEW_ACTION);
                 go(`/agent/actions/${m}`);
               }}
             >

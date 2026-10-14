@@ -81,7 +81,10 @@ export async function login(url: string, token: string): Promise<DeskLogin> {
   return result;
 }
 
-const CONFIG_PATH = /^(AGENTS\.md|README\.md|website-actions\.yaml|skills\/[^/]+\/SKILL\.md|tools\/[^/]+\.ya?ml|evals\/[^/]+\.ya?ml|widgets\/[^/]+\.widget)$/;
+const CONFIG_PATH = /^(AGENTS\.md|README\.md|website-actions\.yaml|tasks\/[^/]+\.md|actions\/[^/]+\.ya?ml|tests\/[^/]+\.ya?ml|widgets\/[^/]+\.widget)$/;
+/** D-83: the layout before the rename. Still read (the desk stores it in the new layout); `jun pull` moves it. */
+const OLD_CONFIG_PATH = /^(skills\/[^/]+\/SKILL\.md|tools\/[^/]+\.ya?ml|evals\/[^/]+\.ya?ml)$/;
+const OLD_FOLDERS = ["skills", "tools", "evals"];
 
 /** Reads the config files under `dir` (paths with forward slashes). Other files are skipped. */
 export async function readFolder(dir: string): Promise<{ files: Record<string, string>; skipped: string[] }> {
@@ -94,13 +97,17 @@ export async function readFolder(dir: string): Promise<{ files: Record<string, s
       if (entry.isDirectory()) await walk(full);
       else {
         const path = relative(dir, full).split(sep).join("/");
-        if (CONFIG_PATH.test(path)) files[path] = await readFile(full, "utf8");
+        if (CONFIG_PATH.test(path) || OLD_CONFIG_PATH.test(path)) files[path] = await readFile(full, "utf8");
         else skipped.push(path);
       }
     }
   }
   await walk(dir);
   return { files, skipped };
+}
+
+async function rmdirIfEmpty(path: string): Promise<void> {
+  if ((await readdir(path).catch(() => null))?.length === 0) await rm(path, { recursive: true });
 }
 
 async function readVersion(dir: string): Promise<number | null> {
@@ -140,6 +147,13 @@ export async function pull(dir: string): Promise<void> {
     await mkdir(dirname(join(dir, path)), { recursive: true });
     await writeFile(join(dir, path), text);
   }
+  // D-83: files in the old layout were just replaced by the new one; drop the folders they leave empty.
+  if (Object.keys(local).some((p) => OLD_CONFIG_PATH.test(p))) {
+    const skills = await readdir(join(dir, "skills")).catch(() => [] as string[]);
+    for (const name of skills) await rmdirIfEmpty(join(dir, "skills", name));
+    for (const name of OLD_FOLDERS) await rmdirIfEmpty(join(dir, name));
+    console.log("Moved the folder to the current layout: tasks/<name>.md, actions/, tests/ (was skills/<name>/SKILL.md, tools/, evals/).");
+  }
   await writeVersion(dir, config.version);
   console.log(`Pulled ${Object.keys(config.files).length} files (${config.version === null ? "built-in default config" : `version ${config.version}`}) from ${desk.workspaceName} into ${dir}/.`);
 }
@@ -149,6 +163,9 @@ export async function push(dir: string, options: { message?: string; force?: boo
   const { files, skipped } = await readFolder(dir);
   if (!files["AGENTS.md"]) throw new Error(`${dir}/AGENTS.md not found. Run \`jun init ${dir}\` or \`jun pull ${dir}\` first.`);
   for (const path of skipped) console.warn(`  (skipped ${path}: not a config file)`);
+  if (Object.keys(files).some((p) => OLD_CONFIG_PATH.test(p))) {
+    console.warn(`  This folder uses the old layout (skills/<name>/SKILL.md, tools/, evals/); the desk stores it as tasks/<name>.md, actions/, tests/. Run \`jun pull ${dir}\` after pushing to move the files.`);
+  }
   try {
     const result = await api<{ version: number; summary: { skills: string[]; tools: string[]; evals: number } }>(desk, `/workspaces/${desk.workspaceId}/agent`, {
       method: "PUT",
@@ -156,7 +173,7 @@ export async function push(dir: string, options: { message?: string; force?: boo
     });
     await writeVersion(dir, result.version);
     const s = result.summary;
-    console.log(`Pushed version ${result.version} to ${desk.workspaceName}: ${s.skills.length} procedures, ${s.tools.length} tools, ${s.evals} eval cases. It's live now.`);
+    console.log(`Pushed version ${result.version} to ${desk.workspaceName}: ${s.skills.length} tasks, ${s.tools.length} actions, ${s.evals} test cases. It's live now.`);
   } catch (error) {
     if (error instanceof DeskError && error.code === "invalid_config") {
       console.error("Not pushed: the config has errors.");

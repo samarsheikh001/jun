@@ -5,15 +5,15 @@ import { DONE_TOOL } from "../../shared/actions.ts";
 import { checkExamples, parseWidgetFile, renderSummary, renderWidget, SHOW_WIDGET_TOOL, TOOL_ACTION, widgetActions, type WidgetSpec } from "../../shared/widgets.ts";
 import { FLAG_TOOL, HANDOFF_TOOL } from "./agent.ts";
 
-/** The agent's own tools: a tools/<name>.yaml can't take their names. */
+/** The agent's own tools: an actions/<name>.yaml can't take their names. */
 const BUILT_IN_TOOLS = new Set([HANDOFF_TOOL, FLAG_TOOL, DONE_TOOL, SHOW_WIDGET_TOOL, "activate_skill"]);
 
 // Support agent as code (AI-18). A config is a set of text files, the same in git and in the desk:
 //   AGENTS.md                 persona, tone, rules; optional frontmatter guardrails
-//   skills/<name>/SKILL.md    procedures (Agent Skills format: name + description frontmatter;
+//   tasks/<name>.md           procedures (description frontmatter; `name`, if given, is the file name;
 //                             optional intent/opening/replies/exit for AI-20 intent-launched chats)
-//   tools/<name>.yaml         HTTP lookups the AI may call (AI-05)
-//   evals/<name>.yaml         test cases for `jun eval` (AI-19)
+//   actions/<name>.yaml       HTTP lookups the AI may call (AI-05)
+//   tests/<name>.yaml         test cases for `jun eval` (AI-19)
 //   widgets/<name>.widget     cards a tool's result is shown as (W-09: ChatKit Studio's export)
 // Parsing is pure so the Worker, tests and the eval runner share it.
 
@@ -173,9 +173,9 @@ export function defaultFiles(instructions = ""): ConfigFiles {
   return { "AGENTS.md": DEFAULT_AGENTS_MD + extra };
 }
 
-const SKILL_PATH = /^skills\/([a-z0-9]+(?:-[a-z0-9]+)*)\/SKILL\.md$/;
-const TOOL_PATH = /^tools\/([a-z][a-z0-9_]*)\.ya?ml$/;
-const EVAL_PATH = /^evals\/([a-zA-Z0-9_-]+)\.ya?ml$/;
+const TASK_PATH = /^tasks\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
+const TOOL_PATH = /^actions\/([a-z][a-z0-9_]*)\.ya?ml$/;
+const EVAL_PATH = /^tests\/([a-zA-Z0-9_-]+)\.ya?ml$/;
 const WIDGET_PATH = /^widgets\/([a-z][a-z0-9_-]*)\.widget$/;
 /** D-74 / D-77: how each action on the customer's website runs, and its line, set on the desk. */
 export const WEBSITE_ACTIONS_PATH = "website-actions.yaml";
@@ -184,7 +184,30 @@ export const MAX_WIDGETS = 20;
 const PLACEHOLDER = /\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g;
 
 export function isConfigPath(path: string): boolean {
-  return path === "AGENTS.md" || path === "README.md" || path === WEBSITE_ACTIONS_PATH || SKILL_PATH.test(path) || TOOL_PATH.test(path) || EVAL_PATH.test(path) || WIDGET_PATH.test(path);
+  return path === "AGENTS.md" || path === "README.md" || path === WEBSITE_ACTIONS_PATH || TASK_PATH.test(path) || TOOL_PATH.test(path) || EVAL_PATH.test(path) || WIDGET_PATH.test(path);
+}
+
+// D-83: the layout before the rename (skills/<name>/SKILL.md, tools/, evals/) → the current one.
+const OLD_PATHS: [RegExp, string][] = [
+  [/^skills\/([^/]+)\/SKILL\.md$/, "tasks/$1.md"],
+  [/^tools\/([^/]+\.ya?ml)$/, "actions/$1"],
+  [/^evals\/([^/]+\.ya?ml)$/, "tests/$1"],
+];
+
+/**
+ * D-83: compatibility for configs saved before the rename (versions in D1, an old folder sent by
+ * `jun push`): moves old paths to the current layout. A file already at the new path wins.
+ */
+export function withCurrentPaths(files: ConfigFiles): ConfigFiles {
+  const out: ConfigFiles = {};
+  const moved: [string, string][] = [];
+  for (const [path, text] of Object.entries(files)) {
+    const old = OLD_PATHS.find(([re]) => re.test(path));
+    if (old) moved.push([path.replace(old[0], old[1]), text]);
+    else out[path] = text;
+  }
+  for (const [path, text] of moved) if (!(path in out)) out[path] = text;
+  return out;
 }
 
 /** Splits `---\nyaml\n---\nbody`. Returns null frontmatter when there is none. */
@@ -254,10 +277,10 @@ function parseAgentsMd(text: string, issues: ConfigIssue[]): Pick<AgentConfig, "
   return out;
 }
 
-function parseSkill(path: string, folder: string, text: string, issues: ConfigIssue[]): Skill | null {
+function parseSkill(path: string, file: string, text: string, issues: ConfigIssue[]): Skill | null {
   const { frontmatter, body } = splitFrontmatter(text);
   if (frontmatter === null) {
-    issues.push({ path, message: "SKILL.md needs frontmatter with name and description (---\\nname: …\\ndescription: …\\n---)." });
+    issues.push({ path, message: "A task needs frontmatter with a description (---\\ndescription: …\\n---)." });
     return null;
   }
   const data = yaml(path, frontmatter, issues);
@@ -265,16 +288,17 @@ function parseSkill(path: string, folder: string, text: string, issues: ConfigIs
     if (data !== undefined) issues.push({ path, message: "Frontmatter must be a YAML map." });
     return null;
   }
-  // Agent Skills fields we don't use (license, metadata, …) are allowed and ignored.
-  const name = typeof data.name === "string" ? data.name.trim() : "";
+  // The task's name is its file name; `name`, if given, must match it. Other fields we don't use
+  // (license, metadata, …) are allowed and ignored.
+  const name = data.name === undefined ? file : typeof data.name === "string" ? data.name.trim() : "";
   const description = typeof data.description === "string" ? data.description.trim() : "";
-  if (name !== folder) issues.push({ path, message: `name must match the folder name ("${folder}").` });
+  if (name !== file) issues.push({ path, message: `name must match the file name ("${file}"), or leave it out.` });
   if (!description) issues.push({ path, message: "description is required: say when this procedure applies." });
   else if (description.length > 1024) issues.push({ path, message: "description must be at most 1024 characters." });
   if (!body.trim()) issues.push({ path, message: "The procedure itself (below the frontmatter) is empty." });
   const before = issues.length;
   const intent = parseIntent(path, data, issues);
-  if (name !== folder || !description || description.length > 1024 || !body.trim() || issues.length > before) return null;
+  if (name !== file || !description || description.length > 1024 || !body.trim() || issues.length > before) return null;
   return { name, description, instructions: body.trim(), ...(intent ? { intent } : {}) };
 }
 
@@ -617,21 +641,21 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
       config.websiteActionStatus = parsed.status;
       continue;
     }
-    if ((m = SKILL_PATH.exec(path))) {
+    if ((m = TASK_PATH.exec(path))) {
       const skill = parseSkill(path, m[1]!, text, issues);
       const taken = skill?.intent && config.skills.find((s) => s.intent?.name === skill.intent!.name);
       if (taken) {
-        issues.push({ path, message: `Intent "${skill!.intent!.name}" is already defined by skills/${taken.name}/SKILL.md (one skill per intent).` });
+        issues.push({ path, message: `Intent "${skill!.intent!.name}" is already defined by tasks/${taken.name}.md (one task per intent).` });
         continue;
       }
       if (skill) config.skills.push(skill);
     } else if ((m = TOOL_PATH.exec(path))) {
       if (BUILT_IN_TOOLS.has(m[1]!)) {
-        issues.push({ path, message: `"${m[1]}" is a built-in tool name: rename this file.` });
+        issues.push({ path, message: `"${m[1]}" is a built-in action name: rename this file.` });
         continue;
       }
       if (config.tools.some((t) => t.name === m![1])) {
-        issues.push({ path, message: `Duplicate tool "${m[1]}" (.yaml and .yml).` });
+        issues.push({ path, message: `Duplicate action "${m[1]}" (.yaml and .yml).` });
         continue;
       }
       const tool = parseTool(path, m[1]!, text, issues);
@@ -644,15 +668,15 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     } else {
       issues.push({
         path,
-        message: "Unknown file. Allowed: AGENTS.md, README.md, website-actions.yaml, skills/<name>/SKILL.md, tools/<name>.yaml, evals/<name>.yaml, widgets/<name>.widget (lowercase names).",
+        message: "Unknown file. Allowed: AGENTS.md, README.md, website-actions.yaml, tasks/<name>.md, actions/<name>.yaml, tests/<name>.yaml, widgets/<name>.widget (lowercase names).",
       });
     }
   }
-  if (config.tools.length > 20) issues.push({ path: "tools/", message: "At most 20 tools." });
+  if (config.tools.length > 20) issues.push({ path: "actions/", message: "At most 20 actions." });
   if (config.widgets.length > MAX_WIDGETS) issues.push({ path: "widgets/", message: `At most ${MAX_WIDGETS} widgets.` });
   for (const tool of config.tools) {
     if (tool.widget && !config.widgets.some((w) => w.name === tool.widget)) {
-      const file = paths.find((p) => TOOL_PATH.exec(p)?.[1] === tool.name) ?? `tools/${tool.name}.yaml`;
+      const file = paths.find((p) => TOOL_PATH.exec(p)?.[1] === tool.name) ?? `actions/${tool.name}.yaml`;
       issues.push({ path: file, message: `widget: there's no widgets/${tool.widget}.widget.` });
       delete tool.widget;
     }
@@ -677,7 +701,7 @@ export function parseConfig(files: ConfigFiles, version: number | null = null): 
     }
     for (const type of new Set(actions)) {
       const name = TOOL_ACTION.exec(type)?.[1];
-      if (name && !config.tools.some((t) => t.name === name)) issues.push({ path: `widgets/${widget.name}.widget`, message: `${type}: there's no tools/${name}.yaml.` });
+      if (name && !config.tools.some((t) => t.name === name)) issues.push({ path: `widgets/${widget.name}.widget`, message: `${type}: there's no actions/${name}.yaml.` });
     }
   }
   return { config, issues };
