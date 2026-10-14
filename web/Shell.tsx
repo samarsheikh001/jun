@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, FlashIcon, HelpIcon, InboxIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, FlashIcon, HelpIcon, InboxIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import {
@@ -54,11 +55,11 @@ function sectionOf(pagePath: string) {
  * per-browser convenience: only the name and workspace shown in the sidebar, never a token).
  */
 const LAST_SESSION = "jun:last-session";
-export type LastSession = { name: string; workspace: string };
+export type LastSession = { name: string; workspace: string; admin?: boolean };
 export function lastSession(): LastSession | null {
   try {
     const v = JSON.parse(localStorage.getItem(LAST_SESSION) ?? "null") as Partial<LastSession> | null;
-    return v && typeof v.name === "string" && typeof v.workspace === "string" ? { name: v.name, workspace: v.workspace } : null;
+    return v && typeof v.name === "string" && typeof v.workspace === "string" ? { name: v.name, workspace: v.workspace, admin: v.admin === true } : null;
   } catch {
     return null;
   }
@@ -115,6 +116,7 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
+            {session.admin && <UpdateItem update={knownUpdate()} />}
             <SidebarMenuItem>
               <SidebarMenuButton type="button" tooltip={`Search (${modKey()} K)`}>
                 <SearchIcon />
@@ -151,6 +153,19 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
         <main className="desk-main" />
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+/** T-17: a newer Jun is out (owners and admins): how to update, in the docs. */
+function UpdateItem({ update }: { update: LatestRelease | null }) {
+  if (!update) return null;
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton tooltip={`Jun ${update.version} is out: how to update`} className="desk-update" render={<a href={UPDATE_HELP} target="_blank" rel="noreferrer" />}>
+        <ArrowUpIcon />
+        <span>Update to v{update.version}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
 
@@ -196,7 +211,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const workspace = me.memberships?.[0];
   // The next page load draws this sidebar (ShellSkeleton) before /me answers.
   useEffect(() => {
-    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName });
+    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName, admin: workspace.role !== "agent" });
   }, [me.user, workspace]);
   const [online, setOnline] = useState<PresenceEntry[]>([]);
   // V-01: kept here (not in the page) because the hub sends the full list only on connect.
@@ -204,6 +219,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [visitors, setVisitors] = useState<LiveVisitor[] | null>(null);
   const listeners = useRef(new Set<(event: HubEvent) => void>());
   const onboarding = useOnboarding(workspace?.workspaceId ?? "");
+  // T-17: owners and admins see when a newer Jun is out.
+  const update = useUpdate(Boolean(workspace && workspace.role !== "agent"));
   // The sidebar's "Get started" checklist follows what's done elsewhere (Settings, Knowledge…).
   const { reload: reloadOnboarding } = onboarding;
   useEffect(() => {
@@ -417,6 +434,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             </>
           )}
           <SidebarMenu>
+            <UpdateItem update={update} />
             <SidebarMenuItem>
               <SidebarMenuButton type="button" onClick={() => openOverlay("palette")} aria-keyshortcuts="Control+K Meta+K" tooltip={`Search (${modKey()} K)`}>
                 <SearchIcon />

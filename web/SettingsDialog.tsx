@@ -11,6 +11,8 @@ import { navigate } from "./lib/router.ts";
 import { AiPanel, GitCard } from "./agent/AiPanel.tsx";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "./lib/theme.ts";
 import { useAction } from "./useAction.ts";
+import { UPDATE_HELP, useUpdate } from "./lib/updates.ts";
+import { JUN_VERSION } from "../shared/version.ts";
 import {
   BugIcon, ChevronLeftIcon, CodeIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SparkleIcon, SunIcon, UsersIcon, XIcon,
 } from "@/components/icons";
@@ -223,7 +225,24 @@ function GeneralPanel({ me }: { me: Me }) {
       {me.user?.email && <SettingRow label="Email"><span className="setting-row-value">{me.user.email}</span></SettingRow>}
       {workspace && <SettingRow label="Workspace"><span className="setting-row-value">{workspace.workspaceName}</span></SettingRow>}
       {workspace && <SettingRow label="Role" description="Owners and admins change workspace settings; agents answer chats."><span className="setting-row-value">{ROLE_LABEL[workspace.role]}</span></SettingRow>}
+      <VersionRow admin={Boolean(workspace && workspace.role !== "agent")} />
     </SettingsCard>
+  );
+}
+
+/** T-17: this desk's Jun version, and for owners and admins whether a newer one is out. */
+function VersionRow({ admin }: { admin: boolean }) {
+  const update = useUpdate(admin);
+  return (
+    <SettingRow
+      label="Version"
+      description={update ? <>Jun v{update.version} is out. Your repo's Update Jun workflow opens a pull request with it; merging deploys it. <a href={UPDATE_HELP} target="_blank" rel="noreferrer">How to update</a></> : "Updates come as pull requests to your copy of the repo."}
+    >
+      <span className="setting-row-value">
+        v{JUN_VERSION}
+        {update && <> · <a href={update.url} target="_blank" rel="noreferrer">v{update.version} is out</a></>}
+      </span>
+    </SettingRow>
   );
 }
 

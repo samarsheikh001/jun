@@ -38,14 +38,18 @@ Prefer the command line? Clone the repo, then `npm install`, `npx wrangler secre
 
 ## Upgrade
 
-Pull the new version into your copy of the repo and run `npm run deploy`:
+Jun ships as versioned releases ([Releases](https://github.com/samarsheikh001/jun/releases)). Your copy of the repo updates itself through a pull request:
 
-```sh
-git pull https://github.com/samarsheikh001/jun main
-npm install && npm run build && npm run deploy
-```
+1. **Update Jun** (`.github/workflows/update-jun.yml`) checks for a new release every day. When there is one, it opens a pull request in your repo (or updates the open one) with the new version merged into your files: files you never touched take the new version, your own edits stay, your Worker, database, bucket and queue names in `wrangler.jsonc` are kept, and anything both sides changed is listed to resolve.
+2. Merge it. A Deploy-button install redeploys on the push (Workers Builds); otherwise run `npm install && npm run deploy`.
+
+Owners and admins see **Update to vX** in the desk's sidebar when a release is out, and the version under Settings → General. Run the workflow any time from **Actions → Update Jun → Run workflow**. If it can't open pull requests in your repo, it opens an issue with a link instead; to let it, turn on **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**.
+
+A copy made before the workflow existed: add [`.github/workflows/update-jun.yml`](.github/workflows/update-jun.yml) to it once (GitHub → Add file), then run it. Don't `git pull` this repo into a Deploy-button copy: the button's copy has no history in common with it, so Git refuses the merge.
 
 `npm run deploy` applies any new D1 migrations **before** it deploys the new Worker, so new code never runs against an old schema. Your conversations, contacts, knowledge, passkeys and visitors' chat history carry over. `scripts/upgrade-check.ts` is the test for this: it seeds an old install, upgrades it and checks everything survived. It passes from the first AI release (M2) onwards.
+
+**Releasing (maintainers):** `npm run release -- patch` (or `minor`, `major`, `x.y.z`) bumps the version in `package.json` and `shared/version.ts`, commits and tags; `git push origin main --follow-tags` publishes it (`.github/workflows/release.yml` makes the GitHub Release with notes).
 
 ## Put the widget on your site
 

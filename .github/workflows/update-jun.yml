@@ -1,0 +1,44 @@
+# T-17: keeps a copy of Jun (one made by the Deploy to Cloudflare button, or a clone) up to date.
+# Every day it checks for a new Jun release; when there is one it opens a pull request (or updates
+# the open one) with the new version merged into your files. Merging it deploys the update.
+# Run it by hand under Actions → Update Jun → Run workflow.
+#
+# Copies made before this file existed: add it to .github/workflows/ once, then run it.
+name: Update Jun
+
+on:
+  schedule:
+    - cron: "23 5 * * *" # daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: update-jun
+
+jobs:
+  update:
+    # The Jun repo itself publishes releases; only copies update from them.
+    if: github.repository != 'samarsheikh001/jun'
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM: samarsheikh001/jun
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Update to the latest release
+        run: |
+          set -euo pipefail
+          tag=$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)
+          new="$RUNNER_TEMP/jun-$tag"
+          mkdir -p "$new"
+          curl -fsSL "https://codeload.github.com/$UPSTREAM/tar.gz/refs/tags/$tag" | tar xz -C "$new" --strip-components=1
+          # The new release's own updater does the merge, so fixes to it apply at once.
+          node "$new/scripts/update-jun.ts" --new "$new" --tag "$tag" --upstream "$UPSTREAM"
