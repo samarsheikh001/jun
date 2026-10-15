@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
-import { logoFor, radiusVars, textOn, type WidgetLook } from "../../shared/appearance.ts";
+import { logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
 import { actionWaits, restSummary, waitingCardLine } from "../../shared/island.ts";
 import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
@@ -252,7 +252,12 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [saved, setSaved] = useState<WidgetConfig | null>(null);
   /** Appearance preview only: the desk's unsaved look, on top of the saved config. */
   const [draft, setDraft] = useState<WidgetLook | null>(null);
-  const config = useMemo(() => (saved && draft ? { ...saved, ...draft } : saved), [saved, draft]);
+  /** D-92: the host site's theme (data-theme, JunDesk.setTheme), over the desk's; null = the desk's. */
+  const [hostTheme, setHostTheme] = useState<WidgetTheme | null>(null);
+  const config = useMemo(() => {
+    const look = saved && draft ? { ...saved, ...draft } : saved;
+    return look && hostTheme ? { ...look, theme: hostTheme } : look;
+  }, [saved, draft, hostTheme]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   /**
    * The chat opens on the ongoing conversation, or a new one; `list` is the visitor's earlier
@@ -373,6 +378,10 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       if (data?.type === "jun:open" || data?.type === "jun:close") clearTimeout(openFallback.current);
       if (data?.type === "jun:open") switchOpen.current(true);
       if (data?.type === "jun:close") switchOpen.current(false);
+      if (data?.type === "jun:session" || data?.type === "jun:theme") {
+        const t = data.theme;
+        setHostTheme(t === "light" || t === "dark" || t === "auto" ? t : null);
+      }
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
         if (typeof data.sessionId === "string") setSessionId(data.sessionId);

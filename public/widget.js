@@ -10,6 +10,8 @@
  * desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool) / .registerAction(tool)
+ *      / .setTheme("light" | "dark" | "auto" | null): follow the site's own dark mode (D-92); null goes back to
+ *      the desk's setting. data-theme="dark" on this tag sets it from the first paint.
  * Card actions with ChatKit's handler: "client" (D-51) come to the page, never to the server:
  *   JunDesk.onWidgetAction(function (a) { a.type; a.payload; a.values; a.widget; }) (returns a remover),
  *   or the "jundesk:widget-action" window event (same object as event.detail).
@@ -33,6 +35,9 @@
   if (!key) return console.warn("Jun: no data-key");
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color"); // overrides the desk's branding colour
+  // D-92: the site's theme (data-theme, JunDesk.setTheme) wins over the desk's; deskTheme is that.
+  var themes = /^(light|dark|auto)$/, theme = script.getAttribute("data-theme"), deskTheme;
+  if (!themes.test(theme)) theme = null;
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [];
@@ -318,7 +323,8 @@
       openers = !open && cfg.openers;
       // W-04: side, corner rounding, dark theme, and the launcher (the card and the island load the frame now).
       // D-89: the desk keeps sending `launcher` (island | card | button) from its mode and greeting card switch.
-      wrap.classList.add(cfg.position, cfg.theme, cfg.launcher); // "left", "dark", "island", "card"
+      wrap.classList.add(cfg.position, cfg.launcher); // "left", "island", "card"
+      deskTheme = cfg.theme;
       if (cfg.launcher != "button") load();
       // W-21: on a dark button colour (white text on it), the logo made for dark backgrounds if there is one.
       var icon = button.querySelector("svg"), face, logo = (cfg.text == "#ffffff" && cfg.logoDarkUrl) || cfg.logoUrl;
@@ -327,7 +333,12 @@
       if (face) icon.replaceWith(face);
       wrap.style.setProperty("--r", cfg.radius + "px");
     }
+    paintTheme();
     wrap.classList.add("on");
+  }
+  function paintTheme() {
+    wrap.classList.remove("light", "dark", "auto");
+    wrap.classList.add(theme || deskTheme || "auto");
   }
   setTimeout(brand, 1500);
   nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config?color=" + encodeURIComponent(color || "")).then(function (r) { return r.json(); }).then(brand, function () { brand(); });
@@ -389,7 +400,7 @@
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
     if (type == "jun:ready") {
-      post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented });
+      post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented, theme: theme });
       post({ type: open ? "jun:open" : "jun:close" });
       if (pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
     }
@@ -430,6 +441,12 @@
     },
     close: function () { setOpen(false); },
     toggle: function () { setOpen(!open); },
+    // D-92: "light", "dark" or "auto" (the visitor's system) from the site's own theme switch; null = the desk's.
+    setTheme: function (t) {
+      theme = themes.test(t) ? t : null;
+      paintTheme();
+      post({ type: "jun:theme", theme: theme });
+    },
     // Signed-in user: a JWT from your backend. The chat and the visitor list then know who it is.
     identify: function (token) {
       userToken = token || null;
