@@ -40,7 +40,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "draft", label: "Issue drafts", hint: "Bug reports written from a conversation." },
   { job: "topics", label: "Topic labels", hint: "Fast job: labels for the Dashboard." },
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
-  { job: "suggestions", label: "Suggested questions", hint: "Drafts the chat widget's suggested questions from your knowledge (Chat widget page)." },
+  { job: "suggestions", label: "Suggested questions", hint: "Drafts the chat widget's suggested questions from your knowledge (Appearance page)." },
   { job: "editor", label: "Agent page editing", hint: "Changes a widget, action or task when you ask in its AI chat." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.

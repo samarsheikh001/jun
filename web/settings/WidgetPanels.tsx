@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
 import { DeskFileNote } from "../components/DeskFileNote.tsx";
 
-// I-10 business hours (Settings → Inbox). The widget's look (W-04) is on the Widget page's Look tab.
+// I-10 business hours (Settings → Inbox). The widget's look (W-04) is on the Appearance page.
 
 export interface InboxSettings {
   color?: string;

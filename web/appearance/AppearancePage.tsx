@@ -17,22 +17,49 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { setCodeView, useCodeView } from "../agent/parts.tsx";
 import { DeskCode } from "./DeskCode.tsx";
 
-// The Chat widget page (D-91): Install (/appearance/install), Look (/appearance) and Behaviour
-// (/appearance/behaviour). /widget itself is the chat iframe the Worker serves, so the page keeps its
-// old address. Whether the widget is on a site yet shows in the header on every tab.
-export type WidgetTab = "install" | "look" | "behaviour";
+// Two sidebar pages share /appearance* (/widget itself is the chat iframe the Worker serves):
+// Chat widget (D-91): Install (/appearance/install) and Behaviour (/appearance/behaviour), with
+// whether the widget is on a site yet in the header; and Appearance (/appearance): the look.
+export type WidgetTab = "install" | "behaviour";
 
-export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, reloadInstall }: {
+/** The Appearance page: the widget's look, as a form or as desk.yaml (Form / Code). */
+export function AppearancePage({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
+  // D-84: Form / Code, the same remembered switch as the Agent pages. Code is desk.yaml.
+  const code = useCodeView();
+  return (
+    <PageTabs
+      title="Appearance"
+      value="look"
+      className="widget-page"
+      tabsHidden
+      actions={
+        <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
+          <TabsList className="kb-tabs agent-view-switch" aria-label="View">
+            <TabsTrigger value="form">Form</TabsTrigger>
+            <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      }
+      tabs={[
+        {
+          value: "look",
+          label: "Look",
+          path: "/appearance",
+          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
+        },
+      ]}
+    />
+  );
+}
+
+export function WidgetPage({ workspaceId, canEdit, tab, install, reloadInstall }: {
   workspaceId: string;
-  workspaceName: string;
   canEdit: boolean;
   tab: WidgetTab;
   /** Null until the onboarding state has loaded. */
   install: InstallState | null;
   reloadInstall: () => Promise<void>;
 }) {
-  // D-84: Form / Code, the same remembered switch as the Agent pages. Code is desk.yaml.
-  const code = useCodeView();
   // While the Install tab is open and the widget hasn't been seen yet, look again every 5 s (only
   // while the tab is visible), so "Waiting for your site…" turns into "Seen on …" by itself.
   const waiting = tab === "install" && install !== null && !install.installed;
@@ -49,16 +76,6 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
       value={tab}
       className="widget-page"
       aside={<InstallChip install={install} />}
-      actions={
-        tab === "look" && (
-          <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
-            <TabsList className="kb-tabs agent-view-switch" aria-label="View">
-              <TabsTrigger value="form">Form</TabsTrigger>
-              <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        )
-      }
       tabs={[
         {
           value: "install",
@@ -69,12 +86,6 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
               <InstallTab workspaceId={workspaceId} canEdit={canEdit} install={install} reload={reloadInstall} />
             </div>
           ),
-        },
-        {
-          value: "look",
-          label: "Look",
-          path: "/appearance",
-          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
         },
         {
           value: "behaviour",

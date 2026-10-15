@@ -465,7 +465,7 @@ function block(indent: number, key: string, value: unknown, comment?: string): s
 export const DESK_HEADER = `# desk.yaml: your Jun desk's settings as code. Saving this file changes them on the desk,
 # and changes made on the desk's settings pages are written back here.
 # A key or section you leave out is left as it is on the desk.
-# Not in this file: logos (upload them on the Chat widget page), keys and secrets, the AI provider and
+# Not in this file: logos (upload them on the Appearance page), keys and secrets, the AI provider and
 # its sign-in, team members and invites, notifications, and knowledge sources.
 `;
 
@@ -482,7 +482,7 @@ export function renderDeskFile(desk: DeskFile): string {
     out.push("");
   }
   if (chat) {
-    out.push("chat:  # the chat widget on your website (the Chat widget page)");
+    out.push("chat:  # the chat widget on your website (the Appearance and Chat widget pages)");
     if (chat.name !== undefined) out.push(line(2, "name", chat.name, "empty = your workspace's name"));
     if (chat.color !== undefined) out.push(line(2, "color", chat.color));
     if (chat.mode !== undefined) out.push(line(2, "mode", chat.mode, "island (a pill at the bottom centre) | window (a button in the corner that opens a chat window)"));

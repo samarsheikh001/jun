@@ -36,7 +36,8 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
   { label: "Agent: Actions", path: "/agent/actions" },
   { label: "Agent: Widgets", path: "/agent/widgets" },
   { label: "Agent: Tests", path: "/agent/tests" },
-  { label: "Chat widget", path: "/appearance" },
+  { label: "Chat widget", path: "/appearance/install" },
+  { label: "Appearance", path: "/appearance" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];
 /**

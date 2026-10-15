@@ -3,6 +3,7 @@
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Analytics01Icon,
+  PaintBoardIcon,
   ArrowDown01Icon,
   ArrowDown02Icon,
   ArrowExpandDiagonal01Icon,
@@ -66,6 +67,7 @@ export const BookOpenIcon = make(BookOpen01Icon);
 export const BotIcon = make(HugeBotIcon);
 export const BugIcon = make(Bug01Icon);
 export const ChatIcon = make(BubbleChatIcon);
+export const PaletteIcon = make(PaintBoardIcon);
 export const CodeIcon = make(SourceCodeIcon);
 export const ChartColumnIcon = make(Analytics01Icon);
 export const CheckIcon = make(Tick02Icon);
