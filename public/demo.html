@@ -40,6 +40,22 @@
         <p>This page registers what can be done here, as WebMCP tools (AI-21): <code>upgrade_plan</code> (asks which plan, then confirms), <code>export_csv</code> (runs at once), and a plain <code>document.modelContext.registerTool</code> call for <code>show_usage</code>. Try "upgrade me to the growth plan", "export my usage", or "show my usage".</p>
         <p class="note" id="plan-note">Current plan: <strong id="plan-name">Team</strong></p>
       </div>
+      <div class="card" id="settings">
+        <h2>Account settings</h2>
+        <p class="note">With <b>Let the AI use your website</b> on (desk: Chat widget → Behaviour; AI-32) the AI can read this page and use it: try "set my company name to Acme Ltd" or "switch my time zone to Tokyo". The password field and the card below are private: it never sees or touches them.</p>
+        <p><label>Company name <input id="company" name="company" placeholder="Your company" /></label></p>
+        <p><label>Time zone <select id="tz" name="tz"><option>London</option><option>New York</option><option>Tokyo</option></select></label></p>
+        <p><label>Password <input type="password" name="password" value="hunter22" /></label></p>
+        <p data-jun-private>Card on file: 4242 4242 4242 4242 (private: <code>data-jun-private</code>)</p>
+        <p><button id="save" onclick="document.getElementById('saved').textContent = 'Saved: ' + document.getElementById('company').value + ', ' + document.getElementById('tz').value">Save settings</button> <span id="saved" class="note"></span></p>
+        <p class="note">Emails are on their own page (a real page load, to try a run across pages: "turn my weekly emails off"): <a id="to-emails" href="#">Email settings</a></p>
+      </div>
+      <div class="card" id="emails" hidden>
+        <h2>Email settings</h2>
+        <p class="note">A second page of the demo (<code>&amp;page=emails</code>). <a id="to-home" href="#">Back to the account</a></p>
+        <p><label>Weekly summary <select id="weekly" name="weekly"><option>On</option><option>Off</option></select></label></p>
+        <p><button onclick="document.getElementById('emails-saved').textContent = 'Saved: weekly summary ' + document.getElementById('weekly').value">Save email settings</button> <span id="emails-saved" class="note"></span></p>
+      </div>
       <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Chat widget → Install in the desk has a link with your key.</p>
     </main>
     <script>
@@ -95,6 +111,14 @@
           execute: function () { document.getElementById("chart").scrollIntoView({ block: "center" }); return "Usage: 4,210 events this month"; },
         });
       }
+      // A second page (a full page load, not a hash change): ?page=emails shows only the email settings.
+      (function () {
+        var q = new URLSearchParams(location.search), emails = q.get("page") === "emails";
+        var to = function (page) { var n = new URLSearchParams(location.search); if (page) n.set("page", page); else n.delete("page"); return location.pathname + "?" + n; };
+        document.getElementById("to-emails").href = to("emails");
+        document.getElementById("to-home").href = to(null);
+        if (emails) document.querySelectorAll("main > .card").forEach(function (c) { c.hidden = c.id !== "emails"; });
+      })();
       var key = new URLSearchParams(location.search).get("key");
       if (key) {
         var s = document.createElement("script");
@@ -107,6 +131,8 @@
         if (new URLSearchParams(location.search).get("capture") === "off") s.setAttribute("data-capture", "off");
         // ?theme=dark tries the site's own theme (data-theme, D-92); JunDesk.setTheme("light") in the console switches it.
         if (new URLSearchParams(location.search).get("theme")) s.setAttribute("data-theme", new URLSearchParams(location.search).get("theme"));
+        // Page control follows the desk's switch (AI-32, D-93); ?pagecontrol=off tries leaving one site out.
+        if (new URLSearchParams(location.search).get("pagecontrol") === "off") s.setAttribute("data-page-control", "off");
         s.onload = registerActions;
         document.body.appendChild(s);
       } else {

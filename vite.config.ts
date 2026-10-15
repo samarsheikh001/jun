@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { build as rolldown } from "rolldown";
 import { minifySync } from "rolldown/utils";
 import { defineConfig, type Plugin } from "vite";
 
@@ -52,6 +53,67 @@ function preactWidget(): Plugin {
     },
   };
 }
+/**
+ * AI-32 (D-93): widget-page-control.js, the chunk the loader adds on sites with data-page-control="on".
+ * One self-contained, minified IIFE (no imports at runtime) from web/page-control/index.ts, bundling
+ * @page-agent/page-controller. Its mask overlay (a dynamic import of SimulatorMask + ai-motion) is
+ * never used (enableMask: false), so it's swapped for an empty class instead of being inlined.
+ * Built after the client build (which empties dist/client) and served on demand by `vite dev`.
+ */
+const PAGE_CONTROL = "widget-page-control.js";
+async function bundlePageControl(): Promise<string> {
+  const out = await rolldown({
+    input: resolve(import.meta.dirname, "web/page-control/index.ts"),
+    platform: "browser",
+    write: false,
+    plugins: [
+      {
+        name: "jun:no-mask",
+        resolveId: (id) => (/SimulatorMask/.test(id) ? "\0jun-no-mask" : null),
+        load: (id) => (id === "\0jun-no-mask" ? "export class SimulatorMask {}" : null),
+      },
+      {
+        // executeJavascript is never exposed; its direct eval goes too (no eval on customers' pages,
+        // and a direct eval stops the minifier renaming anything around it).
+        name: "jun:no-eval",
+        transform(code, id) {
+          if (!/page-controller[\\/]dist[\\/]lib[\\/]page-controller\.js$/.test(id)) return null;
+          const out = code.replace(/\beval\(`[^`]*`\)/, '(() => { throw new Error("Not available in Jun"); })()');
+          if (out === code) throw new Error("page-controller changed: check its executeJavascript (vite.config.ts, jun:no-eval)");
+          return out;
+        },
+      },
+    ],
+    output: {
+      format: "iife",
+      codeSplitting: false,
+      minify: { compress: { dropConsole: true }, mangle: true },
+      banner: "/*! Jun page control | MIT License | source: web/page-control/index.ts\n * includes @page-agent/page-controller (https://github.com/alibaba/page-agent), MIT License, Copyright (c) 2026 SimonLuvRamen, Copyright (c) 2026 Alibaba Group Holding Limited */",
+    },
+  });
+  return out.output[0].code;
+}
+function pageControlChunk(): Plugin {
+  return {
+    name: "jun:page-control",
+    configureServer(server) {
+      server.middlewares.use(`/${PAGE_CONTROL}`, (_req, res, next) => {
+        bundlePageControl().then((code) => {
+          res.setHeader("content-type", "text/javascript; charset=utf-8");
+          res.setHeader("cache-control", "no-cache");
+          res.end(code);
+        }, next);
+      });
+    },
+    buildApp: {
+      order: "post",
+      async handler() {
+        writeFileSync(resolve(import.meta.dirname, "dist/client", PAGE_CONTROL), await bundlePageControl());
+      },
+    },
+  };
+}
+
 /** Builds the widget environment after the Cloudflare plugin's own build (client + Worker). */
 function buildWidget(): Plugin {
   return {
@@ -76,7 +138,7 @@ export default defineConfig({
   // touch your own local desk). Pair with `wrangler ... --persist-to` on the same path.
   // Tailwind (shadcn/ui) only processes CSS that imports it: web/desk.css, the dashboard's sheet.
   // The widget frame keeps its own plain CSS (web/styles.css + web/widget/widget.css).
-  plugins: [preactWidget(), react(), tailwindcss(), minifyLoader(), buildWidget(), cloudflare(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {})],
+  plugins: [preactWidget(), react(), tailwindcss(), minifyLoader(), buildWidget(), pageControlChunk(), cloudflare(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {})],
   // Listen on 127.0.0.1: dev-only "Sign in with ChatGPT" must return to a 127.0.0.1
   // loopback URL (OpenAI forbids substituting localhost), and on Windows Vite would
   // otherwise bind IPv6 only. http://localhost:5173 still works in browsers.

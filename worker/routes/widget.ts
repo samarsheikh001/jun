@@ -109,6 +109,8 @@ widget.get("/widget/:key/config", async (c) => {
       openers: s.proactive === false ? [] : forLoader(storedOpeners(s.openers)),
       // W-12: ask for a rating when a conversation is resolved (on unless turned off).
       csat: s.csat !== false,
+      // AI-32 (D-93): the loader loads page control (unless the snippet says data-page-control="off").
+      pageControl: s.pageControl !== false,
       /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
       ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
       // I-10: shown in the widget header ("Back tomorrow at 09:00 (London time)").

@@ -66,6 +66,8 @@ export interface DeskFile {
     askForRating?: boolean;
     allowedWebsites?: string[];
     offerHelpOnErrors?: boolean;
+    /** AI-32: the AI may read and use your website (page control). */
+    pageControl?: boolean;
     openers?: DeskOpener[];
   };
   hours?: {
@@ -156,7 +158,7 @@ const TEXT_DEFAULTS = { greeting: APPEARANCE_DEFAULTS.greeting, replyTime: APPEA
 
 // `launcher` is the pre-D-89 key: still read (island and bar → mode island, card → window with the
 // greeting card, button → window without), never written.
-const CHAT_KEYS = [...Object.keys(LOOK_FIELDS), "island", "sound", "askForRating", "allowedWebsites", "offerHelpOnErrors", "openers", "launcher"];
+const CHAT_KEYS = [...Object.keys(LOOK_FIELDS), "island", "sound", "askForRating", "allowedWebsites", "offerHelpOnErrors", "pageControl", "openers", "launcher"];
 
 /** applyAppearance's words for its fields → desk.yaml's keys. */
 const fieldWords = (message: string) => message.replace(/\bdisplayName\b/, "name");
@@ -209,7 +211,7 @@ function parseChat(raw: Record<string, unknown>, issues: DeskIssue[]): NonNullab
       out.island = island;
     }
   }
-  for (const key of ["sound", "askForRating", "offerHelpOnErrors"] as const) {
+  for (const key of ["sound", "askForRating", "offerHelpOnErrors", "pageControl"] as const) {
     if (raw[key] === undefined) continue;
     if (bool(raw[key])) out[key] = raw[key] as boolean;
     else problem(key, "use true or false.");
@@ -439,6 +441,7 @@ export function deskFromSettings(settings: Record<string, unknown>, ai: DeskAi):
       askForRating: settings.csat !== false,
       allowedWebsites: Array.isArray(settings.allowedDomains) ? normalizeDomains(settings.allowedDomains).domains : [],
       offerHelpOnErrors: settings.proactive !== false,
+      pageControl: settings.pageControl !== false,
       openers: storedOpeners(settings.openers).map(openerOf),
     },
     hours: { enabled: hours.enabled, timeZone: hours.timezone, days: daysOf(hours.days), awayMessage: hours.awayMessage },
@@ -504,6 +507,7 @@ export function renderDeskFile(desk: DeskFile): string {
     if (chat.askForRating !== undefined) out.push(line(2, "askForRating", chat.askForRating, '"How did we do?" when a chat is resolved'));
     if (chat.allowedWebsites !== undefined) out.push(block(2, "allowedWebsites", chat.allowedWebsites, "[] = any website"));
     if (chat.offerHelpOnErrors !== undefined) out.push(line(2, "offerHelpOnErrors", chat.offerHelpOnErrors, "offer help when something breaks on the page"));
+    if (chat.pageControl !== undefined) out.push(line(2, "pageControl", chat.pageControl, "the AI may read and use your website (asks before changes)"));
     if (chat.openers !== undefined) out.push(block(2, "openers", chat.openers, "after: seconds on the page; no message = the AI writes it (hint: what to offer)"));
     out.push("");
   }
@@ -589,6 +593,7 @@ export function applyDesk(desk: DeskFile, settings: Record<string, unknown>, ai:
   if (chat.sound !== undefined) body.sound = chat.sound;
   if (chat.askForRating !== undefined) body.csat = chat.askForRating;
   if (chat.offerHelpOnErrors !== undefined) body.proactive = chat.offerHelpOnErrors;
+  if (chat.pageControl !== undefined) body.pageControl = chat.pageControl;
   if (chat.allowedWebsites !== undefined) body.allowedDomains = chat.allowedWebsites;
   if (chat.openers !== undefined) {
     // An opener on the same page keeps its id (its AI line stays cached).

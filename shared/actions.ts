@@ -1,3 +1,4 @@
+import { isPageControl, MAX_PAGE_READ_RESULT, shownInput } from "./page-control.ts";
 import { MAX_PAGE_ACTION_NAME, WIDGET_SHOWN_NOTE } from "./widgets.ts";
 
 // AI-21 page actions over WebMCP (D-40). Pure functions shared by the Worker (sanitising the
@@ -102,6 +103,11 @@ export const DONE_TOOL = "jun_done";
 export const MAX_ACTION_PARAMS = 12;
 /** Lookups return JSON for the AI's next turn; keep enough of it to be useful. */
 export const MAX_ACTION_RESULT = 2000;
+
+/** An action's result, at most: MAX_ACTION_RESULT, except AI-32's read_page (a whole page's text, MAX_PAGE_READ_RESULT). */
+export function actionResultLimit(name: string): number {
+  return name === "read_page" ? MAX_PAGE_READ_RESULT : MAX_ACTION_RESULT;
+}
 const MAX_ENUM = 24;
 const MAX_CONTEXT_ENTRIES = 8;
 const MAX_CONTEXT_VALUE = 80;
@@ -232,8 +238,12 @@ function words(text: string): Set<string> {
  * The actions worth offering for this question, best first, at most MAX_PAGE_ACTIONS: every word the
  * question shares with an action's name, description or context counts double, being on screen
  * counts once, and registration order breaks ties (so the loader's order holds when nothing matches).
+ * AI-32: page control's five actions (read_page, click…) are always kept, after the site's own, so a
+ * site with many actions can't push them out.
  */
 export function rankActions(actions: PageAction[], question: string): PageAction[] {
+  const control = actions.filter((a) => isPageControl(a.name)).slice(0, MAX_PAGE_ACTIONS);
+  if (control.length) return [...rankActions(actions.filter((a) => !isPageControl(a.name)), question).slice(0, MAX_PAGE_ACTIONS - control.length), ...control];
   const asked = words(question);
   const score = (a: PageAction): number => {
     let n = a.visible ? 1 : 0;
@@ -353,6 +363,15 @@ export function actionSummary(action: Pick<MessageAction, "description" | "input
   return inputs.length ? `${action.description} · ${inputs.join(" · ")}` : action.description;
 }
 
+/**
+ * The inputs line under a Confirm card or a step ("size: M · quantity: 2"). AI-32's page control
+ * shows only what a person reads ("Company name field · Acme Ltd"): its label, never the element number.
+ */
+export function actionInputLine(action: Pick<MessageAction, "input"> & { name?: string }): string {
+  if (isPageControl(action.name)) return Object.values(shownInput(action)).map(String).join(" · ");
+  return actionSummary({ description: "", input: action.input }).replace(/^ · /, "");
+}
+
 /** D-77: a status line's length, at most. */
 export const MAX_STATUS_LINE = 60;
 /** Short verbs whose -ing form doubles the last letter. */
@@ -384,10 +403,10 @@ export function actionTitle(name: string): string {
  * A step row's chip: what came of it once it ran (if it's a sentence, not JSON), else the inputs
  * a person can read ("Anchorvale Street"), else nothing. Opaque ids never show.
  */
-export function actionChip(action: Pick<MessageAction, "input" | "status" | "result">): string | null {
+export function actionChip(action: Pick<MessageAction, "input" | "status" | "result"> & { name?: string }): string | null {
   const result = action.status === "ok" ? visibleResult(action.result) : null;
   if (result) return result;
-  const values = Object.values(action.input)
+  const values = Object.values(shownInput(action))
     .filter((v) => v !== null && v !== "" && !(typeof v === "string" && OPAQUE.test(v)))
     .map((v) => String(v));
   return values.length ? values.join(" · ") : null;

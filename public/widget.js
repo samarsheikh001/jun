@@ -9,6 +9,9 @@
  * the visitor sends a message. data-capture="off" disables capture. Shows the visitor on the
  * desk's live visitor list (data-consent="required"
  * waits for JunDesk.consent(true) and stores nothing before it).
+ * Page control (AI-32): with "Let the AI use your website" on (desk: Chat widget → Behaviour) the AI may read
+ * this page and click, type and choose on it, with the
+ * visitor's Confirm for changes; never inside [data-jun-private] or password/card fields (widget-page-control.js).
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool) / .registerAction(tool)
  *      / .setTheme("light" | "dark" | "auto" | null): follow the site's own dark mode (D-92); null goes back to
  *      the desk's setting. data-theme="dark" on this tag sets it from the first paint.
@@ -36,8 +39,7 @@
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color"); // overrides the desk's branding colour
   // D-92: the site's theme (data-theme, JunDesk.setTheme) wins over the desk's; deskTheme is that.
-  var themes = /^(light|dark|auto)$/, theme = script.getAttribute("data-theme"), deskTheme;
-  if (!themes.test(theme)) theme = null;
+  var themes = /^(light|dark|auto)$/, theme = themes.test(script.getAttribute("data-theme")) ? script.getAttribute("data-theme") : null, deskTheme, pageControl;
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [];
@@ -218,6 +220,7 @@
   }
   function connect() {
     if (!consented || live) return;
+    if (pageControl) chunk("page-control");
     sid = sid || store("jun:s") || store("jun:s", rid()) || rid();
     started = started || Number(store("jun:t") || store("jun:t", Date.now())) || Date.now();
     var ws = live = new WebSocket(origin.replace(/^http/, "ws") + "/api/widget/" + encodeURIComponent(key) + "/live?s=" + sid);
@@ -332,13 +335,16 @@
       else if (logo) face = document.createElement("img"), face.src = origin + logo, face.alt = "";
       if (face) icon.replaceWith(face);
       wrap.style.setProperty("--r", cfg.radius + "px");
+      // AI-32 (D-93): the desk's switch; data-page-control="off" keeps this site out. After consent (connect).
+      pageControl = cfg.pageControl && script.getAttribute("data-page-control") != "off";
+      if (pageControl && consented) chunk("page-control");
     }
     paintTheme();
     wrap.classList.add("on");
   }
+  // Only .dark is styled here ("auto" keeps the light button and card; the chat follows the system).
   function paintTheme() {
-    wrap.classList.remove("light", "dark", "auto");
-    wrap.classList.add(theme || deskTheme || "auto");
+    wrap.classList.toggle("dark", (theme || deskTheme) == "dark");
   }
   setTimeout(brand, 1500);
   nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config?color=" + encodeURIComponent(color || "")).then(function (r) { return r.json(); }).then(brand, function () { brand(); });
@@ -356,20 +362,20 @@
   // AI-21 page actions (D-40): WebMCP tools the page registers, offered to the AI. The code lives in
   // widget-actions.js, loaded on first use; until then registrations queue here. Without native
   // WebMCP, a small shim takes document.modelContext.registerTool calls so early page code works.
-  var actionQueue = [], actionsLoading;
-  function loadActions() {
-    if (actionsLoading) return;
-    actionsLoading = 1;
+  // chunk("actions") loads /widget-actions.js once (added scripts run async).
+  var actionQueue = [], chunks = {};
+  function chunk(name) {
+    if (chunks[name]) return;
+    chunks[name] = 1;
     var s = document.createElement("script");
-    s.src = origin + "/widget-actions.js";
-    s.async = true;
+    s.src = origin + "/widget-" + name + ".js";
     document.head.appendChild(s);
   }
-  if (document.modelContext) loadActions();
+  if (document.modelContext) chunk("actions");
   else document.modelContext = {
     jun: 1, q: [],
-    registerTool: function (t, o) { this.q.push([t, o]); loadActions(); },
-    getTools: function () { loadActions(); return new Promise(function (r) { (function w() { document.modelContext.jun ? setTimeout(w, 50) : r(document.modelContext.getTools()); })(); }); },
+    registerTool: function (t, o) { this.q.push([t, o]); chunk("actions"); },
+    getTools: function () { chunk("actions"); return new Promise(function (r) { (function w() { document.modelContext.jun ? setTimeout(w, 50) : r(document.modelContext.getTools()); })(); }); },
   };
   var pendingOpener, onExit;
   function setOpen(next) {
@@ -490,7 +496,7 @@
     registerAction: function (t) {
       var r = { t: t, off: null, dead: false };
       if (window.JunDesk._a) r.off = window.JunDesk._a.register(t);
-      else { actionQueue.push(r); loadActions(); }
+      else { actionQueue.push(r); chunk("actions"); }
       return function () { r.dead = true; if (r.off) r.off(); };
     },
   };

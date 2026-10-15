@@ -23,11 +23,12 @@ import { autoAssign } from "./lib/assignment.ts";
 import { runAgent } from "./ai/run.ts";
 import { DEFAULT_TOOL_STATUS } from "./ai/config.ts";
 import { runTool, type ToolAction } from "./ai/tools.ts";
-import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, checkInput, MAX_ACTION_CHAIN, MAX_ACTION_RESULT, rankActions, resultShape, sanitizeActions, withRiskOverrides, type MessageAction, type PageAction } from "../shared/actions.ts";
+import { ACTION_ONLY_BODY, ACTION_RESULT_STATUSES, actionResultLimit, checkInput, MAX_ACTION_CHAIN, rankActions, resultShape, sanitizeActions, withRiskOverrides, type MessageAction, type PageAction } from "../shared/actions.ts";
 import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } from "../shared/debug.ts";
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
+import { isPageControl, withoutPageControl } from "../shared/page-control.ts";
 import { compileTemplate } from "../shared/jinja.ts";
 import { markWidgetUsed, matchWidgetAction, matchWidgetChange, MAX_PAGE_ACTION_DATA, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, renderActionLine, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
@@ -402,7 +403,7 @@ export class Conversation extends DurableObject<Env> {
     if (participant.role === "visitor" && input.context !== undefined) await this.#storeContext(ref, message.seq, input.context);
     // AI-21: the page's actions travel with each message; the AI turn (an alarm) reads the latest list.
     if (participant.role === "visitor" && input.actions !== undefined) {
-      const pageActions = sanitizeActions(input.actions);
+      const pageActions = await this.#allowedActions(ref, sanitizeActions(input.actions));
       await this.ctx.storage.put(PAGE_ACTIONS_KEY, pageActions);
       this.ctx.waitUntil(this.#notePageActions(ref, pageActions));
     }
@@ -489,7 +490,7 @@ export class Conversation extends DurableObject<Env> {
   async #pageButton(ref: ConversationRef, meta: WidgetActionMeta, sent: unknown): Promise<{ action: MessageAction; human: boolean } | { error: string } | null> {
     const name = PAGE_ACTION_BUTTON.exec(meta.type)?.[1];
     if (!name) return null;
-    const raw = sent !== undefined ? sanitizeActions(sent) : ((await this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY)) ?? []);
+    const raw = sent !== undefined ? await this.#allowedActions(ref, sanitizeActions(sent)) : ((await this.ctx.storage.get<PageAction[]>(PAGE_ACTIONS_KEY)) ?? []);
     // D-74: a website action the desk says a person does still hands off when a button runs it (D-77: with the desk's line).
     const desk = await loadAgentConfig(this.env, ref.workspaceId);
     const list = withRiskOverrides(raw, desk.websiteActionRisk, desk.websiteActionStatus);
@@ -706,6 +707,19 @@ export class Conversation extends DurableObject<Env> {
     }
     // With the team (from the start, or just handed off) and outside business hours: say so.
     await this.#maybeAway(ref);
+  }
+
+  /**
+   * AI-32 (D-93): page control only while the desk's switch is on (Chat widget → Behaviour): a site
+   * that still loads it, or names its own actions so, doesn't get them offered. One read, only when needed.
+   */
+  async #allowedActions(ref: ConversationRef, actions: PageAction[]): Promise<PageAction[]> {
+    if (!actions.some((a) => isPageControl(a.name))) return actions;
+    const row = await this.env.DB.prepare("SELECT i.settings FROM conversations c JOIN inboxes i ON i.id = c.inbox_id WHERE c.id = ?")
+      .bind(ref.conversationId)
+      .first<{ settings: string }>();
+    const on = Boolean(row && (JSON.parse(row.settings) as { pageControl?: unknown }).pageControl !== false);
+    return on ? actions : withoutPageControl(actions);
   }
 
   /** I-10: one automatic "we're away, back Monday at 09:00" per closed period, for human-handled chats. */
@@ -1190,7 +1204,9 @@ export class Conversation extends DurableObject<Env> {
       if (this.#settled.has(runId)) return;
       this.#settled.add(runId);
     }
-    const result = typeof event.result === "string" && event.result.trim() ? redact(event.result, MAX_ACTION_RESULT) : null;
+    const raw = typeof event.result === "string" && event.result.trim() ? event.result : null;
+    // Masked and capped once the action is known (AI-32: read_page may return a whole page's text).
+    let result: string | null = null;
     const config = status === "cancelled" || status === "gone" ? null : await loadAgentConfig(this.env, ref.workspaceId);
     let card: MessageWidget | null = null;
     let cardNote = "";
@@ -1198,6 +1214,7 @@ export class Conversation extends DurableObject<Env> {
       ref,
       runId,
       (action) => {
+        result = raw ? redact(raw, actionResultLimit(action.name)) : null;
         // pending → any result; ok → undone. Nothing else moves.
         if (action.status === "pending" && status !== "undone") {
           const next: MessageAction = { ...action, status, result, canUndo: status === "ok" && event.canUndo === true };

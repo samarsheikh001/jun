@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Message } from "../../shared/protocol.ts";
-import { actionCallId, DONE_TOOL } from "../../shared/actions.ts";
-import { asksForHuman, followUpRules, replyOrder, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
+import { actionCallId, DONE_TOOL, sanitizeActions } from "../../shared/actions.ts";
+import { asksForHuman, followUpRules, pageActionRules, pageControlRules, replyOrder, resolveCitations, searchQuery, systemPrompt, toChatMessages } from "./agent.ts";
 import { blocksFromText, chunkBlocks, decodeEntities } from "./chunk.ts";
 import { ftsQuery } from "./query.ts";
 import type { SearchHit } from "./query.ts";
@@ -236,6 +236,16 @@ test("citations of chunks from the same page merge into one source", () => {
   const { text, sources } = resolveCitations("Teams cost $10 [1][2]. Annual saves 20% [3]. Refunds [2].", [page("Teams"), page("Annual"), hit("Refunds")]);
   assert.equal(text, "Teams cost $10 [1]. Annual saves 20% [2]. Refunds [1].");
   assert.deepEqual(sources, [{ title: "Pricing", url: "https://x/pricing" }, { title: "Refunds", url: null }]);
+});
+
+test("pageControlRules: only with read_page offered; names the tools the model got", () => {
+  const actions = sanitizeActions(["read_page", "click", "type_text"].map((name) => ({ id: name, name, description: `Page control ${name}` })));
+  const rules = pageControlRules(actions);
+  assert.match(rules, /pa_read_page shows you the customer's page/);
+  assert.match(rules, /pa_click, pa_type_text work on those numbers/);
+  assert.match(rules, /Never type passwords, card numbers or one-time codes/);
+  assert.match(pageActionRules(actions), /Page control:/);
+  assert.equal(pageControlRules(sanitizeActions([{ id: "x", name: "export_csv", description: "Export" }])), "");
 });
 
 test("followUpRules: a turn after a page action must call the next action or the done tool", () => {

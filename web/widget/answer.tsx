@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
-import { ACTION_ONLY_BODY, actionChip, actionStatusLine, actionStatusText, actionSummary, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
+import { ACTION_ONLY_BODY, actionChip, actionInputLine, actionStatusLine, actionStatusText, actionTitle, visibleResult, type MessageAction } from "../../shared/actions.ts";
+import { shownDescription } from "../../shared/page-control.ts";
 import type { AiStep, Source } from "../../shared/protocol.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { Markdown } from "../components/Markdown.tsx";
@@ -110,6 +111,8 @@ interface StepLine extends AiStep {
   lines?: string[];
   error?: string;
   undo?: { run: () => void; busy: boolean; error?: string };
+  /** Didn't run (cancelled, page gone, undone): a dash, not the done tick. */
+  skipped?: boolean;
 }
 
 const chevron = <path d="M6 9l6 6 6-6" />;
@@ -134,6 +137,10 @@ function StepRow({ step }: { step: StepLine }) {
               <span className="w-step-spin" role="img" aria-label="In progress" />
             ) : step.error ? (
               <span className="w-step-dot" role="img" aria-label="Failed" />
+            ) : step.skipped ? (
+              <svg className="w-row-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" role="img" aria-label="Didn't run">
+                <path d="M6 12h12" />
+              </svg>
             ) : (
               <svg className="w-row-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Done">
                 <path d="M20 6L9 17l-5-5" />
@@ -409,8 +416,8 @@ function actionLine(action: MessageAction, running: boolean, controls: ActionCon
   const line: StepLine = { id: action.runId, label: actionTitle(action.name), state: running ? "running" : "done" };
   const chip = actionChip(action);
   if (chip) line.chip = chip;
-  const lines = [action.description];
-  const inputs = actionSummary({ description: "", input: action.input }).replace(/^ · /, "");
+  const lines = [shownDescription(action)];
+  const inputs = actionInputLine(action);
   if (inputs) lines.push(inputs);
   if (action.status === "error") line.error = action.result ?? "Didn't work";
   else if (action.status === "ok") {
@@ -418,7 +425,14 @@ function actionLine(action: MessageAction, running: boolean, controls: ActionCon
     // In full here: the chip may be cut short.
     if (result) lines.push(result);
     if (action.canUndo && controls) line.undo = { run: undo, busy: undoing, ...(controls.undoError ? { error: controls.undoError } : {}) };
-  } else if (!running) lines.push(actionStatusText(action.status));
+  } else if (!running) {
+    lines.push(actionStatusText(action.status));
+    // A step the visitor cancelled (or that never ran) says so on its row, not a done tick.
+    if (action.status !== "pending") {
+      line.skipped = true;
+      line.chip = actionStatusText(action.status);
+    }
+  }
   line.lines = lines;
   return line;
 }

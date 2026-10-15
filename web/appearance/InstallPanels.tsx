@@ -129,14 +129,16 @@ export function InstallTab({ workspaceId, canEdit, install, reload }: { workspac
 export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [proactive, setProactive] = useState(true);
+  const [pageControl, setPageControl] = useState(true);
   const [openers, setOpeners] = useState<OpenerRule[]>([]);
   const [domains, setDomains] = useState("");
   const [savedDomains, setSavedDomains] = useState("");
   const { busy, error, run } = useAction();
   useEffect(() => {
-    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; allowedDomains?: string[]; openers?: OpenerRule[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
+    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; pageControl?: boolean; allowedDomains?: string[]; openers?: OpenerRule[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
       setLoaded(Boolean(r.inbox));
       setProactive(r.inbox?.settings.proactive !== false);
+      setPageControl(r.inbox?.settings.pageControl !== false);
       setOpeners(r.inbox?.settings.openers ?? []);
       const list = (r.inbox?.settings.allowedDomains ?? []).join(", ");
       setDomains(list);
@@ -149,6 +151,17 @@ export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; 
       const list = (r.settings.allowedDomains ?? []).join(", ");
       setDomains(list);
       setSavedDomains(list);
+    });
+  // AI-32 (D-93): page control, on by default; every site with the snippet follows within a minute.
+  const togglePageControl = (value: boolean) =>
+    run(async () => {
+      setPageControl(value);
+      try {
+        await api(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { pageControl: value } });
+      } catch (e) {
+        setPageControl(!value);
+        throw e;
+      }
     });
   const toggleProactive = async (value: boolean) => {
     setProactive(value);
@@ -173,6 +186,15 @@ export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; 
           <Switch checked={proactive} disabled={!canEdit} onCheckedChange={(value) => void toggleProactive(value)} aria-label="Offer help when something breaks on the page" />
         </SettingRow>
         {canEdit && <OpenersPanel workspaceId={workspaceId} proactive={proactive} initial={openers} />}
+      </SettingsCard>
+
+      <SettingsCard
+        title="Let the AI use your website"
+        description={<>The AI can read the page the customer is on and click, type and choose for them, like "set my time zone to Tokyo". It asks before anything that changes something, and never sees password or card fields or anything marked <code>data-jun-private</code>.</>}
+      >
+        <SettingRow label="Read and use the page" description={<>On every site with your snippet. To leave one site out, add <code>data-page-control="off"</code> to its snippet.</>}>
+          <Switch checked={pageControl} disabled={!canEdit || busy} onCheckedChange={(value) => void togglePageControl(value)} aria-label="Let the AI read and use your website" />
+        </SettingRow>
       </SettingsCard>
     </>
   );

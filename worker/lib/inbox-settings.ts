@@ -17,6 +17,11 @@ export function applyInboxPatch(settings: Record<string, unknown>, body: Record<
     if (typeof body.proactive !== "boolean") throw new Error("Offering help must be true or false.");
     settings.proactive = body.proactive;
   }
+  // AI-32 (D-93): the AI may read and use the customer's website (on unless turned off).
+  if (body.pageControl !== undefined) {
+    if (typeof body.pageControl !== "boolean") throw new Error("Letting the AI use your website must be true or false.");
+    settings.pageControl = body.pageControl;
+  }
   // W-12: ask visitors to rate resolved conversations (on unless turned off).
   if (body.csat !== undefined) {
     if (typeof body.csat !== "boolean") throw new Error("Asking for a rating must be true or false.");

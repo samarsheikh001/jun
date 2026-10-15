@@ -4,6 +4,7 @@ import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
+import { reloadedResult } from "../../shared/page-control.ts";
 import { actionWaits, restSummary, waitingCardLine } from "../../shared/island.ts";
 import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
@@ -86,6 +87,30 @@ function writeEnded(key: string, ids: string[]): void {
     localStorage.setItem(endedKey(key), JSON.stringify(memoryEnded));
   } catch {
     // storage blocked: remembered until the page reloads
+  }
+}
+
+// AI-32: page actions this tab started and hasn't heard back about. A click that loads a new page
+// can take the page (and this frame) down before the result is sent; after the reload the frame closes
+// such a step (reloadedResult) so the run goes on. Session storage: this tab only, consent rules as above.
+const RUNS_KEY = "jun:runs";
+let memoryRuns: string[] = [];
+function readRuns(): string[] {
+  if (!persist) return memoryRuns;
+  try {
+    const list: unknown = JSON.parse(sessionStorage.getItem(RUNS_KEY) ?? "[]");
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return memoryRuns;
+  }
+}
+function writeRuns(ids: string[]): void {
+  memoryRuns = ids.slice(-20);
+  if (!persist) return;
+  try {
+    sessionStorage.setItem(RUNS_KEY, JSON.stringify(memoryRuns));
+  } catch {
+    // storage blocked: only this page knows
   }
 }
 
@@ -935,9 +960,28 @@ function WidgetThread({
   const startAction = (action: MessageAction, input: Record<string, unknown>) => {
     if (started.current.has(action.runId)) return;
     started.current.add(action.runId);
+    writeRuns([...readRuns().filter((id) => id !== action.runId), action.runId]);
     setRunning((r) => ({ ...r, [action.runId]: true }));
     postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
   };
+  // AI-32: a step started before this page loaded that's still pending never reported back: the page
+  // went away under it (a click that opened a new page). Close it once the socket is open, so the AI's
+  // follow-up turn reads the new page instead of the run stopping (and its card asking again).
+  useEffect(() => {
+    if (thread.state !== "open") return;
+    const mine = readRuns();
+    if (!mine.length) return;
+    for (const m of thread.messages) {
+      const a = m.authorType === "ai" ? m.meta.action : undefined;
+      if (!a || !mine.includes(a.runId) || started.current.has(a.runId)) continue;
+      writeRuns(readRuns().filter((id) => id !== a.runId));
+      if (a.status !== "pending") continue;
+      started.current.add(a.runId);
+      const { status, result } = reloadedResult(a.name);
+      thread.actionResult(a.runId, status, result);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread.state, thread.messages]);
   // D-78: an action that runs without asking starts here, not from its card: in the island a run
   // stays a line and the card isn't drawn. Only the newest message, once, and only live (as the card did).
   const autoAction = lastMessage?.authorType === "ai" ? lastMessage.meta.action : undefined;
@@ -978,6 +1022,7 @@ function WidgetThread({
       const runId = data.runId;
       if (data.status === "undo_failed") setUndoErrors((s) => ({ ...s, [runId]: data.result || "Couldn't undo that." }));
       else if (data.status === "ok" || data.status === "error" || data.status === "gone" || data.status === "undone") {
+        writeRuns(readRuns().filter((id) => id !== runId));
         setRunning((r) => {
           const { [runId]: _done, ...rest } = r;
           return rest;

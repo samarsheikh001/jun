@@ -17,12 +17,16 @@
  *     risk:      "auto" | "confirm" (default) | "human"; or WebMCP annotations
  *     widget:    a card made on the desk ("cart_summary"): the result (an object) is shown as it
  *   returns a function that removes the action.
- * Nothing here reads the page or fills forms: only what the page's own code registers.
+ * Nothing here reads the page or fills forms: only what the page's own code registers. (AI-32's page
+ * control, widget-page-control.js, does, on sites that opt in; it registers its actions through here.)
  */
 (function () {
   var J = window.JunDesk;
   if (!J || J._a) return;
   var MAX = 60; // the desk ranks these for the question and offers the AI at most 30
+  // AI-32 page control's actions (shared/page-control.ts): listed first so a long list never cuts
+  // them; read_page's result may be a whole page's text (MAX_PAGE_READ_RESULT, not 2000).
+  var CONTROL = /^(read_page|click|type_text|choose_option|scroll_page)$/;
 
   // ---------- WebMCP imperative API, when the browser doesn't have it ----------
   // (widget.js leaves a shim that queued early registerTool calls; they're replayed below.)
@@ -110,16 +114,21 @@
   function list(cb) {
     var out = [];
     registry.forEach(function (t, id) { if (offered(t)) out.push(describe(id, t)); });
-    out.sort(function (a, b) { return (b.visible ? 1 : 0) - (a.visible ? 1 : 0); });
+    var rank = function (a) { return (CONTROL.test(a.name) ? 2 : 0) + (a.visible ? 1 : 0); };
+    out.sort(function (a, b) { return rank(b) - rank(a); });
     Promise.resolve(safe(function () { return mc.getTools(); }, [])).then(function (ts) {
       (ts || []).forEach(function (t) { if (t && !registry.has(t.name) && !mirrors.has(t.name)) out.push(describe(t.name, t)); });
     }, function () {}).then(function () { cb(out.slice(0, MAX)); });
   }
-  function find(id, cb) {
+  // `tries`: right after a new page loads, its actions (page control's above all) may register a moment
+  // after the AI asks for one: look again for up to 3 s before saying it's gone.
+  function find(id, cb, tries) {
     var t = registry.get(id);
     if (t) return cb(offered(t) ? t : null, true);
     Promise.resolve(safe(function () { return mc.getTools(); }, [])).then(function (ts) {
-      cb((ts || []).filter(function (x) { return x && x.name == id; })[0] || null, false);
+      var x = (ts || []).filter(function (x) { return x && x.name == id; })[0];
+      if (!x && (tries || 0) < 10) return setTimeout(function () { find(id, cb, (tries || 0) + 1); }, 300);
+      cb(x || null, false);
     }, function () { cb(null, false); });
   }
   var marked;
@@ -137,12 +146,14 @@
     marked[0].style.outlineOffset = marked[2];
     marked = null;
   }
-  // What the AI reads back (a booking form, search results), up to the desk's MAX_ACTION_RESULT.
-  function text(r) {
+  // What the AI reads back (a booking form, search results), up to the desk's MAX_ACTION_RESULT
+  // (actionResultLimit: 12000 for read_page).
+  function text(r, max) {
+    max = max || 2000;
     if (r == null) return "";
-    if (typeof r == "string") return r.slice(0, 2000);
-    if (typeof r.summary == "string") return r.summary.slice(0, 2000);
-    return safe(function () { return JSON.stringify(r).slice(0, 2000); }, "");
+    if (typeof r == "string") return r.slice(0, max);
+    if (typeof r.summary == "string") return r.summary.slice(0, max);
+    return safe(function () { return JSON.stringify(r).slice(0, max); }, "");
   }
   // The whole result as JSON for its card (W-31), if it is one: the desk draws only what a card asks for.
   function data(r) {
@@ -168,7 +179,8 @@
       highlight(t);
       Promise.resolve().then(function () { return ours ? t.execute(input, runOptions()) : mc.executeTool(t, input); }).then(function (r) {
         results.set(runId, { tool: t, result: r });
-        post({ type: "jun:action", runId: runId, status: "ok", result: text(r), data: data(r), canUndo: typeof t.undo == "function" });
+        var page = t.name == "read_page"; // a page's text: for the AI only, never a card's data
+        post({ type: "jun:action", runId: runId, status: "ok", result: text(r, page && 12000), data: page ? void 0 : data(r), canUndo: typeof t.undo == "function" });
       }, function (e) {
         post({ type: "jun:action", runId: runId, status: "error", result: text(e && e.message) || "Something went wrong." });
       }).then(unhighlight, unhighlight);
