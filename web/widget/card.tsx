@@ -148,6 +148,7 @@ export function MiniCard({
   welcome,
   placeholder,
   onOpen,
+  onType,
   onContact,
   onNewChat,
   onHide,
@@ -159,6 +160,8 @@ export function MiniCard({
   welcome: string;
   placeholder: string;
   onOpen: () => void;
+  /** The composer was clicked: open, with the cursor in the chat's own box (no second click). */
+  onType: () => void;
   onContact: () => void;
   onNewChat: () => void;
   onHide: () => void;
@@ -192,7 +195,7 @@ export function MiniCard({
         <button className="w-mini-act" onClick={onNewChat}>Start a new chat</button>
       </div>
       {/* The open chat's composer as a picture (same "+", placeholder and empty Send): one look closed and open. */}
-      <button className="w-mini-composer" onClick={onOpen}>
+      <button className="w-mini-composer" onClick={onType}>
         <span className="w-mini-plus">{icon("M12 5v14M5 12h14")}</span>
         <span className="w-mini-ph">{placeholder}</span>
         <span className="w-mini-send">{icon("M12 19V5M5 12l7-7 7 7")}</span>

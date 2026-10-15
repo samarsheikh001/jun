@@ -329,6 +329,22 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const switchOpen = useRef<(next: boolean) => void>(setOpen);
   /** D-90: a morph between the card and the chat is running (the frame stays unclipped meanwhile). */
   const [morphing, setMorphing] = useState(false);
+  /** Opened from the card's composer: the chat's own box takes the cursor once it's there (after the morph). */
+  const focusComposer = useRef(false);
+  useEffect(() => {
+    if (!open || morphing || !focusComposer.current) return;
+    focusComposer.current = false;
+    // The thread may still be drawing its box (a skeleton first): look for up to a second.
+    let tries = 0;
+    let frame = 0;
+    const find = () => {
+      const box = document.querySelector<HTMLTextAreaElement>(".w-shell textarea:not([disabled])");
+      if (box) box.focus();
+      else if (tries++ < 60) frame = requestAnimationFrame(find);
+    };
+    find();
+    return () => cancelAnimationFrame(frame);
+  }, [open, morphing]);
   const phoneFrame = usePhoneFrame();
   /** D-34: the panel's Expand (740px tall), the card hidden for this page (then a "Chat with us" pill), the suggestions dismissed. */
   const [grown, setGrown] = useState(false);
@@ -646,8 +662,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const current = view.kind === "thread" && view.id ? view.id : (conversations.find((c) => c.status !== "resolved")?.id ?? null);
   // From the card: the chat opens (and the card morphs into it, D-90) when the host answers
   // "jun:open", so the loader's state and the frame's never disagree. If no answer comes, open anyway.
-  const openChat = (next?: typeof view) => {
+  const openChat = (next?: typeof view, type = false) => {
     pendingView.current = next ?? null;
+    focusComposer.current = type;
     postToHost({ type: "jun:open" });
     clearTimeout(openFallback.current);
     openFallback.current = window.setTimeout(() => switchOpen.current(true), 300);
@@ -670,6 +687,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
               welcome={opener ? (opener.page || opener.inviteId ? opener.text : `${opener.text} Tell me what you were trying to do and I'll take a look.`) : config.greeting}
               placeholder={config.placeholder}
               onOpen={() => openChat()}
+              onType={() => openChat(undefined, true)}
               onContact={() => openChat({ kind: "thread", id: current, human: true })}
               onNewChat={() => openChat({ kind: "thread", id: null })}
               onHide={() => setMiniHidden(true)}
