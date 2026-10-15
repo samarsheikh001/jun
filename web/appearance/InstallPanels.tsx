@@ -8,6 +8,7 @@ import type { OpenerRule } from "../../shared/openers.ts";
 import { Button, buttonVariants } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
+import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 
 // The Chat widget page's Install tab (D-91): only putting the snippet on the site, with whether it's
@@ -130,15 +131,17 @@ export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; 
   const [loaded, setLoaded] = useState(false);
   const [proactive, setProactive] = useState(true);
   const [pageControl, setPageControl] = useState(true);
+  const [pageConfirm, setPageConfirm] = useState("allow-always");
   const [openers, setOpeners] = useState<OpenerRule[]>([]);
   const [domains, setDomains] = useState("");
   const [savedDomains, setSavedDomains] = useState("");
   const { busy, error, run } = useAction();
   useEffect(() => {
-    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; pageControl?: boolean; allowedDomains?: string[]; openers?: OpenerRule[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
+    api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; pageControl?: boolean; pageControlConfirm?: string; allowedDomains?: string[]; openers?: OpenerRule[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
       setLoaded(Boolean(r.inbox));
       setProactive(r.inbox?.settings.proactive !== false);
       setPageControl(r.inbox?.settings.pageControl !== false);
+      setPageConfirm(r.inbox?.settings.pageControlConfirm ?? "allow-always");
       setOpeners(r.inbox?.settings.openers ?? []);
       const list = (r.inbox?.settings.allowedDomains ?? []).join(", ");
       setDomains(list);
@@ -160,6 +163,17 @@ export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; 
         await api(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { pageControl: value } });
       } catch (e) {
         setPageControl(!value);
+        throw e;
+      }
+    });
+  const changePageConfirm = (value: string) =>
+    run(async () => {
+      const before = pageConfirm;
+      setPageConfirm(value);
+      try {
+        await api(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { pageControlConfirm: value } });
+      } catch (e) {
+        setPageConfirm(before);
         throw e;
       }
     });
@@ -190,10 +204,26 @@ export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; 
 
       <SettingsCard
         title="Let the AI use your website"
-        description={<>The AI can read the page the customer is on and click, type and choose for them, like "set my time zone to Tokyo". It asks before anything that changes something, and never sees password or card fields or anything marked <code>data-jun-private</code>.</>}
+        description={<>The AI can read the page the customer is on and click, type and choose for them, like "set my time zone to Tokyo". You choose below whether it asks first. It never sees password or card fields or anything marked <code>data-jun-private</code>.</>}
       >
         <SettingRow label="Read and use the page" description={<>On every site with your snippet. To leave one site out, add <code>data-page-control="off"</code> to its snippet.</>}>
           <Switch checked={pageControl} disabled={!canEdit || busy} onCheckedChange={(value) => void togglePageControl(value)} aria-label="Let the AI read and use your website" />
+        </SettingRow>
+        <SettingRow
+          label="Before it clicks, types or chooses"
+          description={
+            pageConfirm === "never"
+              ? "It acts straight away. Each step still shows in the chat and on the page."
+              : pageConfirm === "every-time"
+                ? "The customer confirms each step."
+                : "The customer confirms each step, or taps Always allow to stop being asked on your site."
+          }
+        >
+          <SelectField value={pageConfirm} disabled={!canEdit || busy || !pageControl} onValueChange={(value) => void changePageConfirm(String(value))} aria-label="Before the AI clicks, types or chooses">
+            <SelectOption value="allow-always">Ask, with Always allow</SelectOption>
+            <SelectOption value="every-time">Ask every time</SelectOption>
+            <SelectOption value="never">Don't ask</SelectOption>
+          </SelectField>
         </SettingRow>
       </SettingsCard>
     </>

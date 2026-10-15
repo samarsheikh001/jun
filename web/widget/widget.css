@@ -688,6 +688,9 @@ html.island.island-dark {
 .w-act-ghost { min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; }
 .w-act-ghost:hover { background: var(--hover); color: var(--text); }
 .w-act-ghost:disabled { opacity: 0.6; cursor: default; }
+/* AI-32: under the latest step while page control runs without asking: one quiet line to ask again. */
+.w-act-ask { display: block; margin: 6px 0 0; padding: 2px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.w-act-ask:hover { color: var(--text); text-decoration: underline; }
 .w-act-error { color: var(--error); font-size: 12.5px; }
 .i-body .w-act { background: var(--surface); }
 

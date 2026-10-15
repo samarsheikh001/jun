@@ -209,6 +209,10 @@ export interface ActionControls {
   onCancel: () => void;
   onUndo: () => void;
   undoError?: string;
+  /** AI-32: "Always allow" next to Confirm (page control): this and later steps run without asking. */
+  onAllowAlways?: () => void;
+  /** AI-32: allowed for good: "Ask me before each step" under the latest one turns it back off. */
+  onAskFirst?: () => void;
 }
 
 export function AiAnswer({
@@ -362,7 +366,10 @@ export function AiAnswer({
       )}
 
       {waiting && action && controls && (
-        <ActionCard action={action} latest={latest} createdAt={answer.createdAt ?? 0} onInput={controls.onInput} onRun={controls.onRun} onCancel={controls.onCancel} />
+        <ActionCard action={action} latest={latest} createdAt={answer.createdAt ?? 0} onInput={controls.onInput} onRun={controls.onRun} onCancel={controls.onCancel} {...(controls.onAllowAlways ? { onAllowAlways: controls.onAllowAlways } : {})} />
+      )}
+      {!waiting && controls?.onAskFirst && (
+        <button type="button" className="w-act-ask" onClick={controls.onAskFirst}>Acting on the page without asking · Ask me first</button>
       )}
 
       {done && latest && onFollowUp && followUps.length > 0 && (

@@ -1,4 +1,5 @@
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify, type Document } from "yaml";
+import { PAGE_CONTROL_CONFIRMS, pageControlConfirm, type PageControlConfirm } from "../../shared/page-control.ts";
 import { APPEARANCE_DEFAULTS, applyAppearance, widgetLook, type ButtonStyle, type IslandSurface, type WidgetMode, type WidgetTheme } from "../../shared/appearance.ts";
 import { DEFAULT_AWAY_MESSAGE, parseHours, validTimezone, type BusinessHours, type DayHours, type Weekday } from "../../shared/hours.ts";
 import { assignmentSettings, parseAssignment } from "../../shared/inbox.ts";
@@ -68,6 +69,8 @@ export interface DeskFile {
     offerHelpOnErrors?: boolean;
     /** AI-32: the AI may read and use your website (page control). */
     pageControl?: boolean;
+    /** AI-32: before it clicks, types or chooses: allow-always (ask, with Always allow), every-time, never. */
+    pageControlConfirm?: PageControlConfirm;
     openers?: DeskOpener[];
   };
   hours?: {
@@ -158,7 +161,7 @@ const TEXT_DEFAULTS = { greeting: APPEARANCE_DEFAULTS.greeting, replyTime: APPEA
 
 // `launcher` is the pre-D-89 key: still read (island and bar → mode island, card → window with the
 // greeting card, button → window without), never written.
-const CHAT_KEYS = [...Object.keys(LOOK_FIELDS), "island", "sound", "askForRating", "allowedWebsites", "offerHelpOnErrors", "pageControl", "openers", "launcher"];
+const CHAT_KEYS = [...Object.keys(LOOK_FIELDS), "island", "sound", "askForRating", "allowedWebsites", "offerHelpOnErrors", "pageControl", "pageControlConfirm", "openers", "launcher"];
 
 /** applyAppearance's words for its fields → desk.yaml's keys. */
 const fieldWords = (message: string) => message.replace(/\bdisplayName\b/, "name");
@@ -215,6 +218,10 @@ function parseChat(raw: Record<string, unknown>, issues: DeskIssue[]): NonNullab
     if (raw[key] === undefined) continue;
     if (bool(raw[key])) out[key] = raw[key] as boolean;
     else problem(key, "use true or false.");
+  }
+  if (raw.pageControlConfirm !== undefined) {
+    if (PAGE_CONTROL_CONFIRMS.includes(raw.pageControlConfirm as PageControlConfirm)) out.pageControlConfirm = raw.pageControlConfirm as PageControlConfirm;
+    else problem("pageControlConfirm", "use allow-always (ask, with an Always allow button), every-time or never.");
   }
   if (raw.allowedWebsites !== undefined) {
     const list = raw.allowedWebsites === null ? [] : raw.allowedWebsites;
@@ -442,6 +449,7 @@ export function deskFromSettings(settings: Record<string, unknown>, ai: DeskAi):
       allowedWebsites: Array.isArray(settings.allowedDomains) ? normalizeDomains(settings.allowedDomains).domains : [],
       offerHelpOnErrors: settings.proactive !== false,
       pageControl: settings.pageControl !== false,
+      pageControlConfirm: pageControlConfirm(settings.pageControlConfirm),
       openers: storedOpeners(settings.openers).map(openerOf),
     },
     hours: { enabled: hours.enabled, timeZone: hours.timezone, days: daysOf(hours.days), awayMessage: hours.awayMessage },
@@ -508,6 +516,7 @@ export function renderDeskFile(desk: DeskFile): string {
     if (chat.allowedWebsites !== undefined) out.push(block(2, "allowedWebsites", chat.allowedWebsites, "[] = any website"));
     if (chat.offerHelpOnErrors !== undefined) out.push(line(2, "offerHelpOnErrors", chat.offerHelpOnErrors, "offer help when something breaks on the page"));
     if (chat.pageControl !== undefined) out.push(line(2, "pageControl", chat.pageControl, "the AI may read and use your website (asks before changes)"));
+    if (chat.pageControlConfirm !== undefined) out.push(line(2, "pageControlConfirm", chat.pageControlConfirm, "before it clicks, types or chooses: allow-always | every-time | never"));
     if (chat.openers !== undefined) out.push(block(2, "openers", chat.openers, "after: seconds on the page; no message = the AI writes it (hint: what to offer)"));
     out.push("");
   }
@@ -594,6 +603,7 @@ export function applyDesk(desk: DeskFile, settings: Record<string, unknown>, ai:
   if (chat.askForRating !== undefined) body.csat = chat.askForRating;
   if (chat.offerHelpOnErrors !== undefined) body.proactive = chat.offerHelpOnErrors;
   if (chat.pageControl !== undefined) body.pageControl = chat.pageControl;
+  if (chat.pageControlConfirm !== undefined) body.pageControlConfirm = chat.pageControlConfirm;
   if (chat.allowedWebsites !== undefined) body.allowedDomains = chat.allowedWebsites;
   if (chat.openers !== undefined) {
     // An opener on the same page keeps its id (its AI line stays cached).

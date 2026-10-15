@@ -18,7 +18,8 @@
  *   - nothing is read until the AI calls read_page, and no index badges stay on the page.
  */
 import { PageController } from "@page-agent/page-controller";
-import { controlMessage, MAX_PAGE_READ_RESULT, pageRead, PRIVATE_SELECTOR } from "../../shared/page-control.ts";
+import { controlMessage, MAX_PAGE_READ_RESULT, pageRead, pointChip, PRIVATE_SELECTOR, type PointMessage } from "../../shared/page-control.ts";
+import { createPointer } from "./pointer.ts";
 
 interface Action {
   name: string;
@@ -46,6 +47,23 @@ const IGNORE = "data-page-agent-ignore"; // PageController skips such an element
 
   let pc: PageController | null = null;
   let read = false;
+  // What's about to happen, shown on the page (pointer.ts): the chat frame says which step waits for
+  // the visitor's Confirm (jun:point); a step that runs gets the pointer's glide and click.
+  const pointer = createPointer();
+  const desk = (() => {
+    try {
+      return new URL((document.currentScript as HTMLScriptElement | null)?.src ?? "").origin;
+    } catch {
+      return "";
+    }
+  })();
+  const chatFrame = () => document.querySelector("[data-jun-desk]")?.shadowRoot?.querySelector("iframe")?.contentWindow ?? null;
+  window.addEventListener("message", (e) => {
+    const m = e.data as PointMessage | null;
+    if (!m || m.type !== "jun:point" || e.origin !== desk || e.source !== chatFrame()) return;
+    const at = m.point && read ? (controller() as unknown as Indexed).selectorMap.get(Number(m.point.index))?.ref : undefined;
+    pointer.show(at && at.isConnected && !at.closest(PRIVATE_SELECTOR) ? at : null, m.point ? pointChip(m.point, true) : "");
+  });
   // Made on first use, so nothing happens on the page until the AI reads it. (Its constructor marks
   // React roots data-page-agent-not-interactive: they carry every listener, so aren't buttons.)
   const controller = () => (pc ??= new PageController({ enableMask: false, viewportExpansion: -1, highlightOpacity: 0, highlightLabelOpacity: 0 }));
@@ -125,8 +143,8 @@ const IGNORE = "data-page-agent-ignore"; // PageController skips such an element
       inputSchema: { type: "object", properties: { index: number, label } },
       status: "Clicking",
       async execute(input) {
-        const { index, label } = element(input);
-        return done(await controller().clickElement(index), `Clicked ${label}.`);
+        const { el, index, label } = element(input);
+        return done(await pointer.act(el, pointChip({ name: "click", input }), () => controller().clickElement(index)), `Clicked ${label}.`);
       },
     },
     {
@@ -135,9 +153,9 @@ const IGNORE = "data-page-agent-ignore"; // PageController skips such an element
       inputSchema: { type: "object", properties: { index: number, text: { type: "string", description: "What to type." }, label }, required: ["text"] },
       status: "Typing",
       async execute(input) {
-        const { index, label } = element(input);
+        const { el, index, label } = element(input);
         const text = typeof input.text === "string" ? input.text : String(input.text ?? "");
-        return done(await controller().inputText(index, text), `Typed into ${label}.`);
+        return done(await pointer.act(el, pointChip({ name: "type_text", input }), () => controller().inputText(index, text)), `Typed into ${label}.`);
       },
     },
     {
@@ -150,7 +168,8 @@ const IGNORE = "data-page-agent-ignore"; // PageController skips such an element
         const wanted = String(input.option ?? "").trim();
         // PageController wants the option's exact text; the AI may get its case or spaces wrong.
         const match = el instanceof HTMLSelectElement ? Array.from(el.options).find((o) => o.textContent?.trim().toLowerCase() === wanted.toLowerCase()) : undefined;
-        return done(await controller().selectOption(index, match?.textContent?.trim() ?? wanted), `Chose ${match?.textContent?.trim() ?? wanted} in ${label}.`);
+        const chosen = match?.textContent?.trim() ?? wanted;
+        return done(await pointer.act(el, pointChip({ name: "choose_option", input: { option: chosen } }), () => controller().selectOption(index, chosen)), `Chose ${chosen} in ${label}.`);
       },
     },
     {

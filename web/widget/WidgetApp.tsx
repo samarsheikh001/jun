@@ -4,7 +4,7 @@ import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
-import { reloadedResult } from "../../shared/page-control.ts";
+import { allowedToRun, isPageControl, pointOf, reloadedResult } from "../../shared/page-control.ts";
 import { actionWaits, restSummary, waitingCardLine } from "../../shared/island.ts";
 import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
@@ -111,6 +111,29 @@ function writeRuns(ids: string[]): void {
     sessionStorage.setItem(RUNS_KEY, JSON.stringify(memoryRuns));
   } catch {
     // storage blocked: only this page knows
+  }
+}
+
+// AI-32: "Always allow" on a page-control Confirm card: this visitor lets the AI click, type and choose
+// on this site without asking each time. Same consent rules as the token; "Ask me before each step" undoes it.
+const allowKey = (key: string) => `jun:allow-page:${key}`;
+let memoryAllow = false;
+function readAllow(key: string): boolean {
+  if (!persist) return memoryAllow;
+  try {
+    return localStorage.getItem(allowKey(key)) === "1" || memoryAllow;
+  } catch {
+    return memoryAllow;
+  }
+}
+function writeAllow(key: string, on: boolean): void {
+  memoryAllow = on;
+  if (!persist) return;
+  try {
+    if (on) localStorage.setItem(allowKey(key), "1");
+    else localStorage.removeItem(allowKey(key));
+  } catch {
+    // storage blocked: remembered until the page reloads
   }
 }
 
@@ -221,6 +244,8 @@ const unread = (c: ConversationSummary) => c.lastMessageAuthor === "agent" && c.
 
 interface WidgetConfig extends WidgetLook {
   ai: boolean;
+  /** AI-32: the desk's choice before page control acts (only "allow-always" offers Always allow). */
+  pageControlConfirm?: string;
   hours: { open: boolean; back: string | null } | null;
   /** W-12: ask for a rating when a conversation is resolved. */
   csat: boolean;
@@ -547,6 +572,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const threadProps = {
     api,
     csat: config.csat,
+    offerAllowAlways: (config.pageControlConfirm ?? "allow-always") === "allow-always",
     away: Boolean(config.hours && !config.hours.open),
     placeholder: config.placeholder,
     sessionId,
@@ -749,6 +775,7 @@ function WidgetThread({
   conversationId,
   summary,
   csat,
+  offerAllowAlways,
   away,
   opener,
   first,
@@ -768,6 +795,8 @@ function WidgetThread({
   conversationId: string | null;
   summary: ConversationSummary | null;
   csat: boolean;
+  /** AI-32: the desk lets visitors choose "Always allow" for page control. */
+  offerAllowAlways: boolean;
   away: boolean;
   opener?: Opener | undefined;
   first?: string | undefined;
@@ -823,13 +852,29 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, conversationId]);
 
-  const thread = useThread({
+  const live = useThread({
     socketUrl: conversationId && initial ? `/api/widget/${api.key}/conversations/${conversationId}/ws` : null,
     ...(api.token ? { protocols: [api.token] } : {}),
     initialMessages: useMemo(() => initial ?? [], [initial]),
     other: "agent",
     onConversation,
   });
+  // AI-32: with "Always allow" on, page control's waiting steps read as `auto` here, so every place that
+  // decides "ask or run" (the card, the island, the auto-run) runs them; the server's record is unchanged.
+  const [allowStored, setAllowPage] = useState(() => readAllow(api.key));
+  // A visitor's earlier "Always allow" counts only while the desk still offers it.
+  const allowPage = allowStored && offerAllowAlways;
+  const allowAlways = (on: boolean) => {
+    writeAllow(api.key, on);
+    setAllowPage(on);
+  };
+  const allowedMessages = useMemo(
+    () => (allowPage ? live.messages.map((m) => (m.authorType === "ai" && m.meta.action && allowedToRun(m.meta.action) !== m.meta.action ? { ...m, meta: { ...m.meta, action: allowedToRun(m.meta.action) } } : m)) : live.messages),
+    [live.messages, allowPage],
+  );
+  const thread = { ...live, messages: allowedMessages };
+  // The newest page-control step: "Ask me first" shows under it while Always allow is on.
+  const lastPageStep = allowPage ? allowedMessages.findLast((m) => m.authorType === "ai" && isPageControl(m.meta.action?.name))?.meta.action?.runId : undefined;
   const onTyping = useTypingSignal(thread.setTyping);
 
   const lastMessage = thread.messages.at(-1);
@@ -1013,6 +1058,15 @@ function WidgetThread({
     runWasBusy.current = busy;
   });
   const actionRunning = (a: MessageAction) => Boolean(running[a.runId]) || (started.current.has(a.runId) && a.status === "pending");
+  // AI-32: the page shows the element a waiting click, typing or choice is about (a ring with "Click ·
+  // confirm in the chat"); the page-control chunk draws it. Sent only when it changes; none while it runs.
+  const pointAction = lastMessage?.authorType === "ai" ? lastMessage.meta.action : undefined;
+  const point = pointAction && !actionRunning(pointAction) ? pointOf(pointAction) : null;
+  const pointKey = point ? `${pointAction!.runId}` : "";
+  useEffect(() => {
+    postToHost({ type: "jun:point", point });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointKey]);
   const actionResult = useRef(thread.actionResult);
   actionResult.current = thread.actionResult;
   useEffect(() => {
@@ -1066,6 +1120,9 @@ function WidgetThread({
                 onRun: (input: Record<string, unknown>) => startAction(action, input),
                 onCancel: () => thread.actionResult(action.runId, "cancelled"),
                 onUndo: () => postToHost({ type: "jun:undo", runId: action.runId }),
+                // AI-32: page control can be allowed for good from its Confirm card, and asked again after.
+                ...(offerAllowAlways && isPageControl(action.name) && action.risk === "confirm" && !allowPage ? { onAllowAlways: () => allowAlways(true) } : {}),
+                ...(action.runId === lastPageStep ? { onAskFirst: () => allowAlways(false) } : {}),
                 ...(undoErrors[action.runId] ? { undoError: undoErrors[action.runId] } : {}),
               },
             }

@@ -3,6 +3,7 @@ import { parseHours } from "../../shared/hours.ts";
 import { parseAssignment } from "../../shared/inbox.ts";
 import { parseOpeners } from "../../shared/openers.ts";
 import { normalizeDomains } from "./origins.ts";
+import { PAGE_CONTROL_CONFIRMS, type PageControlConfirm } from "../../shared/page-control.ts";
 
 // The widget inbox's settings (`inboxes.settings`) as an admin changes them: the one set of checks
 // behind `PATCH /workspaces/:id/inbox` (the Chat widget page, Settings) and desk.yaml (D-84). Pure.
@@ -21,6 +22,11 @@ export function applyInboxPatch(settings: Record<string, unknown>, body: Record<
   if (body.pageControl !== undefined) {
     if (typeof body.pageControl !== "boolean") throw new Error("Letting the AI use your website must be true or false.");
     settings.pageControl = body.pageControl;
+  }
+  // AI-32: before page control clicks, types or chooses: ask with Always allow, ask every time, or not.
+  if (body.pageControlConfirm !== undefined) {
+    if (!PAGE_CONTROL_CONFIRMS.includes(body.pageControlConfirm as PageControlConfirm)) throw new Error("Before the AI acts on your website: allow-always, every-time or never.");
+    settings.pageControlConfirm = body.pageControlConfirm;
   }
   // W-12: ask visitors to rate resolved conversations (on unless turned off).
   if (body.csat !== undefined) {

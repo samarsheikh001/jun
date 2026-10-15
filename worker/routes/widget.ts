@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { pageControlConfirm } from "../../shared/page-control.ts";
 import { SOCKET_PROTOCOL, type Attachment, type CsatRating } from "../../shared/protocol.ts";
 import { parseRating } from "../../shared/inbox.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
@@ -111,6 +112,8 @@ widget.get("/widget/:key/config", async (c) => {
       csat: s.csat !== false,
       // AI-32 (D-93): the loader loads page control (unless the snippet says data-page-control="off").
       pageControl: s.pageControl !== false,
+      // AI-32: whether the Confirm card offers "Always allow" (the frame), or asks / runs (the DO decides).
+      pageControlConfirm: pageControlConfirm(s.pageControlConfirm),
       /** Whether new chats are answered by the AI first (the widget shows its typing dots right away). */
       ai: (await loadAiSettings(c.env, inbox.workspaceId)).enabled,
       // I-10: shown in the widget header ("Back tomorrow at 09:00 (London time)").

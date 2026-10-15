@@ -28,7 +28,7 @@ import { describeEvents, isIssue, redact, sanitizeContext, type DebugContext } f
 import { awayText, isOpen, nextOpening, type BusinessHours } from "../shared/hours.ts";
 import { forVisitor, loadMessages, loadSummary, MESSAGE_SELECT, preview, toMessage, type MessageRow } from "./lib/conversations.ts";
 import { findMentions } from "../shared/inbox.ts";
-import { isPageControl, withoutPageControl } from "../shared/page-control.ts";
+import { isPageControl, pageControlConfirm, withoutPageControl, withPageControlConfirm } from "../shared/page-control.ts";
 import { compileTemplate } from "../shared/jinja.ts";
 import { markWidgetUsed, matchWidgetAction, matchWidgetChange, MAX_PAGE_ACTION_DATA, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, renderActionLine, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
@@ -718,8 +718,10 @@ export class Conversation extends DurableObject<Env> {
     const row = await this.env.DB.prepare("SELECT i.settings FROM conversations c JOIN inboxes i ON i.id = c.inbox_id WHERE c.id = ?")
       .bind(ref.conversationId)
       .first<{ settings: string }>();
-    const on = Boolean(row && (JSON.parse(row.settings) as { pageControl?: unknown }).pageControl !== false);
-    return on ? actions : withoutPageControl(actions);
+    const settings = row ? (JSON.parse(row.settings) as { pageControl?: unknown; pageControlConfirm?: unknown }) : null;
+    if (!settings || settings.pageControl === false) return withoutPageControl(actions);
+    // "Don't ask" (Behaviour): its clicks, typing and choices run at once; website-actions.yaml still wins later.
+    return withPageControlConfirm(actions, pageControlConfirm(settings.pageControlConfirm));
   }
 
   /** I-10: one automatic "we're away, back Monday at 09:00" per closed period, for human-handled chats. */

@@ -30,6 +30,52 @@ export function reloadedResult(name: string): { status: "ok" | "error"; result: 
     : { status: "error", result: "The page reloaded before this reported back, so it may or may not have worked. Check before going on." };
 }
 
+/** AI-32: the chat frame → the page: the page-control step waiting for the visitor's Confirm (null: none). */
+export interface PointMessage {
+  type: "jun:point";
+  point: { name: string; index: number; input: Record<string, unknown> } | null;
+}
+
+/** A step the visitor's Confirm is waiting on, for the page's highlight (only clicks, typing and choosing). */
+export function pointOf(action: { name: string; status: string; risk: string; missing: string[]; input: Record<string, unknown> } | undefined): PointMessage["point"] {
+  if (!action || action.status !== "pending" || action.risk === "auto" || action.missing.length) return null;
+  if (action.name !== "click" && action.name !== "type_text" && action.name !== "choose_option") return null;
+  const index = Number(action.input.index);
+  return Number.isInteger(index) && index >= 0 ? { name: action.name, index, input: action.input } : null;
+}
+
+/** The chip by the highlighted element: what will happen ("Type “Acme”"), and while waiting, where to say yes. */
+export function pointChip(point: { name: string; input: Record<string, unknown> }, waiting = false): string {
+  const quote = (v: unknown) => `“${String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 40)}”`;
+  const verb = point.name === "type_text" ? `Type ${quote(point.input.text)}` : point.name === "choose_option" ? `Choose ${quote(point.input.option)}` : "Click";
+  return waiting ? `${verb} · confirm in the chat` : verb;
+}
+
+/**
+ * AI-32: the visitor chose "Always allow" for page control on this site: its clicks, typing and
+ * choices run without a Confirm, like an `auto` action (reading and scrolling already do). Only
+ * page control's own steps that would ask (`confirm`); `human` and the site's own actions never change.
+ */
+export function allowedToRun<T extends { name: string; risk: string; status: string }>(action: T): T {
+  return action.status === "pending" && action.risk === "confirm" && isPageControl(action.name) ? { ...action, risk: "auto" } : action;
+}
+
+/**
+ * AI-32: the desk's choice for page control's clicks, typing and choices (Chat widget → Behaviour):
+ * ask with an "Always allow" button (the default), ask every time, or never ask.
+ */
+export type PageControlConfirm = "allow-always" | "every-time" | "never";
+export const PAGE_CONTROL_CONFIRMS: PageControlConfirm[] = ["allow-always", "every-time", "never"];
+export function pageControlConfirm(value: unknown): PageControlConfirm {
+  return PAGE_CONTROL_CONFIRMS.includes(value as PageControlConfirm) ? (value as PageControlConfirm) : "allow-always";
+}
+
+/** "Don't ask": page control's steps run at once (the desk's website-actions.yaml can still say otherwise). */
+export function withPageControlConfirm<T extends { name: string; risk: string }>(actions: T[], confirm: PageControlConfirm): T[] {
+  if (confirm !== "never") return actions;
+  return actions.map((a) => (isPageControl(a.name) && a.risk === "confirm" ? { ...a, risk: "auto" } : a));
+}
+
 /** The page's actions without page control: the desk's switch (inbox setting `pageControl`) is off. */
 export function withoutPageControl<T extends { name: string }>(actions: T[]): T[] {
   return actions.filter((a) => !isPageControl(a.name));

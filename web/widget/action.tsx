@@ -77,6 +77,7 @@ export function ActionCard({
   onInput,
   onRun,
   onCancel,
+  onAllowAlways,
 }: {
   action: MessageAction;
   /** The newest thing in the thread: only then does an `auto` action start by itself. */
@@ -87,6 +88,8 @@ export function ActionCard({
   /** Run it on the page with these inputs. */
   onRun: (input: Record<string, unknown>) => void;
   onCancel: () => void;
+  /** AI-32: "Always allow" (page control): remember the yes, then run this one. */
+  onAllowAlways?: () => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const ran = useRef(false);
@@ -138,6 +141,9 @@ export function ActionCard({
         {actionInputLine(action) && <p className="w-act-inputs">{actionInputLine(action).replace(/^(\w)/, (c) => c.toUpperCase())}</p>}
         <div className="w-act-row">
           <button type="button" className="w-act-btn" onClick={run}>{action.risk === "auto" ? "Run" : "Confirm"}</button>
+          {onAllowAlways && (
+            <button type="button" className="w-act-ghost" title="Don't ask again on this site: the AI clicks, types and chooses for you, and each step still shows here" onClick={() => { onAllowAlways(); run(); }}>Always allow</button>
+          )}
           <button type="button" className="w-act-ghost" onClick={onCancel}>Cancel</button>
         </div>
       </>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { actionChip, actionInputLine, actionResultLimit, MAX_ACTION_RESULT, MAX_PAGE_ACTIONS, rankActions, sanitizeActions } from "./actions.ts";
-import { controlMessage, isPageControl, MAX_PAGE_READ_RESULT, pageRead, PRIVATE_SELECTOR, shownDescription, shownInput, reloadedResult, withoutPageControl } from "./page-control.ts";
+import { controlMessage, isPageControl, MAX_PAGE_READ_RESULT, pageRead, PRIVATE_SELECTOR, shownDescription, allowedToRun, pageControlConfirm, withPageControlConfirm, pointChip, pointOf, shownInput, reloadedResult, withoutPageControl } from "./page-control.ts";
 
 const state = {
   url: "https://app.example.com/settings?token=abc123&tab=billing",
@@ -89,4 +89,41 @@ test("reloadedResult: a page-control step cut off by a page load counts as done;
   assert.match(reloadedResult("click").result, /read_page/);
   assert.equal(reloadedResult("upgrade_plan").status, "error");
   assert.match(reloadedResult("upgrade_plan").result, /may or may not/);
+});
+
+test("pointOf: only a click, typing or choice waiting on the visitor, with an element number", () => {
+  const base = { status: "pending", risk: "confirm", missing: [] as string[], input: { index: 4, label: "Save button" } };
+  assert.deepEqual(pointOf({ ...base, name: "click" }), { name: "click", index: 4, input: base.input });
+  assert.equal(pointOf({ ...base, name: "read_page" }), null);
+  assert.equal(pointOf({ ...base, name: "click", status: "ok" }), null);
+  assert.equal(pointOf({ ...base, name: "click", risk: "auto" }), null);
+  assert.equal(pointOf({ ...base, name: "click", missing: ["index"] }), null);
+  assert.equal(pointOf({ ...base, name: "click", input: { label: "x" } }), null);
+  assert.equal(pointOf(undefined), null);
+});
+
+test("pointChip: says what will happen, short, and where to confirm while it waits", () => {
+  assert.equal(pointChip({ name: "click", input: {} }), "Click");
+  assert.equal(pointChip({ name: "type_text", input: { text: "Acme   Ltd" } }), "Type “Acme Ltd”");
+  assert.equal(pointChip({ name: "choose_option", input: { option: "Tokyo" } }, true), "Choose “Tokyo” · confirm in the chat");
+  assert.ok(pointChip({ name: "type_text", input: { text: "x".repeat(99) } }).length < 50);
+});
+
+test("allowedToRun: Always allow lets page control's waiting steps run; nothing else changes", () => {
+  const step = { name: "click", risk: "confirm", status: "pending" };
+  assert.equal(allowedToRun(step).risk, "auto");
+  assert.equal(allowedToRun({ ...step, name: "upgrade_plan" }).risk, "confirm");
+  assert.equal(allowedToRun({ ...step, risk: "human" }).risk, "human");
+  assert.equal(allowedToRun({ ...step, status: "ok" }).risk, "confirm");
+  const done = { ...step, status: "cancelled" };
+  assert.equal(allowedToRun(done), done);
+});
+
+test("pageControlConfirm: the desk's choice; Don't ask makes only page control's waiting steps run at once", () => {
+  assert.equal(pageControlConfirm(undefined), "allow-always");
+  assert.equal(pageControlConfirm("never"), "never");
+  assert.equal(pageControlConfirm("bogus"), "allow-always");
+  const list = [{ name: "click", risk: "confirm" }, { name: "upgrade_plan", risk: "confirm" }, { name: "type_text", risk: "human" }];
+  assert.deepEqual(withPageControlConfirm(list, "never").map((a) => a.risk), ["auto", "confirm", "human"]);
+  assert.equal(withPageControlConfirm(list, "every-time"), list);
 });

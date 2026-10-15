@@ -25,6 +25,7 @@ const SETTINGS: Record<string, unknown> = {
   csat: false,
   proactive: false,
   pageControl: true,
+  pageControlConfirm: "every-time",
   allowedDomains: ["acme.com", "*.acme.dev"],
   openers: [
     { id: "op_pricing01", path: "/pricing", delay: 20, text: null, hint: "help choosing a plan" },
