@@ -226,7 +226,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
           <h2>Everyone on your site</h2>
           <span className="dash-caption"><span className="strong">{loading ? <SkelText width="1ch" /> : visitors.length}</span> live</span>
         </div>
-        <p className="muted small">Signed-in customers show who they are when your site sends an identity token (Settings → Install).</p>
+        <p className="muted small">Signed-in customers show who they are when your site sends an identity token (Chat widget → Behaviour).</p>
         {loading ? (
           <ul className="visitor-list" aria-busy="true" aria-label="Loading visitors">
             <VisitorRowSkeleton who={120} page={150} />

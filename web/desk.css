@@ -929,6 +929,33 @@ form.kb-test-form { display: flex; gap: 8px; margin: 0; }
   .page-settings { padding: 8px 16px 24px; }
 }
 
+/* ---------- D-91: is the widget on a site yet (Chat widget header, Install tab, sidebar) ---------- */
+.widget-page .page-tabs-head { flex-wrap: wrap; row-gap: 8px; }
+.install-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 525; white-space: nowrap; color: var(--muted-foreground);
+}
+.install-chip:has(> .skel-text) { padding: 0; }
+.install-chip.live { color: var(--success); background: color-mix(in oklch, var(--success) 10%, transparent); }
+.install-chip.pending { color: color-mix(in oklch, var(--warning), var(--foreground) 35%); background: color-mix(in oklch, var(--warning) 12%, transparent); }
+.install-chip a { color: inherit; font-weight: 665; text-decoration: underline; text-underline-offset: 2px; }
+.install-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted-foreground); vertical-align: middle; }
+.install-dot.ok { background: var(--success); }
+.install-dot.warn { background: var(--warning); }
+.install-dot.waiting { background: var(--warning); margin-right: 8px; animation: install-wait 1.6s ease-in-out infinite; }
+@keyframes install-wait { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .install-dot.waiting { animation: none; } }
+.install-live { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; margin-top: 12px; }
+.install-live .install-dot.ok { margin-right: 8px; }
+.install-share { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.install-platforms { display: flex; flex-wrap: wrap; gap: 6px; }
+.install-platform-guide { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--muted); line-height: 1.55; }
+/* The sidebar's "not installed yet" dot sits on the icon's corner, so the 56px icon rail shows it too. */
+.nav-dot {
+  position: absolute; left: 20px; top: 5px; width: 8px; height: 8px; border-radius: 50%; pointer-events: none;
+  background: var(--warning); box-shadow: 0 0 0 2px var(--sidebar);
+}
+
 /* ---------- agent config (AI-18) ---------- */
 .agent-dialog-form { display: grid; gap: 12px; }
 .agent-dialog-form .hint { margin: 0; }

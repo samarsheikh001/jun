@@ -259,7 +259,7 @@ widget.post("/widget/:key/visitor", async (c) => {
 // Returns the browser's visitor token for that user (it may change; the frame stores it).
 widget.post("/widget/:key/identify", async (c) => {
   const inbox = await widgetInbox(c);
-  if (!inbox.identitySecret) throw new HttpError(400, "identity_not_configured", "Identity verification isn't set up for this desk (Settings → Install).");
+  if (!inbox.identitySecret) throw new HttpError(400, "identity_not_configured", "Identity verification isn't set up for this desk (Chat widget → Behaviour → Identify signed-in customers).");
   const body = await readJson(c.req);
   if (typeof body.userToken !== "string") throw new HttpError(400, "invalid_field", "userToken is required.");
   let identity;
@@ -291,7 +291,7 @@ widget.post("/widget/:key/logout", async (c) => {
 // report itself and receive invites addressed to its own session.
 widget.get("/widget/:key/live", async (c) => {
   const inbox = await widgetInbox(c);
-  if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Settings → Install → Allowed websites).");
+  if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Chat widget → Behaviour → Allowed websites).");
   const sessionId = c.req.query("s") ?? "";
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new HttpError(400, "invalid_field", "Bad session id.");
   // T-11: the first time the widget runs on a real site (not the desk's demo page), note it

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api.ts";
 import { navigate } from "../lib/router.ts";
 import { OpenersPanel } from "../settings/OpenersPanel.tsx";
@@ -8,21 +8,134 @@ import type { OpenerRule } from "../../shared/openers.ts";
 import { Button, buttonVariants } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
+import { SkelText } from "@/components/ui/skeleton.tsx";
 
-// The Widget page's Install tab: the snippet, where it may run, when it reaches out first, and
-// identity verification (V-03). The look is on the Look tab.
+// The Chat widget page's Install tab (D-91): only putting the snippet on the site, with whether it's
+// there yet. What the widget does once it's there (allowed websites, proactive help, identity, V-03)
+// is on the Behaviour tab; the look on the Look tab.
 
-export function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
-  const [widgetKey, setWidgetKey] = useState<string | null>(null);
+/** The desk's install state, from the onboarding route (T-11): the loader's first non-desk origin, or "I've added it". */
+export interface InstallState {
+  installed: boolean;
+  /** The origin the loader was first seen on (null when only marked as added). */
+  host: string | null;
+  widgetKey: string | null;
+}
+
+/** "https://limoni.io" → "limoni.io". */
+export const hostOf = (origin: string) => {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
+};
+
+const snippetFor = (widgetKey: string) => `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" defer></script>`;
+
+/** "Send to a developer": the snippet with plain instructions, ready to paste into a message. */
+const developerNote = (snippet: string) => `Could you add our support chat (Jun) to the website?
+
+1. Paste this line into the <head> of every page (the shared layout or template), above the site's own scripts:
+
+${snippet}
+
+2. It's deferred, so it never blocks the page; the chat itself only loads when a visitor opens it.
+3. To check it works: open the site and the chat appears; our desk shows the site as live within a few seconds.`;
+
+/** Where a <script> in <head> goes on common platforms: general, version-independent steps. */
+const PLATFORMS: { id: string; label: string; text: ReactNode }[] = [
+  { id: "html", label: "Plain HTML", text: <>Paste it inside <code>&lt;head&gt;</code> on every page, or once in the shared layout or template, above your other <code>&lt;script&gt;</code> tags.</> },
+  { id: "webflow", label: "Webflow", text: <>Site settings → Custom code → <strong>Head code</strong>: paste it, save, then publish the site. Custom code needs a paid site plan.</> },
+  { id: "wordpress", label: "WordPress", text: <>Use a header-code plugin (such as WPCode) and paste it into the <strong>Header</strong> box. In a classic theme you can instead put it in <code>header.php</code>, just above <code>&lt;?php wp_head(); ?&gt;</code>.</> },
+  { id: "shopify", label: "Shopify", text: <>Online Store → Themes → ⋯ → Edit code → <code>layout/theme.liquid</code>: paste it right after <code>&lt;head&gt;</code>, before <code>{"{{ content_for_header }}"}</code>, and save.</> },
+  { id: "nextjs", label: "Next.js", text: <>App Router: put it inside <code>&lt;head&gt;</code> in <code>app/layout.tsx</code>. Pages Router: inside <code>&lt;Head&gt;</code> in <code>pages/_document.tsx</code>. The tag works as JSX unchanged.</> },
+];
+
+export function InstallTab({ workspaceId, canEdit, install, reload }: { workspaceId: string; canEdit: boolean; install: InstallState | null; reload: () => Promise<void> }) {
+  const [copied, setCopied] = useState<"snippet" | "note" | null>(null);
+  const [platform, setPlatform] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
+  const widgetKey = install?.widgetKey ?? null;
+  const snippet = widgetKey ? snippetFor(widgetKey) : "";
+  const copy = async (what: "snippet" | "note") => {
+    await navigator.clipboard?.writeText(what === "snippet" ? snippet : developerNote(snippet));
+    setCopied(what);
+  };
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  const markInstalled = () =>
+    run(async () => {
+      await api(`/workspaces/${workspaceId}/onboarding/installed`, { body: {} });
+      await reload();
+    });
+  const guide = PLATFORMS.find((p) => p.id === platform);
+
+  return (
+    <>
+      <SettingsCard
+        title="Install the chat widget"
+        description={<>Paste this into your site's <code>&lt;head&gt;</code>, before your own scripts (so page actions your code registers find it ready). The loader is tiny; the chat itself loads only when a visitor opens it. Colours, wording and the rest of its look are on the{" "}
+          <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance", { replace: true }); }}>Look</a> tab.</>}
+        action={<a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={widgetKey ? `/demo.html?key=${widgetKey}` : undefined} target="_blank" rel="noreferrer">Open demo page</a>}
+      >
+        <div className="invite">
+          <div className="row">
+            <code>{widgetKey ? snippet : <SkelText width="80%" />}</code>
+            <Button size="sm" disabled={!widgetKey} onClick={() => void copy("snippet")}>{copied === "snippet" ? "Copied ✓" : "Copy"}</Button>
+          </div>
+        </div>
+        <div className="install-share">
+          <Button variant="outline" size="sm" disabled={!widgetKey} onClick={() => void copy("note")}>{copied === "note" ? "Copied ✓" : "Send to a developer"}</Button>
+          <span className="muted small">Copies the snippet with a few lines on where it goes, for an email or chat.</span>
+        </div>
+        <div className="install-live small" role="status" aria-live="polite">
+          {!install ? (
+            <span><SkelText width={220} /></span>
+          ) : install.installed ? (
+            <span>
+              <span className="install-dot ok" aria-hidden="true" />
+              {install.host ? <>✓ Seen on <code>{hostOf(install.host)}</code></> : "Marked as added. The site shows here once a page with the snippet loads."}
+            </span>
+          ) : (
+            <>
+              <span className="muted"><span className="install-dot waiting" aria-hidden="true" />Waiting for your site… This updates by itself the first time a page with the snippet loads.</span>
+              {canEdit && <Button variant="ghost" size="sm" disabled={busy} onClick={markInstalled}>I've added it</Button>}
+            </>
+          )}
+        </div>
+        {error && <p className="error small">{error}</p>}
+        <p className="muted">
+          Cookie banner? Add <code>data-consent="required"</code>: the widget then stores nothing and doesn't show the visitor on your live list until you call <code>JunDesk.consent(true)</code>.
+        </p>
+      </SettingsCard>
+
+      <SettingsCard title="Where to paste it" description="On a site builder or framework, it goes wherever the platform lets you add code to every page's head.">
+        <div className="install-platforms" role="group" aria-label="Platforms">
+          {PLATFORMS.map((p) => (
+            <Button key={p.id} variant={platform === p.id ? "secondary" : "outline"} size="sm" aria-expanded={platform === p.id} aria-controls="install-platform-guide" onClick={() => setPlatform(platform === p.id ? null : p.id)}>{p.label}</Button>
+          ))}
+        </div>
+        {guide && <p id="install-platform-guide" className="install-platform-guide small">{guide.text}</p>}
+      </SettingsCard>
+    </>
+  );
+}
+
+/** The Behaviour tab: where the widget may run and when it reaches out first. */
+export function BehaviourPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
+  const [loaded, setLoaded] = useState(false);
   const [proactive, setProactive] = useState(true);
   const [openers, setOpeners] = useState<OpenerRule[]>([]);
-  const [copied, setCopied] = useState(false);
   const [domains, setDomains] = useState("");
   const [savedDomains, setSavedDomains] = useState("");
   const { busy, error, run } = useAction();
   useEffect(() => {
     api<{ inbox: { widgetKey: string; settings: { proactive?: boolean; allowedDomains?: string[]; openers?: OpenerRule[] } } | null }>(`/workspaces/${workspaceId}/inbox`).then((r) => {
-      setWidgetKey(r.inbox?.widgetKey ?? null);
+      setLoaded(Boolean(r.inbox));
       setProactive(r.inbox?.settings.proactive !== false);
       setOpeners(r.inbox?.settings.openers ?? []);
       const list = (r.inbox?.settings.allowedDomains ?? []).join(", ");
@@ -41,28 +154,10 @@ export function InstallPanel({ workspaceId, canEdit }: { workspaceId: string; ca
     setProactive(value);
     await api(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body: { proactive: value } });
   };
-  if (!widgetKey) return null;
+  if (!loaded) return null;
 
-  const snippet = `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" defer></script>`;
   return (
     <>
-      <SettingsCard
-        title="Install the chat widget"
-        description={<>Paste this into your site's <code>&lt;head&gt;</code>, before your own scripts (so page actions your code registers find it ready). The loader is tiny; the chat itself loads only when a visitor opens it. Colours, wording and the rest of its look are on the{" "}
-          <a href="/appearance" onClick={(e) => { e.preventDefault(); navigate("/appearance", { replace: true }); }}>Look</a> tab.</>}
-        action={<a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer">Open demo page</a>}
-      >
-        <div className="invite">
-          <div className="row">
-            <code>{snippet}</code>
-            <Button size="sm" onClick={async () => { await navigator.clipboard.writeText(snippet); setCopied(true); }}>{copied ? "Copied ✓" : "Copy"}</Button>
-          </div>
-        </div>
-        <p className="muted">
-          Cookie banner? Add <code>data-consent="required"</code>: the widget then stores nothing and doesn't show the visitor on your live list until you call <code>JunDesk.consent(true)</code>.
-        </p>
-      </SettingsCard>
-
       <SettingsCard title="Allowed websites" description="Your widget key is public, so anyone could copy the snippet. List your sites and the widget won't open, track visitors or use AI anywhere else.">
         <SettingRow label="Websites" description={<>Use <code>*.acme.com</code> for subdomains. This desk ({window.location.host}) always works for testing.</>} wide>
           <div className="row">

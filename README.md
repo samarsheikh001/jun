@@ -53,7 +53,7 @@ A copy made before the workflow existed: add [`.github/workflows/update-jun.yml`
 
 ## Put the widget on your site
 
-Copy the snippet from **Settings → Install the chat widget** into `<head>`, before your own scripts:
+Copy the snippet from **Chat widget → Install** into `<head>`, before your own scripts:
 
 ```html
 <script src="https://your-desk.example.com/widget.js" data-key="wk_…" defer></script>
@@ -71,9 +71,9 @@ Copy the snippet from **Settings → Install the chat widget** into `<head>`, be
 | `JunDesk.reportError({ message, code? })` | Tells support what failed, in your app's words (see below) |
 | `JunDesk.registerAction({ … })` | Tells the AI what can be done on this page, so it can do it for the visitor (see "Page actions") |
 
-Colour, logo, greeting, button side and business hours are set in **Settings** and apply within a minute without touching the snippet. List your domains under **Allowed websites** so nobody can reuse your (public) widget key on their own site.
+Colour, logo, greeting, button side and business hours are set in **Settings** and apply within a minute without touching the snippet. List your domains under **Chat widget → Behaviour → Allowed websites** so nobody can reuse your (public) widget key on their own site.
 
-**Page openers:** under Settings → Install, owners and admins can offer a chat after a visitor has spent some time on a page (up to 10 rules, e.g. 30 s on `/pricing` or anywhere under `/docs/*`), with your own line or one the AI writes from the page. Only time with the tab in view counts; a visitor gets at most one card per page load, and nothing before consent.
+**Page openers:** under Chat widget → Behaviour, owners and admins can offer a chat after a visitor has spent some time on a page (up to 10 rules, e.g. 30 s on `/pricing` or anywhere under `/docs/*`), with your own line or one the AI writes from the page. Only time with the tab in view counts; a visitor gets at most one card per page load, and nothing before consent.
 
 **What the widget captures:** JavaScript errors, failed requests (method, URL and status, never request or response bodies) and pages visited, kept in memory and sent only when the visitor writes to you. Query values are stripped, and emails, tokens, keys and card-like numbers are masked before anything leaves the browser. It also notices rage clicks (the same button clicked 3+ times in a second with nothing happening; only the element's tag, id, aria-label, name, role and a short button/link label are kept) and visitors stuck on a page for 3 minutes after something failed with no successful submit; both show up for your agents and can trigger the "Want a hand?" nudge.
 
@@ -101,7 +101,7 @@ In React, `useJunAction({ … }, [product.id])` from `@jun/widget-react` (in `pa
 
 Agents see every run in the conversation's AI actions; `tests/*.yaml` cases take an `actions:` list, a `page:` path, and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
 
-**Signed-in customers:** create an identity secret in Settings → Install. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. If your API only accepts the user's own key, add a `secrets` claim (`{ API_TOKEN: "…" }`) and write `{user.secrets.API_TOKEN}` in an action's headers: it's kept only until the token expires (or `JunDesk.logout()`), never shown to agents or the AI. Without a valid token, visitors stay anonymous.
+**Signed-in customers:** create an identity secret in Chat widget → Behaviour. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. If your API only accepts the user's own key, add a `secrets` claim (`{ API_TOKEN: "…" }`) and write `{user.secrets.API_TOKEN}` in an action's headers: it's kept only until the token expires (or `JunDesk.logout()`), never shown to agents or the AI. Without a valid token, visitors stay anonymous.
 
 ## The AI
 

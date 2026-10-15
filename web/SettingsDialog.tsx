@@ -56,7 +56,7 @@ const LEGACY_HASHES: Record<string, string> = {
 };
 
 /**
- * Settings URLs whose parts moved: the widget's install panels (the Widget page's Install tab), and
+ * Settings URLs whose parts moved: the widget's install panels (the Chat widget page's Install and Behaviour tabs), and
  * old links to the AI settings (D-71: Settings → AI). The ChatGPT sign-in still returns to
  * /settings?chatgpt=connected. Null when the URL is still the dialog's.
  */

@@ -3,7 +3,9 @@ import { APPEARANCE_DEFAULTS, BUTTON_TEXT, RADIUS_MAX, SUGGESTION_LIMIT, SUGGEST
 import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
-import { IdentityPanel, InstallPanel } from "./InstallPanels.tsx";
+import { BehaviourPanel, hostOf, IdentityPanel, InstallTab, type InstallState } from "./InstallPanels.tsx";
+import { navigate } from "../lib/router.ts";
+import { SkelText } from "@/components/ui/skeleton.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
@@ -15,16 +17,38 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { setCodeView, useCodeView } from "../agent/parts.tsx";
 import { DeskCode } from "./DeskCode.tsx";
 
-// The Widget page: Look (/appearance) and Install (/appearance/install). /widget itself is the chat
-// iframe the Worker serves, so the page keeps its old address.
-export function WidgetPage({ workspaceId, workspaceName, canEdit, tab }: { workspaceId: string; workspaceName: string; canEdit: boolean; tab: "look" | "install" }) {
+// The Chat widget page (D-91): Install (/appearance/install), Look (/appearance) and Behaviour
+// (/appearance/behaviour). /widget itself is the chat iframe the Worker serves, so the page keeps its
+// old address. Whether the widget is on a site yet shows in the header on every tab.
+export type WidgetTab = "install" | "look" | "behaviour";
+
+export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, reloadInstall }: {
+  workspaceId: string;
+  workspaceName: string;
+  canEdit: boolean;
+  tab: WidgetTab;
+  /** Null until the onboarding state has loaded. */
+  install: InstallState | null;
+  reloadInstall: () => Promise<void>;
+}) {
   // D-84: Form / Code, the same remembered switch as the Agent pages. Code is desk.yaml.
   const code = useCodeView();
+  // While the Install tab is open and the widget hasn't been seen yet, look again every 5 s (only
+  // while the tab is visible), so "Waiting for your site…" turns into "Seen on …" by itself.
+  const waiting = tab === "install" && install !== null && !install.installed;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") reloadInstall().catch(() => {});
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [waiting, reloadInstall]);
   return (
     <PageTabs
       title="Chat widget"
       value={tab}
       className="widget-page"
+      aside={<InstallChip install={install} />}
       actions={
         tab === "look" && (
           <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
@@ -37,24 +61,54 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab }: { works
       }
       tabs={[
         {
+          value: "install",
+          label: "Install",
+          path: "/appearance/install",
+          content: (
+            <div className="page-settings settings-sections">
+              <InstallTab workspaceId={workspaceId} canEdit={canEdit} install={install} reload={reloadInstall} />
+            </div>
+          ),
+        },
+        {
           value: "look",
           label: "Look",
           path: "/appearance",
           content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
         },
         {
-          value: "install",
-          label: "Install",
-          path: "/appearance/install",
+          value: "behaviour",
+          label: "Behaviour",
+          path: "/appearance/behaviour",
           content: (
             <div className="page-settings settings-sections">
-              <InstallPanel workspaceId={workspaceId} canEdit={canEdit} />
+              <BehaviourPanel workspaceId={workspaceId} canEdit={canEdit} />
               {canEdit && <IdentityPanel workspaceId={workspaceId} />}
             </div>
           ),
         },
       ]}
     />
+  );
+}
+
+/** D-91: is the widget on a site yet? In the header after the tabs, so its width never moves them. */
+function InstallChip({ install }: { install: InstallState | null }) {
+  if (!install) return <span className="install-chip" aria-hidden="true"><SkelText width={110} /></span>;
+  if (install.installed) {
+    return (
+      <span className="install-chip live" title={install.host ? `The widget has loaded on ${install.host}` : "Marked as added to your site"}>
+        <span className="install-dot ok" aria-hidden="true" />
+        {install.host ? <>Live on {hostOf(install.host)}</> : "Added to your site"}
+      </span>
+    );
+  }
+  return (
+    <span className="install-chip pending">
+      <span className="install-dot warn" aria-hidden="true" />
+      Not on your site yet
+      <a href="/appearance/install" onClick={(e) => { e.preventDefault(); navigate("/appearance/install", { replace: true }); }}>Install</a>
+    </span>
   );
 }
 

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { navigate } from "../lib/router.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 
-// A page with tabs in its header (Widget: Look / Install, Agent: Files / Settings). Each tab has its
+// A page with tabs in its header (Chat widget: Install / Look / Behaviour, Agent: Files / Settings). Each tab has its
 // own URL, so links, reloads and the back button land on it; switching tabs replaces the entry, like
 // the settings dialog's sections. Every panel stays mounted, so unsaved edits survive a switch.
 
@@ -13,12 +13,14 @@ export interface PageTab {
   content: ReactNode;
 }
 
-export function PageTabs({ title, tabs, value, className, actions, tabsHidden }: {
+export function PageTabs({ title, tabs, value, className, actions, aside, tabsHidden }: {
   title: string;
   tabs: PageTab[];
   value: string;
   className?: string;
   actions?: ReactNode;
+  /** Shown on every tab, just after the tab list (the Chat widget page's install status). */
+  aside?: ReactNode;
   /** The sidebar lists the parts (the Agent page): only the title shows, and the panels keep their URLs. */
   tabsHidden?: boolean;
 }) {
@@ -33,6 +35,7 @@ export function PageTabs({ title, tabs, value, className, actions, tabsHidden }:
             ))}
           </TabsList>
         )}
+        {aside}
         {actions && <div className="page-tabs-actions">{actions}</div>}
       </div>
       {tabs.map((t) => (

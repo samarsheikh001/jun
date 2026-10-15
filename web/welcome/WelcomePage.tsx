@@ -160,7 +160,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         ) : (
           <p className="muted small">
             Put it before your own scripts. This ticks itself off the first time your page loads it; meanwhile, try the{" "}
-            <a href={`/demo.html?key=${onboarding.widgetKey}`} target="_blank" rel="noreferrer">demo page</a>. Allowed websites and identity are on the {link("/appearance/install", "Install")} tab.
+            <a href={`/demo.html?key=${onboarding.widgetKey}`} target="_blank" rel="noreferrer">demo page</a>. Where it goes on Webflow, WordPress, Shopify or Next.js: the Chat widget page's {link("/appearance/install", "Install")} tab; allowed websites and identity are on its {link("/appearance/behaviour", "Behaviour")} tab.
           </p>
         )}
       </>
