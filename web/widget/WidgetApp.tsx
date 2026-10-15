@@ -4,7 +4,7 @@ import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
-import { allowedToRun, isPageControl, pointOf, reloadedResult } from "../../shared/page-control.ts";
+import { allowedToRun, answersSeq, isPageControl, pointOf, reloadedResult } from "../../shared/page-control.ts";
 import { actionWaits, restSummary, waitingCardLine } from "../../shared/island.ts";
 import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type MessageWidget } from "../../shared/widgets.ts";
 import { Composer } from "../components/Composer.tsx";
@@ -105,12 +105,23 @@ function readRuns(): string[] {
   }
 }
 function writeRuns(ids: string[]): void {
+  const before = readRuns();
+  const added = ids.some((id) => !before.includes(id));
   memoryRuns = ids.slice(-20);
   if (!persist) return;
   try {
     sessionStorage.setItem(RUNS_KEY, JSON.stringify(memoryRuns));
+    if (added) sessionStorage.setItem(`${RUNS_KEY}:at`, String(Date.now()));
   } catch {
     // storage blocked: only this page knows
+  }
+}
+/** A step this tab started in the last 2 minutes is still unanswered: a page load cut a run short. */
+function runCutShort(): boolean {
+  try {
+    return readRuns().length > 0 && Date.now() - Number(sessionStorage.getItem(`${RUNS_KEY}:at`) ?? 0) < 120_000;
+  } catch {
+    return false;
   }
 }
 
@@ -134,6 +145,32 @@ function writeAllow(key: string, on: boolean): void {
     else localStorage.removeItem(allowKey(key));
   } catch {
     // storage blocked: remembered until the page reloads
+  }
+}
+
+// The messages this tab sent (clientMsgIds), for the tab's session: page actions run only in the tab
+// that asked for them, never in every tab the chat is open in. Same consent rules as above.
+const SENT_KEY = "jun:sent";
+let memorySent: string[] = [];
+/** This tab's record, or null when it can't keep one (no consent yet, storage blocked). */
+function readSent(): string[] | null {
+  if (!persist) return null;
+  try {
+    const list: unknown = JSON.parse(sessionStorage.getItem(SENT_KEY) ?? "[]");
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return null;
+  }
+}
+function noteSent(clientMsgId: string): void {
+  const ids = readSent() ?? memorySent;
+  if (ids.includes(clientMsgId)) return;
+  memorySent = [...ids, clientMsgId].slice(-50);
+  if (!persist) return;
+  try {
+    sessionStorage.setItem(SENT_KEY, JSON.stringify(memorySent));
+  } catch {
+    // storage blocked: this page remembers
   }
 }
 
@@ -223,6 +260,21 @@ const postToHost = (message: unknown) => window.parent !== window && window.pare
  * page trail; already masked) and (AI-21) the page's actions. Both undefined if there's no
  * loader or it's slow.
  */
+/**
+ * The host page's actions are loaded (its reply to a context request carries a list): the loader drops
+ * a jun:run that arrives before then, which happens right after a page load. Looks for up to 3 s.
+ */
+let pageActionsReady: Promise<void> | null = null;
+function whenPageActionsReady(): Promise<void> {
+  pageActionsReady ??= (async () => {
+    for (let i = 0; i < 15; i++) {
+      if ((await hostContext()).actions !== undefined) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  })();
+  return pageActionsReady;
+}
+
 function hostContext(): Promise<{ context?: unknown; actions?: unknown }> {
   if (window.parent === window) return Promise.resolve({});
   const id = crypto.randomUUID();
@@ -452,6 +504,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
         if (typeof data.sessionId === "string") setSessionId(data.sessionId);
       }
+      // AI-32: a run's click loaded this page: open the chat so the run goes on here (the thread closes
+      // the cut-off step and the next one starts), instead of waiting for the visitor to open it.
+      if (data?.type === "jun:session" && !preview && runCutShort()) postToHost({ type: "jun:open" });
       // Who the host page's signed-in user is (or that they signed out).
       if ((data?.type === "jun:session" && typeof data.userToken === "string") || data?.type === "jun:identify") {
         const userToken = typeof data.userToken === "string" ? data.userToken : null;
@@ -876,6 +931,7 @@ function WidgetThread({
     initialMessages: useMemo(() => initial ?? [], [initial]),
     other: "agent",
     onConversation,
+    onSent: noteSent,
   });
   // AI-32: with "Always allow" on, page control's waiting steps read as `auto` here, so every place that
   // decides "ask or run" (the card, the island, the auto-run) runs them; the server's record is unchanged.
@@ -968,6 +1024,7 @@ function WidgetThread({
     // element once saved. Marked before anything is awaited, so a quick second send is held.
     creating.current = true;
     startingId.current = crypto.randomUUID();
+    noteSent(startingId.current);
     setStarting(body);
     const { context, actions } = await hostContext();
     // Create the visitor (if needed) and the conversation in one go.
@@ -1021,11 +1078,12 @@ function WidgetThread({
   // it again (an auto action looped, re-running on the page and flooding the server with results).
   const started = useRef(new Set<string>());
   const startAction = (action: MessageAction, input: Record<string, unknown>) => {
-    if (started.current.has(action.runId)) return;
+    // Started on an earlier page of this tab: the reload check closes it, never run again here.
+    if (started.current.has(action.runId) || elsewhere.has(action.runId) || readRuns().includes(action.runId)) return;
     started.current.add(action.runId);
     writeRuns([...readRuns().filter((id) => id !== action.runId), action.runId]);
     setRunning((r) => ({ ...r, [action.runId]: true }));
-    postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
+    void whenPageActionsReady().then(() => postToHost({ type: "jun:run", runId: action.runId, id: action.id, input }));
   };
   // AI-32: a step started before this page loaded that's still pending never reported back: the page
   // went away under it (a click that opened a new page). Close it once the socket is open, so the AI's
@@ -1034,6 +1092,9 @@ function WidgetThread({
     if (thread.state !== "open") return;
     const mine = readRuns();
     if (!mine.length) return;
+    // Forget the steps the server already has a result for.
+    const settled = mine.filter((id) => thread.messages.some((m) => m.meta.action?.runId === id && m.meta.action.status !== "pending"));
+    if (settled.length) writeRuns(mine.filter((id) => !settled.includes(id)));
     for (const m of thread.messages) {
       const a = m.authorType === "ai" ? m.meta.action : undefined;
       if (!a || !mine.includes(a.runId) || started.current.has(a.runId)) continue;
@@ -1048,7 +1109,8 @@ function WidgetThread({
   // D-78: an action that runs without asking starts here, not from its card: in the island a run
   // stays a line and the card isn't drawn. Only the newest message, once, and only live (as the card did).
   const autoAction = lastMessage?.authorType === "ai" ? lastMessage.meta.action : undefined;
-  const autoNow = Boolean(autoAction && autoAction.status === "pending" && autoAction.risk === "auto" && !autoAction.missing.length && Date.now() - lastMessage!.createdAt < AUTO_RUN_WITHIN_MS);
+  // Never one started on an earlier page (a click that loaded this one): the reload check above closes it.
+  const autoNow = Boolean(autoAction && autoAction.status === "pending" && autoAction.risk === "auto" && !autoAction.missing.length && Date.now() - lastMessage!.createdAt < AUTO_RUN_WITHIN_MS && !(readRuns().includes(autoAction.runId) && !started.current.has(autoAction.runId)));
   useEffect(() => {
     if (autoNow && autoAction) startAction(autoAction, autoAction.input);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1075,7 +1137,24 @@ function WidgetThread({
     if (runWasBusy.current && !busy && fold) fold();
     runWasBusy.current = busy;
   });
-  const actionRunning = (a: MessageAction) => Boolean(running[a.runId]) || (started.current.has(a.runId) && a.status === "pending");
+  // A chat open in several tabs: a page action belongs to the tab that sent the message it answers.
+  // The others show it as in progress and never run it (no card, no auto-run, no highlight).
+  const elsewhere = useMemo(() => {
+    const sent = readSent();
+    const out = new Set<string>();
+    for (const m of thread.messages) {
+      const a = m.authorType === "ai" ? m.meta.action : undefined;
+      if (!a || a.status !== "pending") continue;
+      const seq = answersSeq(m.clientMsgId);
+      const asked = seq === null ? undefined : thread.messages.find((v) => v.seq === seq && v.authorType === "visitor");
+      // With the tab's record, only what it sent (a tab that sent nothing takes nothing). Without one
+      // (no consent yet, storage blocked): what this page sent, else the tab whose chat has focus.
+      const mine = !asked ? false : sent ? sent.includes(asked.clientMsgId) : memorySent.includes(asked.clientMsgId) || (document.visibilityState === "visible" && document.hasFocus());
+      if (!mine) out.add(a.runId);
+    }
+    return out;
+  }, [thread.messages]);
+  const actionRunning = (a: MessageAction) => Boolean(running[a.runId]) || elsewhere.has(a.runId) || (started.current.has(a.runId) && a.status === "pending");
   // AI-32: the page shows the element a waiting click, typing or choice is about (a ring with "Click ·
   // confirm in the chat"); the page-control chunk draws it. Sent only when it changes; none while it runs.
   const pointAction = lastMessage?.authorType === "ai" ? lastMessage.meta.action : undefined;
@@ -1094,7 +1173,8 @@ function WidgetThread({
       const runId = data.runId;
       if (data.status === "undo_failed") setUndoErrors((s) => ({ ...s, [runId]: data.result || "Couldn't undo that." }));
       else if (data.status === "ok" || data.status === "error" || data.status === "gone" || data.status === "undone") {
-        writeRuns(readRuns().filter((id) => id !== runId));
+        // Still remembered (jun:runs) until the server's copy has it: a click that loads a new page can
+        // take this result down with the page; the next page then closes the step (below).
         setRunning((r) => {
           const { [runId]: _done, ...rest } = r;
           return rest;
@@ -1133,7 +1213,7 @@ function WidgetThread({
         {...(action
           ? {
               controls: {
-                running: Boolean(running[action.runId]) || (started.current.has(action.runId) && action.status === "pending"),
+                running: actionRunning(action),
                 onInput: (input: Record<string, unknown>) => thread.actionInput(action.runId, input),
                 onRun: (input: Record<string, unknown>) => startAction(action, input),
                 onCancel: () => thread.actionResult(action.runId, "cancelled"),

@@ -15,7 +15,7 @@
     </style>
   </head>
   <body>
-    <header>Acme Analytics</header>
+    <header>Acme Analytics <a id="to-me" href="#" style="float: right; font-weight: 400">Pat Lee</a></header>
     <main>
       <div class="card">
         <h1>Demo customer site</h1>
@@ -52,7 +52,7 @@
       </div>
       <div class="card" id="emails" hidden>
         <h2>Email settings</h2>
-        <p class="note">A second page of the demo (<code>&amp;page=emails</code>). <a id="to-home" href="#">Back to the account</a></p>
+        <p class="note">A second page of the demo (<code>&amp;page=emails</code>). The account is behind your name at the top, as on many apps: try "change my company name to Shia Corp" from here.</p>
         <p><label>Weekly summary <select id="weekly" name="weekly"><option>On</option><option>Off</option></select></label></p>
         <p><button onclick="document.getElementById('emails-saved').textContent = 'Saved: weekly summary ' + document.getElementById('weekly').value">Save email settings</button> <span id="emails-saved" class="note"></span></p>
       </div>
@@ -116,7 +116,7 @@
         var q = new URLSearchParams(location.search), emails = q.get("page") === "emails";
         var to = function (page) { var n = new URLSearchParams(location.search); if (page) n.set("page", page); else n.delete("page"); return location.pathname + "?" + n; };
         document.getElementById("to-emails").href = to("emails");
-        document.getElementById("to-home").href = to(null);
+        document.getElementById("to-me").href = to(null) + "#settings";
         if (emails) document.querySelectorAll("main > .card").forEach(function (c) { c.hidden = c.id !== "emails"; });
       })();
       var key = new URLSearchParams(location.search).get("key");

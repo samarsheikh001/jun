@@ -26,6 +26,8 @@ export function useThread(options: {
   onConversation?: (conversation: ConversationSummary) => void;
   /** AI-11: the AI made a tool call (agents only; recorded before the event is sent). */
   onAiAction?: () => void;
+  /** Each message this client sends (its clientMsgId): the widget runs page actions only in the tab that asked. */
+  onSent?: (clientMsgId: string) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>(options.initialMessages);
   const [pending, setPending] = useState<PendingMessage[]>([]);
@@ -152,7 +154,12 @@ export function useThread(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.socketUrl, merge]);
 
-  const sendEvent = useCallback((event: ClientEvent) => socket.current?.send(event) ?? false, []);
+  const onSent = useRef(options.onSent);
+  onSent.current = options.onSent;
+  const sendEvent = useCallback((event: ClientEvent) => {
+    if (event.type === "send") onSent.current?.(event.clientMsgId);
+    return socket.current?.send(event) ?? false;
+  }, []);
 
   /** Optimistically shows the message and sends it over the socket. Returns false if offline. */
   const send = useCallback(

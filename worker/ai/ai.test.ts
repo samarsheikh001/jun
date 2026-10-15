@@ -253,6 +253,9 @@ test("followUpRules: a turn after a page action must call the next action or the
   assert.match(rules, /must call exactly one tool: the next action, or jun_done/);
   assert.match(rules, /never "set_pickup" again with the same inputs/);
   assert.equal(DONE_TOOL.startsWith("pa_"), false, "never a page action's tool name");
+  // AI-32: after reading a page that doesn't have it, look further (their name, Account, Settings) before handing off.
+  assert.match(followUpRules({ name: "read_page", status: "ok", result: "{}" }), /don't hand off[\s\S]*customer's own name or avatar/);
+  assert.doesNotMatch(rules, /customer's own name or avatar/);
 });
 
 test("replyOrder: a reply sits after the message it answers, even when another arrived while it was written", () => {

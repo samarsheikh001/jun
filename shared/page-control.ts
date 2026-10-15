@@ -76,6 +76,16 @@ export function withPageControlConfirm<T extends { name: string; risk: string }>
   return actions.map((a) => (isPageControl(a.name) && a.risk === "confirm" ? { ...a, risk: "auto" } : a));
 }
 
+/**
+ * Which visitor message an AI reply answers: its clientMsgId is `ai:<seq>` (or `ai:<seq>.<n>` for the
+ * steps of a run after it). The widget runs a page action only in the tab that sent that message, so a
+ * chat open in two tabs doesn't run it on both pages.
+ */
+export function answersSeq(clientMsgId: string): number | null {
+  const m = /^ai:(\d+)(?:\.\d+)?$/.exec(clientMsgId);
+  return m ? Number(m[1]) : null;
+}
+
 /** The page's actions without page control: the desk's switch (inbox setting `pageControl`) is off. */
 export function withoutPageControl<T extends { name: string }>(actions: T[]): T[] {
   return actions.filter((a) => !isPageControl(a.name));

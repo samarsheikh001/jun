@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { actionChip, actionInputLine, actionResultLimit, MAX_ACTION_RESULT, MAX_PAGE_ACTIONS, rankActions, sanitizeActions } from "./actions.ts";
-import { controlMessage, isPageControl, MAX_PAGE_READ_RESULT, pageRead, PRIVATE_SELECTOR, shownDescription, allowedToRun, pageControlConfirm, withPageControlConfirm, pointChip, pointOf, shownInput, reloadedResult, withoutPageControl } from "./page-control.ts";
+import { controlMessage, isPageControl, MAX_PAGE_READ_RESULT, pageRead, PRIVATE_SELECTOR, shownDescription, allowedToRun, answersSeq, pageControlConfirm, withPageControlConfirm, pointChip, pointOf, shownInput, reloadedResult, withoutPageControl } from "./page-control.ts";
 
 const state = {
   url: "https://app.example.com/settings?token=abc123&tab=billing",
@@ -126,4 +126,11 @@ test("pageControlConfirm: the desk's choice; Don't ask makes only page control's
   const list = [{ name: "click", risk: "confirm" }, { name: "upgrade_plan", risk: "confirm" }, { name: "type_text", risk: "human" }];
   assert.deepEqual(withPageControlConfirm(list, "never").map((a) => a.risk), ["auto", "confirm", "human"]);
   assert.equal(withPageControlConfirm(list, "every-time"), list);
+});
+
+test("answersSeq: the visitor message an AI reply or a run's next step answers", () => {
+  assert.equal(answersSeq("ai:12"), 12);
+  assert.equal(answersSeq("ai:12.3"), 12);
+  assert.equal(answersSeq("c5b1-uuid"), null);
+  assert.equal(answersSeq("ai:x"), null);
 });
