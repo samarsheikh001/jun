@@ -1470,34 +1470,72 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 /* ---------- Appearance page (W-04): settings column + the real widget on a dotted canvas ---------- */
 .appear-page { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 4fr) minmax(0, 5fr); }
 .appear-controls { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
-.appear-heading { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
-.appear-heading h2 { margin: 0; font-size: 14px; font-weight: 665; }
 .appear-scroll { flex: 1; }
 .appear-body { display: grid; padding: 4px 24px 24px; }
-.appear-group { display: grid; gap: 18px; padding: 20px 0; border-top: 1px solid var(--border); }
+.appear-group { display: grid; gap: 18px; padding: 22px 0; border-top: 1px solid var(--border); }
 .appear-group:first-of-type { border-top: 0; }
 .appear-group h2 { margin: 0; font-size: 14px; font-weight: 665; }
 .appear-group > .muted { margin: -10px 0 0; }
 .appear-field { display: grid; gap: 6px; min-width: 0; }
-.appear-field > label { font-size: 14px; font-weight: 525; }
-.appear-field > p { margin: 0; font-size: 13px; color: var(--muted-foreground); }
-.appear-field [data-slot="select-trigger"] { max-width: 240px; }
+.appear-field > label, .appear-label { font-size: 14px; font-weight: 525; }
+.appear-field > p, .appear-row-text > p { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+/* A setting with its control on the right: segmented choices, a switch. */
+.appear-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.appear-row-text { flex: 1 1 200px; min-width: 0; display: grid; gap: 2px; }
+.appear-switch { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; cursor: pointer; }
+.appear-switch > p { grid-column: 1; }
+.appear-switch-row { display: grid; gap: 8px; }
+.appear-switch-extra { display: flex; }
+.appear-switch-control { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.appear-row > .segmented { flex: none; }
+/* Mode: two picture cards, the choice that shapes everything else. */
+.appear-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.appear-mode { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); white-space: normal; gap: 4px; align-content: start; padding: 10px 10px 12px; text-align: left; font: inherit; color: inherit; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.2); background: var(--background); cursor: pointer; transition: border-color 150ms, box-shadow 150ms; }
+.appear-mode:hover:not(:disabled) { border-color: color-mix(in oklch, var(--foreground) 30%, transparent); }
+.appear-mode[aria-checked="true"] { border-color: var(--foreground); box-shadow: 0 0 0 1px var(--foreground); }
+.appear-mode:disabled { cursor: default; opacity: 0.7; }
+.appear-mode:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.appear-mode-name { font-size: 14px; font-weight: 600; margin-top: 6px; }
+.appear-mode-desc { font-size: 12.5px; line-height: 1.4; color: var(--muted-foreground); }
+/* A tiny page with the widget on it. */
+.appear-mode-art { position: relative; display: block; height: 72px; border-radius: calc(var(--radius) * 0.8); background-color: var(--muted); background-image: linear-gradient(color-mix(in oklch, var(--foreground) 9%, transparent) 0 0), linear-gradient(color-mix(in oklch, var(--foreground) 6%, transparent) 0 0), linear-gradient(color-mix(in oklch, var(--foreground) 6%, transparent) 0 0); background-size: 40% 6px, 62% 5px, 50% 5px; background-position: 10px 10px, 10px 22px, 10px 32px; background-repeat: no-repeat; overflow: hidden; }
+.appear-mode-art i { position: absolute; display: block; }
+.appear-mode-art.island i { left: 50%; bottom: 8px; width: 46%; height: 14px; translate: -50% 0; border-radius: 99px; background: #111; box-shadow: 0 0 0 1.5px color-mix(in oklch, var(--c) 60%, transparent); }
+.appear-mode-art.window i { right: 8px; bottom: 8px; width: 34%; height: 54px; border-radius: 6px; background: var(--background); box-shadow: 0 2px 8px rgb(0 0 0 / 0.14); }
+.appear-mode-art.window i::before { content: ""; position: absolute; inset: 0 0 auto; height: 12px; border-radius: 6px 6px 0 0; background: var(--c); }
+.appear-mode-art.window i::after { content: ""; position: absolute; left: 5px; right: 5px; bottom: 5px; height: 7px; border-radius: 4px; background: var(--muted); }
+/* Logos: light and dark side by side, each on the background it's used on. */
+.appear-logos { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.appear-logo-tile { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.2); }
+.appear-logo-box { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: calc(var(--radius) * 0.9); background: #fff; border: 1px solid var(--border); color: #8a8a8a; overflow: hidden; }
+.appear-logo-tile.dark .appear-logo-box { background: #0c0c0d; border-color: transparent; color: #777; }
+.appear-logo-box img { width: 100%; height: 100%; object-fit: cover; }
+.appear-logo-box img.fallback { opacity: 0.55; }
+.appear-logo-meta { min-width: 0; display: grid; gap: 2px; justify-items: start; }
+.appear-logo-btns { display: flex; gap: 4px; margin-top: 4px; }
+/* Brand colour: quick swatches, then any colour. */
+.appear-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.appear-swatch { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 99px; cursor: pointer; box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 22%, transparent); transition: transform 120ms; }
+.appear-swatch:hover:not(:disabled) { transform: scale(1.1); }
+.appear-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--foreground); }
+.appear-swatch:disabled { cursor: default; }
+.appear-custom { display: flex; align-items: center; gap: 8px; }
 .appear-draft { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.appear-logo { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.appear-logo img, .appear-logo-empty { width: 40px; height: 40px; flex: none; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--border); object-fit: cover; background: var(--muted); }
-.appear-logo input[type="file"] { flex: 1; min-width: 160px; }
-/* W-21: the dark-background logo is shown on the island's near-black. */
-.appear-logo.dark img, .appear-logo.dark .appear-logo-empty { background: #0c0c0d; border-color: transparent; }
-.appear-color { display: flex; align-items: center; gap: 10px; }
-.appear-color input[type="color"] { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--input); border-radius: calc(var(--radius) * 0.8); background: var(--background); cursor: pointer; }
+.appear-color { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; }
+.appear-color input[type="color"] { width: 40px; height: 32px; padding: 2px; border: 1px solid var(--input); border-radius: calc(var(--radius) * 0.8); background: var(--background); cursor: pointer; }
 .appear-color [data-slot="input"] { max-width: 120px; font-family: var(--font-mono), monospace; }
 .appear-range { display: flex; align-items: center; gap: 12px; }
 .appear-range input { flex: 1; accent-color: var(--primary); }
 .appear-range output { min-width: 40px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
-.appear-switch { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-.appear-actions { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--background); }
+.appear-actions { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--background); }
 .appear-preview { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 16px; gap: 8px; background-color: var(--muted); background-image: radial-gradient(color-mix(in oklch, var(--foreground) 15%, transparent) 1px, transparent 1px); background-size: 16px 16px; }
 .appear-note { margin: 0; text-align: center; }
+.appear-preview-bar { flex: none; display: flex; justify-content: center; }
+.appear-preview-bar .segmented { background: var(--background); box-shadow: 0 0 0 1px var(--border); }
+.appear-preview-bar .segmented > [data-slot="button"].active { background: var(--muted); }
+.appear-reset { order: 3; }
+.appear-status { order: 2; flex: 1 1 120px; text-align: right; }
+.appear-status:empty { display: none; }
 /* A stand-in for the customer's page. The frame, button and card copy public/widget.js's styles
    (its .frame, .btn and .nudge rules) but sit inside this box instead of the viewport. Above the
    settings column's scrollbar (ScrollArea's z-10), which the open island is wide enough to overlap. */

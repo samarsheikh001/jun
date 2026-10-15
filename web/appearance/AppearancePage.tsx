@@ -9,13 +9,13 @@ import { SkelText } from "@/components/ui/skeleton.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
-import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { previewChime } from "../lib/sound.ts";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { setCodeView, useCodeView } from "../agent/parts.tsx";
 import { DeskCode } from "./DeskCode.tsx";
+import { UploadIcon } from "../components/icons.tsx";
 
 // Two sidebar pages share /appearance* (/widget itself is the chat iframe the Worker serves):
 // Chat widget (D-91): Install (/appearance/install) and Behaviour (/appearance/behaviour), with
@@ -237,116 +237,91 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
   return (
     <div className="appear-page">
       <aside className="appear-controls" aria-label="Widget look">
-        <div className="appear-heading">
-          <h2>Preview</h2>
-          <div className="segmented" role="group" aria-label="Preview">
-            <Button variant="ghost" size="sm" className={open ? "active" : ""} aria-pressed={open} onClick={() => setOpen(true)}>Chat</Button>
-            <Button variant="ghost" size="sm" className={open ? "" : "active"} aria-pressed={!open} onClick={() => setOpen(false)}>Closed</Button>
-          </div>
-        </div>
         <ScrollArea className="appear-scroll" contentClassName="appear-body">
           {!canEdit && <p className="muted small">Only owners and admins can change the widget's look.</p>}
+
+          <section className="appear-group">
+            <h2>Mode</h2>
+            <div className="appear-modes" role="radiogroup" aria-label="Mode" style={{ "--c": look.color } as CSSProperties}>
+              {MODES.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={look.mode === m.value}
+                  className="appear-mode"
+                  disabled={off}
+                  onClick={() => { if (look.mode !== m.value) { edit({ mode: m.value }); setOpen(false); } }}
+                >
+                  <span className={`appear-mode-art ${m.value}`} aria-hidden="true"><i /></span>
+                  <span className="appear-mode-name">{m.label}</span>
+                  <span className="appear-mode-desc">{m.hint}</span>
+                </button>
+              ))}
+            </div>
+            {look.mode === "window" ? (
+              <>
+                <SwitchRow
+                  title="Greeting card"
+                  hint={`Your logo, greeting and reply time in place of the button. Once dismissed, a "${BUTTON_TEXT}" pill.`}
+                  checked={look.greetingCard}
+                  disabled={off}
+                  onChange={(checked) => { edit({ greetingCard: checked }); setOpen(false); }}
+                />
+                {!look.greetingCard && (
+                  <Row label="Button shows" hint={look.logoUrl ? undefined : "A chat bubble until you upload a logo."}>
+                    <Segmented value={look.buttonStyle} disabled={off} label="Button shows" options={[["logo", "Logo"], ["text", `"${BUTTON_TEXT}"`]]} onChange={(value) => edit({ buttonStyle: value as ButtonStyle })} />
+                  </Row>
+                )}
+                <Row label="Side of the page">
+                  <Segmented value={look.position} disabled={off} label="Side of the page" options={[["left", "Left"], ["right", "Right"]]} onChange={(value) => edit({ position: value as "left" | "right" })} />
+                </Row>
+              </>
+            ) : (
+              <>
+                <Row label="Island colour" hint={look.islandSurface === "dark" ? "Near-black on every page, whatever the theme." : "Follows the theme below."}>
+                  <Segmented value={look.islandSurface} disabled={off} label="Island colour" options={[["dark", "Dark"], ["page", "Match theme"]]} onChange={(value) => edit({ islandSurface: value as IslandSurface })} />
+                </Row>
+                <SwitchRow title="Neon border" hint="A slowly turning multi-colour glow around the island." checked={draft.neon !== false} disabled={off} onChange={(checked) => edit({ neon: checked })} />
+              </>
+            )}
+          </section>
 
           <section className="appear-group">
             <h2>Brand</h2>
             <Field label="Name shown in the chat" htmlFor="appear-name">
               <Input id="appear-name" value={draft.displayName ?? ""} placeholder={workspaceName} maxLength={TEXT_LIMITS.displayName} disabled={off} onChange={(e) => edit({ displayName: e.target.value })} />
             </Field>
-            <Field label="Logo" hint="In the chat header. PNG, JPEG, WebP or GIF, up to 512 KB. Saved as soon as you pick it." htmlFor="appear-logo">
-              <div className="appear-logo">
-                {logoUrl ? <img src={logoUrl} alt="Current logo" /> : <span className="appear-logo-empty" aria-hidden="true" />}
-                {canEdit && <Input id="appear-logo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); e.target.value = ""; }} />}
-                {canEdit && logoUrl && <Button variant="outline" size="sm" disabled={busy} onClick={() => removeLogo()}>Remove</Button>}
+            <div className="appear-field">
+              <span className="appear-label">Logo</span>
+              <p>PNG, JPEG, WebP or GIF, up to 512 KB. Saved as soon as you pick it.</p>
+              <div className="appear-logos">
+                <LogoTile label="On light" url={logoUrl} canEdit={canEdit} busy={busy} onPick={(f) => uploadLogo(f)} onRemove={() => removeLogo()} />
+                <LogoTile label="On dark" url={logoDarkUrl} fallback={logoUrl} dark canEdit={canEdit} busy={busy} onPick={(f) => uploadLogo(f, true)} onRemove={() => removeLogo(true)} />
               </div>
-            </Field>
-            <Field label="Logo on dark backgrounds" hint="Optional. Used on the dark island and dark theme. Leave empty to use the logo above." htmlFor="appear-logo-dark">
-              <div className="appear-logo dark">
-                {logoDarkUrl ? <img src={logoDarkUrl} alt="Current logo on dark backgrounds" /> : <span className="appear-logo-empty" aria-hidden="true" />}
-                {canEdit && <Input id="appear-logo-dark" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f, true); e.target.value = ""; }} />}
-                {canEdit && logoDarkUrl && <Button variant="outline" size="sm" disabled={busy} onClick={() => removeLogo(true)}>Remove</Button>}
-              </div>
-            </Field>
-            <Field label="Theme" hint="Auto follows each visitor's light or dark system setting." htmlFor="appear-theme">
-              <SelectField id="appear-theme" value={look.theme} disabled={off} onValueChange={(value) => edit({ theme: value as WidgetTheme })}>
-                <SelectOption value="auto">Auto</SelectOption>
-                <SelectOption value="light">Light</SelectOption>
-                <SelectOption value="dark">Dark</SelectOption>
-              </SelectField>
-            </Field>
-            <Field label="Brand colour" hint="The chat button, the card's buttons and the send button. Text on it switches between dark and white to stay readable." htmlFor="appear-color">
+            </div>
+            <Field label="Brand colour" hint="Buttons and the send button. Text on it turns dark or white to stay readable." htmlFor="appear-color">
               <div className="appear-color">
-                <input type="color" value={look.color} disabled={off} onChange={(e) => edit({ color: e.target.value })} aria-label="Pick a brand colour" />
-                <Input id="appear-color" value={draft.color ?? APPEARANCE_DEFAULTS.color} maxLength={7} spellCheck={false} disabled={off} onChange={(e) => edit({ color: e.target.value.trim() })} aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color ?? APPEARANCE_DEFAULTS.color)} />
+                <div className="appear-swatches" role="group" aria-label="Suggested colours">
+                  {SWATCHES.map((c) => (
+                    <button key={c} type="button" className="appear-swatch" style={{ background: c }} aria-label={c} aria-pressed={look.color === c} disabled={off} onClick={() => edit({ color: c })} />
+                  ))}
+                </div>
+                <div className="appear-custom">
+                  <input type="color" value={look.color} disabled={off} onChange={(e) => edit({ color: e.target.value })} aria-label="Pick any colour" />
+                  <Input id="appear-color" value={draft.color ?? APPEARANCE_DEFAULTS.color} maxLength={7} spellCheck={false} disabled={off} onChange={(e) => edit({ color: e.target.value.trim() })} aria-invalid={!/^#[0-9a-f]{6}$/i.test(draft.color ?? APPEARANCE_DEFAULTS.color)} />
+                </div>
               </div>
             </Field>
-          </section>
-
-          <section className="appear-group">
-            <h2>Mode and shape</h2>
-            <Field
-              label="Mode"
-              hint={
-                look.mode === "island"
-                  ? "One pill at the bottom centre that turns into the question, the progress and the answer. \"/\" opens it."
-                  : "A button in the corner that opens a chat window."
-              }
-              htmlFor="appear-mode"
-            >
-              <SelectField id="appear-mode" value={look.mode} disabled={off} onValueChange={(value) => { edit({ mode: value as WidgetMode }); setOpen(false); }}>
-                <SelectOption value="island">Island</SelectOption>
-                <SelectOption value="window">Chat window</SelectOption>
-              </SelectField>
-            </Field>
-            {look.mode === "window" && (
-              <label className="appear-switch">
-                <Switch checked={look.greetingCard} disabled={off} onCheckedChange={(checked) => { edit({ greetingCard: checked }); setOpen(false); }} />
-                <span>Show a greeting card (your logo, greeting and reply time in place of the button; once dismissed, a "{BUTTON_TEXT}" pill)</span>
-              </label>
-            )}
-            {look.mode === "window" && !look.greetingCard && (
-              <Field label="Button shows" hint={look.logoUrl ? "Your logo, or the words." : "Your logo once you upload one (a chat bubble until then), or the words."} htmlFor="appear-button">
-                <SelectField id="appear-button" value={look.buttonStyle} disabled={off} onValueChange={(value) => edit({ buttonStyle: value as ButtonStyle })}>
-                  <SelectOption value="logo">Company logo</SelectOption>
-                  <SelectOption value="text">"{BUTTON_TEXT}"</SelectOption>
-                </SelectField>
-              </Field>
-            )}
-            {look.mode === "window" && (
-              <Field label="Side of the page" htmlFor="appear-side">
-                <SelectField id="appear-side" value={look.position} disabled={off} onValueChange={(value) => edit({ position: value as "left" | "right" })}>
-                  <SelectOption value="right">Right</SelectOption>
-                  <SelectOption value="left">Left</SelectOption>
-                </SelectField>
-              </Field>
-            )}
-            {look.mode === "island" && (
-              <Field label="Island colour" hint={look.islandSurface === "dark" ? "Near-black with white text on every page, whatever the theme." : "Follows the Theme above, like the rest of the widget."} htmlFor="appear-island">
-                <SelectField id="appear-island" value={look.islandSurface} disabled={off} onValueChange={(value) => edit({ islandSurface: value as IslandSurface })}>
-                  <SelectOption value="dark">Dark (like Dynamic Island)</SelectOption>
-                  <SelectOption value="page">Match the page theme</SelectOption>
-                </SelectField>
-              </Field>
-            )}
-            {look.mode === "island" && (
-              <label className="appear-switch">
-                <Switch checked={draft.neon !== false} disabled={off} onCheckedChange={(checked) => edit({ neon: checked })} />
-                <span>Neon border (a slowly turning multi-colour glow around the island)</span>
-              </label>
-            )}
-            <Field label="Corner rounding" hint={look.mode === "island" ? "The island's open shapes, message bubbles and buttons." : "The chat window, message bubbles and buttons."} htmlFor="appear-radius">
+            <Row label="Theme" hint="Auto follows each visitor's light or dark setting.">
+              <Segmented value={look.theme} disabled={off} label="Theme" options={[["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]]} onChange={(value) => edit({ theme: value as WidgetTheme })} />
+            </Row>
+            <Field label="Corner rounding" hint={look.mode === "island" ? "The island's open shapes, bubbles and buttons." : "The chat window, bubbles and buttons."} htmlFor="appear-radius">
               <div className="appear-range">
                 <input id="appear-radius" type="range" min={0} max={RADIUS_MAX} step={1} value={look.radius} disabled={off} onChange={(e) => edit({ radius: Number(e.target.value) })} />
                 <output htmlFor="appear-radius">{look.radius}px</output>
               </div>
             </Field>
-            <label className="appear-switch">
-              <Switch checked={draft.sound !== false} disabled={off} onCheckedChange={(checked) => edit({ sound: checked })} />
-              <span>Play a sound for new replies (a soft chime for a teammate's reply, and for the AI's while the chat is closed or the visitor is on another tab)</span>
-            </label>
-            {/* Hear it here: the same chime the widget plays. Type "button": this sits in the settings form. */}
-            <div>
-              <Button type="button" variant="outline" size="sm" onClick={previewChime}>Test sound</Button>
-            </div>
           </section>
 
           <section className="appear-group">
@@ -355,13 +330,13 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
             <Field label="Greeting" htmlFor="appear-greeting">
               <Input id="appear-greeting" value={draft.greeting ?? ""} placeholder={APPEARANCE_DEFAULTS.greeting} maxLength={TEXT_LIMITS.greeting} disabled={off} onChange={(e) => edit({ greeting: e.target.value })} />
             </Field>
-            <Field label="Reply time" hint="Under the name in the header (outside business hours it says when you're back instead)." htmlFor="appear-reply">
+            <Field label="Reply time" hint="Under the name. Outside business hours it says when you're back." htmlFor="appear-reply">
               <Input id="appear-reply" value={draft.replyTime ?? ""} placeholder={APPEARANCE_DEFAULTS.replyTime} maxLength={TEXT_LIMITS.replyTime} disabled={off} onChange={(e) => edit({ replyTime: e.target.value })} />
             </Field>
             <Field label="Message box placeholder" htmlFor="appear-placeholder">
               <Input id="appear-placeholder" value={draft.placeholder ?? ""} placeholder={APPEARANCE_DEFAULTS.placeholder} maxLength={TEXT_LIMITS.placeholder} disabled={off} onChange={(e) => edit({ placeholder: e.target.value })} />
             </Field>
-            <Field label="Suggested questions" hint={`One per line, up to ${SUGGESTIONS_MAX}. Shown under the greeting; tapping one sends it.`} htmlFor="appear-suggestions">
+            <Field label="Suggested questions" hint={`One per line, up to ${SUGGESTIONS_MAX}. Tapping one sends it.`} htmlFor="appear-suggestions">
               <Textarea
                 id="appear-suggestions"
                 rows={4}
@@ -373,29 +348,106 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
               {canEdit && (
                 <div className="appear-draft">
                   <Button variant="outline" size="sm" disabled={busy} onClick={draftSuggestions}>Draft from your knowledge</Button>
-                  <span className="muted small">Replaces the questions above; nothing changes for visitors until you Save.</span>
+                  <span className="muted small">Replaces the list; nothing changes for visitors until you Save.</span>
                 </div>
               )}
             </Field>
           </section>
 
           <section className="appear-group">
-            <h2>After the chat</h2>
-            <label className="appear-switch">
-              <Switch checked={draft.csat !== false} disabled={off} onCheckedChange={(checked) => edit({ csat: checked })} />
-              <span>Ask "How did we do?" when a conversation is resolved</span>
-            </label>
+            <h2>Extras</h2>
+            <SwitchRow
+              title="Sound for new replies"
+              hint="A soft chime for a teammate's reply, and for the AI's while the chat is closed or in another tab."
+              checked={draft.sound !== false}
+              disabled={off}
+              onChange={(checked) => edit({ sound: checked })}
+              extra={<Button type="button" variant="outline" size="sm" onClick={previewChime}>Test sound</Button>}
+            />
+            <SwitchRow title="Ask for a rating" hint={'"How did we do?" when a conversation is resolved.'} checked={draft.csat !== false} disabled={off} onChange={(checked) => edit({ csat: checked })} />
           </section>
         </ScrollArea>
         {canEdit && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
-            <Button variant="outline" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, mode: APPEARANCE_DEFAULTS.mode, greetingCard: APPEARANCE_DEFAULTS.greetingCard, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
-            <span className={error ? "error small" : "muted small"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
+            {dirty && <Button variant="ghost" disabled={busy} onClick={() => { setDraft(pick(saved)); setStatus(null); }}>Discard</Button>}
+            <Button variant="ghost" className="appear-reset" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, mode: APPEARANCE_DEFAULTS.mode, greetingCard: APPEARANCE_DEFAULTS.greetingCard, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
+            <span className={error ? "error small appear-status" : "muted small appear-status"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}
       </aside>
       {widgetKey && <Preview widgetKey={widgetKey} look={look} open={open} onOpen={setOpen} />}
+    </div>
+  );
+}
+
+const MODES: { value: WidgetMode; label: string; hint: string }[] = [
+  { value: "island", label: "Island", hint: "A pill at the bottom centre that grows into the answer." },
+  { value: "window", label: "Chat window", hint: "A button or greeting card in the corner that opens a chat." },
+];
+
+/** Quick picks for the brand colour; any colour still goes in the picker or as hex. */
+const SWATCHES = [APPEARANCE_DEFAULTS.color, "#111111", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#16a34a", "#0d9488"];
+
+/** A setting with its control on the right (segmented buttons). */
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="appear-row">
+      <div className="appear-row-text">
+        <span className="appear-label">{label}</span>
+        {hint && <p>{hint}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A few choices side by side (not a dropdown: every option stays visible). */
+function Segmented({ value, options, label, disabled, onChange }: { value: string; options: [string, string][]; label: string; disabled?: boolean; onChange: (value: string) => void }) {
+  return (
+    <div className="segmented" role="group" aria-label={label}>
+      {options.map(([v, text]) => (
+        <Button key={v} type="button" variant="ghost" size="sm" className={value === v ? "active" : ""} aria-pressed={value === v} disabled={disabled} onClick={() => onChange(v)}>{text}</Button>
+      ))}
+    </div>
+  );
+}
+
+/** A switch with a title and a short line under it; `extra` (a Test button) goes under them, outside the label. */
+function SwitchRow({ title, hint, checked, disabled, onChange, extra }: { title: string; hint?: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void; extra?: ReactNode }) {
+  return (
+    <div className="appear-switch-row">
+      <label className="appear-row-text appear-switch">
+        <span className="appear-label">{title}</span>
+        {hint && <p>{hint}</p>}
+        <Switch className="appear-switch-control" checked={checked} disabled={disabled} onCheckedChange={onChange} />
+      </label>
+      {extra && <div className="appear-switch-extra">{extra}</div>}
+    </div>
+  );
+}
+
+/** One logo (W-21: a second one for dark surfaces): the image on its background, Upload / Replace and Remove. */
+function LogoTile({ label, url, fallback, dark, canEdit, busy, onPick, onRemove }: { label: string; url: string | null; fallback?: string | null; dark?: boolean; canEdit: boolean; busy: boolean; onPick: (file: File) => void; onRemove: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  // No dark logo: show the light one on dark, which is what visitors get.
+  const shown = url ?? fallback ?? null;
+  return (
+    <div className={`appear-logo-tile${dark ? " dark" : ""}`}>
+      <div className="appear-logo-box">
+        {shown ? <img src={shown} alt={`${label} logo`} className={url ? "" : "fallback"} /> : <UploadIcon size={18} aria-hidden="true" />}
+      </div>
+      <div className="appear-logo-meta">
+        <span className="appear-label">{label}</span>
+        <span className="muted small">{url ? "Uploaded" : dark ? (fallback ? "Uses the light logo" : "Optional") : "None yet"}</span>
+        {canEdit && (
+          <div className="appear-logo-btns">
+            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>{url ? "Replace" : "Upload"}</Button>
+            {url && <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onRemove}>Remove</Button>}
+          </div>
+        )}
+      </div>
+      <input ref={input} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }} />
     </div>
   );
 }
@@ -466,6 +518,12 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
   const buttonLogo = logoFor(look, textOn(look.color) === "#ffffff");
   return (
     <div className="appear-preview" aria-label="Preview">
+      <div className="appear-preview-bar">
+        <div className="segmented" role="group" aria-label="Preview">
+          <Button variant="ghost" size="sm" className={open ? "active" : ""} aria-pressed={open} onClick={() => onOpen(true)}>Open</Button>
+          <Button variant="ghost" size="sm" className={open ? "" : "active"} aria-pressed={!open} onClick={() => onOpen(false)}>Closed</Button>
+        </div>
+      </div>
       {/* Always centred: the preview shows the look; the side only applies on the website. */}
       <div className={`appear-stage ${look.theme} ${look.launcher}`} style={brand}>
         <iframe
