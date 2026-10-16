@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ComponentType, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { api } from "../api.ts";
-import { navigate, usePath } from "../lib/router.ts";
+import { deskHref, navigate, usePath } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -46,7 +46,7 @@ const go = (href: string) => (e: { preventDefault: () => void }) => {
   e.preventDefault();
   navigate(href);
 };
-const link = (href: string, text: ReactNode) => <a href={href} onClick={go(href)}>{text}</a>;
+const link = (href: string, text: ReactNode) => <a href={deskHref(href)} onClick={go(href)}>{text}</a>;
 
 function Ring({ done, total }: { done: number; total: number }) {
   const r = 9;
@@ -213,7 +213,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
           {STEP_ORDER.map((key) => {
             const { short, icon: StepIcon } = STEPS[key];
             return (
-              <a key={key} href={`/welcome/${key}`} onClick={go(`/welcome/${key}`)} className={`wl-row ${key === current ? "on" : ""} ${s[key] ? "ok" : ""}`} aria-current={key === current ? "step" : undefined}>
+              <a key={key} href={deskHref(`/welcome/${key}`)} onClick={go(`/welcome/${key}`)} className={`wl-row ${key === current ? "on" : ""} ${s[key] ? "ok" : ""}`} aria-current={key === current ? "step" : undefined}>
                 <StepIcon className="wl-row-icon" />
                 <span>{short}</span>
                 {STEPS[key].optional && !s[key] && <span className="wl-row-note">optional</span>}

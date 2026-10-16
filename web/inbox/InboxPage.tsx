@@ -7,7 +7,7 @@ import { Composer, type ComposerControl, type SavedReply } from "../components/C
 import { useBridge, type ConversationPatch } from "../lib/bridge.ts";
 import { matchesFilter } from "../lib/commands.ts";
 import { MessageList } from "../components/MessageList.tsx";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
 import { ToolCalls } from "./ToolCalls.tsx";
 import { configuredProviders, IssueDialog, type FiledIssue } from "./IssueDialog.tsx";
@@ -541,7 +541,7 @@ function Thread({
             Create issue
           </Button>
           {trackers && configuredProviders(trackers).length === 0 && (
-            <a className="small" href="/settings/integrations#issue-trackers" onClick={(e) => { e.preventDefault(); navigate("/settings/integrations#issue-trackers"); }}>Set up</a>
+            <a className="small" href={deskHref("/settings/integrations#issue-trackers")} onClick={(e) => { e.preventDefault(); navigate("/settings/integrations#issue-trackers"); }}>Set up</a>
           )}
         </span>
         <DrawerClose onClose={onClose} />

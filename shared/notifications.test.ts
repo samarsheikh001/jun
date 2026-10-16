@@ -71,6 +71,7 @@ test("payload: contact label, ~100 characters, url and tag of the conversation",
   assert.equal(p.tag, "cv_1");
   // D-95: the link opens the conversation's own workspace.
   assert.equal(notificationPayload({ id: "n", kind: "visitor_reply", conversationId: "cv_1", contact: "Ana", text: "", workspaceId: "ws_a" }).url, "/inbox/cv_1?ws=ws_a");
+  assert.equal(notificationPayload({ id: "n", kind: "visitor_reply", conversationId: "cv_1", contact: "Ana", text: "", workspaceId: "ws_a", workspaceSlug: "acme" }).url, "/w/acme/inbox/cv_1");
   assert.equal(notificationPayload({ id: "n", kind: "needs_person", conversationId: "c", contact: "Ana", text: "Help" }).title, "Ana needs a person");
   assert.equal(notificationPayload({ id: "n", kind: "assigned", conversationId: "c", contact: "Ana", text: "", by: "Bo" }).title, "Bo assigned you Ana");
   assert.equal(notificationPayload({ id: "n", kind: "assigned", conversationId: "c", contact: "Ana", text: "", auto: true }).title, "New chat assigned to you: Ana");

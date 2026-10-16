@@ -4,6 +4,8 @@ import { finishLogin, finishRegistration, startLogin, startRegistration } from "
 import { createSession, destroySession, getSessionUser, requireUser } from "../auth/session.ts";
 import { newId, randomToken, safeEqual } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
+import { fillSlugs } from "../lib/workspace-slug.ts";
+import { slugBase } from "../../shared/workspace-slug.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 
 const MIN_SETUP_TOKEN_LENGTH = 16;
@@ -42,7 +44,8 @@ auth.post("/setup/verify", async (c) => {
   const payload = await finishRegistration<Payload>(c, "setup", object<RegistrationResponseJSON>(body, "response"), (p) => [
     // Primary-key conflict here aborts the whole batch if two setups race.
     c.env.DB.prepare("INSERT INTO settings (key, value) VALUES ('setup_completed', ?)").bind(String(now)),
-    c.env.DB.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").bind(p.workspace.id, p.workspace.name, now),
+    // D-96: the desk's first workspace, so its slug is free.
+    c.env.DB.prepare("INSERT INTO workspaces (id, name, slug, created_at) VALUES (?, ?, ?, ?)").bind(p.workspace.id, p.workspace.name, slugBase(p.workspace.name), now),
     c.env.DB.prepare("INSERT INTO users (id, name, email, created_at) VALUES (?, ?, ?, ?)").bind(p.user.id, p.user.name, p.user.email, now),
     c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)").bind(p.workspace.id, p.user.id, now),
     // The website widget inbox; its public key goes in the embed snippet.
@@ -94,12 +97,19 @@ auth.post("/auth/logout", async (c) => {
 auth.get("/me", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ user: null, setupComplete: await isSetupComplete(c) });
-  const memberships = await c.env.DB.prepare(
-    `SELECT w.id AS workspaceId, w.name AS workspaceName, m.role FROM members m
-     JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = ? ORDER BY m.created_at`,
-  )
-    .bind(user.id)
-    .all();
+  const list = () =>
+    c.env.DB.prepare(
+      `SELECT w.id AS workspaceId, w.name AS workspaceName, w.slug AS workspaceSlug, m.role FROM members m
+       JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = ? ORDER BY m.created_at`,
+    )
+      .bind(user.id)
+      .all<{ workspaceSlug: string | null }>();
+  let memberships = await list();
+  // D-96: workspaces from before slugs get theirs now.
+  if (memberships.results.some((m) => !m.workspaceSlug)) {
+    await fillSlugs(c.env.DB);
+    memberships = await list();
+  }
   return c.json({ user, memberships: memberships.results, setupComplete: true });
 });
 

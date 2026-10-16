@@ -137,8 +137,7 @@ function InvitePage({ token, signedInAs, onDone }: { token: string; signedInAs: 
   // D-95: already on this desk (another workspace): join with the same account, no new passkey.
   const join = () =>
     run(async () => {
-      const joined = await api<{ workspaceId: string }>(`/invites/${token}/accept`, { body: {} });
-      switchWorkspace(joined.workspaceId);
+      switchWorkspace(await api<{ workspaceId: string; workspaceSlug: string | null }>(`/invites/${token}/accept`, { body: {} }));
     });
   const role = `You've been invited as ${invite.role === "admin" ? "an admin" : "an agent"}.`;
   if (signedInAs) {
@@ -168,7 +167,7 @@ function InvitePage({ token, signedInAs, onDone }: { token: string; signedInAs: 
       </form>
       <p className="muted small">
         Already have an account on this desk?{" "}
-        <a href="#" onClick={(e) => { e.preventDefault(); run(async () => { await signInWithPasskey(); const joined = await api<{ workspaceId: string }>(`/invites/${token}/accept`, { body: {} }); switchWorkspace(joined.workspaceId); }); }}>
+        <a href="#" onClick={(e) => { e.preventDefault(); run(async () => { await signInWithPasskey(); switchWorkspace(await api<{ workspaceId: string; workspaceSlug: string | null }>(`/invites/${token}/accept`, { body: {} })); }); }}>
           Sign in to join
         </a>
       </p>

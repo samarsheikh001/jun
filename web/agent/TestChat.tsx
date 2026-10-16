@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/message-scroller.tsx";
 import { EVAL, go, humanize } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { deskHref } from "../lib/router.ts";
 
 // AI-29: "Test" on a task's page. The admin types as a customer; each message goes with the chat so far
 // and the unsaved draft to …/agent/test-chat, which runs the live chats' runAgent and streams back what
@@ -325,7 +326,7 @@ export function TestChat({ cfg, path, name }: { cfg: AgentConfig; path: string; 
               )}
               {saved && (
                 <MessageScrollerItem messageId="saved" className="wchat-ai">
-                  <p className="tchat-note">Kept as a test. It runs with the others on the <a href="/agent/tests" onClick={(e) => { e.preventDefault(); go("/agent/tests"); }}>Tests</a> page, and goes live when you save.</p>
+                  <p className="tchat-note">Kept as a test. It runs with the others on the <a href={deskHref("/agent/tests")} onClick={(e) => { e.preventDefault(); go("/agent/tests"); }}>Tests</a> page, and goes live when you save.</p>
                 </MessageScrollerItem>
               )}
             </MessageScrollerContent>

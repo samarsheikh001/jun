@@ -4,7 +4,7 @@ import { contactLabel } from "../../shared/notifications.ts";
 import { api } from "../api.ts";
 import { bridge, modKey, type ThreadBridge } from "../lib/bridge.ts";
 import { rankScored, SHORTCUT_HELP } from "../lib/commands.ts";
-import { navigate } from "../lib/router.ts";
+import { deskHref, deskPathname, navigate } from "../lib/router.ts";
 import { setThemePref, THEME_LABEL, THEME_PREFS } from "../lib/theme.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -105,7 +105,7 @@ export function CommandPalette({
   const [fetched, setFetched] = useState<ConversationSummary[]>([]);
   const ids = useId();
   // Snapshot when opened: the palette lists what was on screen at that moment.
-  const [thread] = useState<ThreadBridge | null>(() => (window.location.pathname.startsWith("/inbox/") ? bridge.thread : null));
+  const [thread] = useState<ThreadBridge | null>(() => (deskPathname().startsWith("/inbox/") ? bridge.thread : null));
   const [shown] = useState<ConversationSummary[]>(() => bridge.inbox?.conversations ?? []);
 
   useEffect(() => {
@@ -340,7 +340,7 @@ function threadActions(t: ThreadBridge, meId: string, onToast: (text: string) =>
     keywords: ["url", "share"],
     run: async () => {
       try {
-        await navigator.clipboard.writeText(`${window.location.origin}/inbox/${c.id}`);
+        await navigator.clipboard.writeText(`${window.location.origin}${deskHref(`/inbox/${c.id}`)}`);
         onToast("Link copied");
       } catch {
         onToast("Couldn't copy the link");

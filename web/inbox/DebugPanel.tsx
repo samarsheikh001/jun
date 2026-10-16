@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { describeBrowser, describeIssueKind, describeTarget, formatDuration, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -195,7 +195,7 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
           <ul className="contact-history">
             {others.map((h) => (
               <li key={h.id}>
-                <a href={`/inbox/${h.id}`} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${h.id}`); }}>
+                <a href={deskHref(`/inbox/${h.id}`)} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${h.id}`); }}>
                   <span className="small">{h.preview || "Conversation"}</span>
                   <span className="muted small">{h.status === "resolved" ? "Resolved" : h.status === "open" ? "Open" : h.status} · {day(h.lastMessageAt)}</span>
                 </a>

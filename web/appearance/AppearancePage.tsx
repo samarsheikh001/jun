@@ -4,7 +4,7 @@ import { api, ApiError } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
 import { BehaviourPanel, hostOf, IdentityPanel, InstallTab, type InstallState } from "./InstallPanels.tsx";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -118,7 +118,7 @@ function InstallChip({ install }: { install: InstallState | null }) {
     <span className="install-chip pending">
       <span className="install-dot warn" aria-hidden="true" />
       Not on your site yet
-      <a href="/appearance/install" onClick={(e) => { e.preventDefault(); navigate("/appearance/install", { replace: true }); }}>Install</a>
+      <a href={deskHref("/appearance/install")} onClick={(e) => { e.preventDefault(); navigate("/appearance/install", { replace: true }); }}>Install</a>
     </span>
   );
 }

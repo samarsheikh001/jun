@@ -29,7 +29,7 @@ export function WorkspaceSwitcher({ current, all }: { current: Membership; all: 
           <DropdownMenuGroup>
             <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
             {all.map((m) => (
-              <DropdownMenuItem key={m.workspaceId} onClick={() => m.workspaceId !== current.workspaceId && switchWorkspace(m.workspaceId)}>
+              <DropdownMenuItem key={m.workspaceId} onClick={() => m.workspaceId !== current.workspaceId && switchWorkspace(m)}>
                 <span className="ws-initial" aria-hidden="true">{m.workspaceName.slice(0, 1).toUpperCase()}</span>
                 <span className="ws-menu-name">{m.workspaceName}</span>
                 {m.workspaceId === current.workspaceId && <CheckIcon className="ws-menu-check" aria-label="Current" />}
@@ -70,9 +70,9 @@ function NewWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => v
   const { busy, error, run } = useAction();
   const create = () =>
     run(async () => {
-      const made = await api<{ workspaceId: string }>("/workspaces", { body: { name } });
+      const made = await api<{ workspaceId: string; workspaceSlug: string }>("/workspaces", { body: { name } });
       // A fresh workspace starts at Get started: install its widget, teach its AI.
-      switchWorkspace(made.workspaceId, "/welcome");
+      switchWorkspace(made, "/welcome");
     });
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !busy && onClose()}>

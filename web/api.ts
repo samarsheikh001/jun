@@ -63,6 +63,6 @@ export function describeError(error: unknown): string {
 
 export interface Me {
   user: { id: string; name: string; email: string | null } | null;
-  memberships?: { workspaceId: string; workspaceName: string; role: "owner" | "admin" | "agent" }[];
+  memberships?: { workspaceId: string; workspaceName: string; workspaceSlug: string; role: "owner" | "admin" | "agent" }[];
   setupComplete: boolean;
 }

@@ -22,6 +22,7 @@ import { setupProblems, useActionKeys, type ActionKeys } from "./ActionKeys.tsx"
 import { addCurlAction, CurlRead, NewActionDialog, useCurl } from "./NewActionDialog.tsx";
 import { TryAction } from "./TryAction.tsx";
 import { useSeenPageActions } from "./WebsiteActions.tsx";
+import { deskHref } from "../lib/router.ts";
 
 // /agent/tasks[/<name>] (AI-27, D-67): a task is one job the AI does for customers, like a refund or a
 // plan change. It's a procedure, tasks/<name>.md (when it applies, the steps, and folded away
@@ -141,7 +142,7 @@ function stepFor(body: string, action: string): string {
 
 /** A link to a page on the desk. */
 function Go({ to, children }: { to: string; children: ReactNode }) {
-  return <a href={to} onClick={(e) => { e.preventDefault(); go(to); }}>{children}</a>;
+  return <a href={deskHref(to)} onClick={(e) => { e.preventDefault(); go(to); }}>{children}</a>;
 }
 
 /**

@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState, type CSSProperties, type MouseEven
 import { ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight, ArrowUpIcon as ArrowUp } from "@/components/icons";
 import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { sliceColor } from "./topic-colors.ts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
@@ -81,7 +81,7 @@ function Ratings({ csat }: { csat: MetricsReport["csat"] }) {
             <ul className="quotes">
               {csat.badComments.map((x) => (
                 <li key={`${x.conversationId}:${x.createdAt}`}>
-                  <a href={`/inbox/${x.conversationId}`} onClick={goTo(`/inbox/${x.conversationId}`)}>
+                  <a href={deskHref(`/inbox/${x.conversationId}`)} onClick={goTo(`/inbox/${x.conversationId}`)}>
                     <span className="quote-text">{x.comment}</span>
                     <span className="quote-meta">{new Date(x.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · Open chat →</span>
                   </a>
@@ -194,14 +194,14 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
     <section className="dash-card">
       <div className="dash-card-head">
         <h2>Top topics</h2>
-        <a className="small" href="/settings/inbox#topics" onClick={goTo("/settings/inbox#topics")}>Manage</a>
+        <a className="small" href={deskHref("/settings/inbox#topics")} onClick={goTo("/settings/inbox#topics")}>Manage</a>
       </div>
       {top.length === 0 ? (
         <p className="muted small">
           {!aiEnabled ? (
             <>
               The AI assistant labels each chat with a short topic, like Billing or Login, and AI replies are off.{" "}
-              <a href="/settings/ai" onClick={goTo("/settings/ai")}>Turn it on</a>
+              <a href={deskHref("/settings/ai")} onClick={goTo("/settings/ai")}>Turn it on</a>
             </>
           ) : topics.unlabeled > 0
             ? "Topics appear after chats go quiet for a few minutes: the AI gives each one a short label, like Billing or Login."
@@ -215,7 +215,7 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
           <ul className="dash-rows links bars">
             {top.map((t, i) => (
               <li key={t.id} style={{ "--share": t.share, "--swatch": sliceColor(i) ?? "var(--muted-foreground)" } as CSSProperties}>
-                <a href={`/inbox?topic=${t.id}`} onClick={goTo(`/inbox?topic=${encodeURIComponent(t.id)}`)} title={`Open the ${t.name} conversations in the inbox`}>
+                <a href={deskHref(`/inbox?topic=${t.id}`)} onClick={goTo(`/inbox?topic=${encodeURIComponent(t.id)}`)} title={`Open the ${t.name} conversations in the inbox`}>
                   <span className="dash-row-label"><i className="dash-swatch" aria-hidden="true" />{t.name}</span>
                   {showAi && t.aiResolutionRate !== null && <span className="dash-row-tag" title="Resolved by the AI alone, of this topic's AI chats">AI {percent(t.aiResolutionRate)}</span>}
                   <span className="dash-row-share">{percent(t.share)}</span>
@@ -275,7 +275,7 @@ function Overview({ r }: { r: MetricsReport }) {
             label="AI assistant"
             value="Off"
             off
-            detail={<>Your team answers every chat. <a href="/settings/ai" onClick={goTo("/settings/ai")}>Turn it on</a></>}
+            detail={<>Your team answers every chat. <a href={deskHref("/settings/ai")} onClick={goTo("/settings/ai")}>Turn it on</a></>}
           />
         ) : (
           <>

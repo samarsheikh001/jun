@@ -10,6 +10,7 @@ import { PlusIcon, XIcon } from "../components/icons.tsx";
 import { go, humanize, slug, WIDGET } from "./parts.tsx";
 import { editYaml, readYaml } from "../../shared/agent-files.ts";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { deskHref } from "../lib/router.ts";
 
 // W-31: website actions are WebMCP tools the customer's own site registers; the AI runs them in the
 // customer's browser. The desk never has their code, only what the loader reported when a customer
@@ -228,7 +229,7 @@ export function WebsiteActions({ cfg, canEdit }: { cfg: AgentConfig; canEdit: bo
                     <span>Run by buttons in</span>
                     <span className="agent-links-chips">
                       {buttons.map((w) => (
-                        <a key={w} className="agent-link-chip" data-kind="widget" href={`/agent/widgets/${w}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${w}`); }}>
+                        <a key={w} className="agent-link-chip" data-kind="widget" href={deskHref(`/agent/widgets/${w}`)} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${w}`); }}>
                           {humanize(w)}
                         </a>
                       ))}

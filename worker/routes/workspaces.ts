@@ -4,6 +4,7 @@ import { finishRegistration, startRegistration } from "../auth/passkeys.ts";
 import { createSession, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
+import { withFreeSlug, workspaceSlug } from "../lib/workspace-slug.ts";
 import { dismissedKey, installMarkedKey } from "./onboarding.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 
@@ -62,18 +63,22 @@ workspaces.post("/workspaces", requireUser, async (c) => {
   const name = text(await readJson(c.req), "name", { max: 100 });
   const workspaceId = newId("ws");
   const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").bind(workspaceId, name, now),
-    c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)").bind(workspaceId, userId, now),
-    // Its own website widget, with its own key (as in first-run setup).
-    c.env.DB.prepare("INSERT INTO inboxes (id, workspace_id, name, widget_key, created_at) VALUES (?, ?, 'Website', ?, ?)").bind(
-      newId("inb"),
-      workspaceId,
-      `wk_${randomToken(12)}`,
-      now,
-    ),
-  ]);
-  return c.json({ workspaceId, workspaceName: name, role: "owner" });
+  // D-96: its desk URLs are /w/<slug>/…
+  const workspaceSlug = await withFreeSlug(c.env.DB, name, async (slug) => {
+    await c.env.DB.batch([
+      c.env.DB.prepare("INSERT INTO workspaces (id, name, slug, created_at) VALUES (?, ?, ?, ?)").bind(workspaceId, name, slug, now),
+      c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)").bind(workspaceId, userId, now),
+      // Its own website widget, with its own key (as in first-run setup).
+      c.env.DB.prepare("INSERT INTO inboxes (id, workspace_id, name, widget_key, created_at) VALUES (?, ?, 'Website', ?, ?)").bind(
+        newId("inb"),
+        workspaceId,
+        `wk_${randomToken(12)}`,
+        now,
+      ),
+    ]);
+    return slug;
+  });
+  return c.json({ workspaceId, workspaceName: name, workspaceSlug, role: "owner" });
 });
 
 workspaces.patch("/workspaces/:id", requireUser, async (c) => {
@@ -247,7 +252,7 @@ workspaces.post("/invites/:token/accept", requireUser, async (c) => {
     ),
   ]);
   if (!used[0]?.meta.changes) throw new HttpError(410, "invite_invalid", "This invite link is invalid, used, or expired.");
-  return c.json({ workspaceId: invite.workspaceId });
+  return c.json({ workspaceId: invite.workspaceId, workspaceSlug: await workspaceSlug(c.env.DB, invite.workspaceId) });
 });
 
 workspaces.post("/invites/:token/options", async (c) => {

@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
@@ -149,7 +149,7 @@ export function ItemIndex({ cfg, items, base, onAdd, addLabel, canEdit, empty, n
             const href = `${base}/${item.id}`;
             return (
               <li key={item.id} className="agent-index-card">
-                <a className="agent-index-link" href={href} onClick={(e) => { e.preventDefault(); go(href); }}>
+                <a className="agent-index-link" href={deskHref(href)} onClick={(e) => { e.preventDefault(); go(href); }}>
                   {item.label}
                 </a>
                 <p className="agent-index-sub">{item.sub || <span className="muted">No description yet</span>}</p>

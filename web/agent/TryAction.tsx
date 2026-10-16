@@ -10,6 +10,7 @@ import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import { go, humanize, slug } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { deskHref } from "../lib/router.ts";
 
 // AI-25: "Try it" on an action's page. The admin types the details, the desk calls the draft's version
 // of the action once for real (…/agent/try-action, keys and all) and shows what came back. A JSON
@@ -197,7 +198,7 @@ function TryOutcome({ cfg, canEdit, path, name, result }: { cfg: AgentConfig; ca
           {own && "root" in own ? (
             <>
               <p className="small">
-                Shown to the customer as <a href={`/agent/widgets/${widget}`} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${widget}`); }}>{humanize(widget!)}</a>:
+                Shown to the customer as <a href={deskHref(`/agent/widgets/${widget}`)} onClick={(e) => { e.preventDefault(); go(`/agent/widgets/${widget}`); }}>{humanize(widget!)}</a>:
               </p>
               <div className="agent-try-preview"><WidgetCard widget={{ id: `try-${name}`, name: widget!, root: own.root }} interactive={false} theme={pageTheme()} /></div>
               {own.problems.length > 0 ? (

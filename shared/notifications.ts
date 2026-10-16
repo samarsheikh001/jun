@@ -103,7 +103,7 @@ export interface NotificationPayload {
   kind: NotificationKind | "test";
   title: string;
   body: string;
-  /** Path to open on click, e.g. /inbox/cv_123. */
+  /** Path to open on click, e.g. /w/acme/inbox/cv_123. */
   url: string;
   /** One notification per conversation: newer ones replace older. */
   tag: string;
@@ -138,6 +138,8 @@ export function notificationPayload(input: {
   auto?: boolean;
   /** D-95: the desk may hold several workspaces; the link opens this one. */
   workspaceId?: string;
+  /** D-96: its desk URLs are /w/<slug>/…; without one, `?ws=` names it. */
+  workspaceSlug?: string | null;
 }): NotificationPayload {
   const { kind, contact, by } = input;
   const title =
@@ -150,7 +152,9 @@ export function notificationPayload(input: {
     kind,
     title: snippet(title, 120),
     body: snippet(input.text) || (kind === "mention" ? "Open the conversation to read the note." : "Open the conversation to reply."),
-    url: `/inbox/${input.conversationId}${input.workspaceId ? `?ws=${encodeURIComponent(input.workspaceId)}` : ""}`,
+    url: input.workspaceSlug
+      ? `/w/${input.workspaceSlug}/inbox/${input.conversationId}`
+      : `/inbox/${input.conversationId}${input.workspaceId ? `?ws=${encodeURIComponent(input.workspaceId)}` : ""}`,
     tag: input.conversationId,
   };
 }

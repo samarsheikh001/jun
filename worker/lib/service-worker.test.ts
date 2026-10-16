@@ -104,3 +104,18 @@ test("click focuses the focused desk tab and routes it; ignores the widget frame
   await unfocused.dispatch("notificationclick", { notification: { data: null, close: () => {} } });
   assert.deepEqual(plain(background.messages), [{ type: "jun:open", url: "/inbox" }]);
 });
+
+test("click prefers a tab already on the notification's workspace (D-96)", async () => {
+  const acme = client("https://desk.acme.test/w/acme/reports");
+  const beta = client("https://desk.acme.test/w/beta/inbox", true);
+  const sw = load([beta, acme]);
+  await sw.dispatch("notificationclick", { notification: { data: { url: "/w/acme/inbox/cv_9" }, close: () => {} } });
+  assert.deepEqual(plain(acme.messages), [{ type: "jun:open", url: "/w/acme/inbox/cv_9" }]);
+  assert.equal(beta.messages.length, 0);
+
+  // No tab on it: the focused one switches over.
+  const only = client("https://desk.acme.test/w/beta/inbox", true);
+  const other = load([only]);
+  await other.dispatch("notificationclick", { notification: { data: { url: "/w/acme/inbox/cv_9" }, close: () => {} } });
+  assert.deepEqual(plain(only.messages), [{ type: "jun:open", url: "/w/acme/inbox/cv_9" }]);
+});

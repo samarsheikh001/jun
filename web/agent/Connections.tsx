@@ -8,6 +8,7 @@ import { PlusIcon } from "../components/icons.tsx";
 import { go, humanize } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
 import { useSeenPageActions, widgetPageActions } from "./WebsiteActions.tsx";
+import { deskHref } from "../lib/router.ts";
 
 // W-25: what an action, a procedure or a widget is connected to (shared/agent-links.ts), from the
 // draft, as links: an action's widget, the widget buttons that run it and the procedures that mention
@@ -23,7 +24,7 @@ const ROUTE: Record<Kind, string> = { action: "/agent/actions", procedure: "/age
 function Chip({ kind, name }: { kind: Kind; name: string }) {
   const href = `${ROUTE[kind]}/${name}`;
   return (
-    <a className="agent-link-chip" data-kind={kind} href={href} onClick={(e) => { e.preventDefault(); go(href); }}>
+    <a className="agent-link-chip" data-kind={kind} href={deskHref(href)} onClick={(e) => { e.preventDefault(); go(href); }}>
       {humanize(name)}
     </a>
   );

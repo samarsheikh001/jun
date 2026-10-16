@@ -1,4 +1,4 @@
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { XIcon } from "@/components/icons";
 import { STEP_ORDER, STEPS, type Onboarding } from "./WelcomePage.tsx";
 
@@ -39,7 +39,7 @@ export function GetStartedCard({ onboarding, onHide }: { onboarding: Onboarding;
   return (
     <div className="gs-card">
       <div className="gs-head">
-        <a href="/welcome" onClick={open("/welcome")}>Getting started</a>
+        <a href={deskHref("/welcome")} onClick={open("/welcome")}>Getting started</a>
         <span className="gs-percent">{percent}%</span>
         <button type="button" data-plain className="gs-hide" aria-label="Hide Getting started" title="Hide Getting started" onClick={onHide}><XIcon /></button>
       </div>
@@ -50,12 +50,12 @@ export function GetStartedCard({ onboarding, onHide }: { onboarding: Onboarding;
           const href = `/welcome/${key}`;
           return (
             <div key={key} className="gs-item">
-              <a href={href} className={`gs-step ${ok ? "ok" : ""}`} onClick={open(href)}>
+              <a href={deskHref(href)} className={`gs-step ${ok ? "ok" : ""}`} onClick={open(href)}>
                 {ok ? <Tick /> : <Pending />}
                 <span>{title}</span>
               </a>
               {key === next && (
-                <a href={href} className="gs-tile" style={{ backgroundPosition: `center ${pan}%` }} onClick={open(href)} aria-label={cta}>
+                <a href={deskHref(href)} className="gs-tile" style={{ backgroundPosition: `center ${pan}%` }} onClick={open(href)} aria-label={cta}>
                   <span className="gs-cta">{cta}</span>
                   <span className="gs-icon" style={{ color: tint }}><Icon /></span>
                 </a>

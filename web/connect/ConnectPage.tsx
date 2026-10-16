@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { PageTabs } from "../components/PageTabs.tsx";
 import { SettingRow, SettingsCard } from "../settings/layout.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -210,7 +210,7 @@ export function McpCard({ workspaceId }: { workspaceId: string }) {
           {justDone && (
             <p className="small muted">
               {client === "cursor" ? "Cursor should open and ask to install Jun. Didn't open? Add this to .cursor/mcp.json." : justDone.copied ? "Copied." : "Copy this:"}{" "}
-              The token "{c.name}" is listed under <a href="/connect/tokens" onClick={(e) => { e.preventDefault(); navigate("/connect/tokens"); }}>API tokens</a>; its value is shown only here, once.
+              The token "{c.name}" is listed under <a href={deskHref("/connect/tokens")} onClick={(e) => { e.preventDefault(); navigate("/connect/tokens"); }}>API tokens</a>; its value is shown only here, once.
             </p>
           )}
           <div className="mcp-snippet-code">

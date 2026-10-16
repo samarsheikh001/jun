@@ -22,6 +22,7 @@ import { WidgetPageActions, widgetPageActions } from "./WebsiteActions.tsx";
 import { Connections } from "./Connections.tsx";
 import { AddDialog, CodeEditor, FilePicker, Problems, TOOL, WIDGET, changeOf, go, humanize, slug, useCodeView } from "./parts.tsx";
 import type { AgentConfig } from "./useAgentConfig.ts";
+import { deskHref } from "../lib/router.ts";
 
 // /agent/widgets[/<name>]: widgets/<name>.widget (W-09). /agent/widgets is a gallery of live previews
 // (after Chatbase's Widgets page), with ChatKit Studio's own gallery as Templates to start from (W-23).
@@ -346,7 +347,7 @@ function WidgetTile({ cfg, item }: { cfg: AgentConfig; item: WidgetItem }) {
         </div>
       </div>
       <div className="agent-tile-text">
-        <a className="agent-tile-link" href={href} onClick={(e) => { e.preventDefault(); go(href); }}>
+        <a className="agent-tile-link" href={deskHref(href)} onClick={(e) => { e.preventDefault(); go(href); }}>
           {humanize(item.name)}
         </a>
         {problems > 0 && <Badge variant="destructive">{problems === 1 ? "1 problem" : `${problems} problems`}</Badge>}

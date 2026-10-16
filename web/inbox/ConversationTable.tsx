@@ -6,6 +6,7 @@ import { formatTime } from "../lib/thread.ts";
 import { ColumnsIcon, SearchIcon, XIcon } from "@/components/icons";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
+import { deskHref } from "../lib/router.ts";
 
 // The inbox's list as Widgo's Conversations page (measured from app.widgo.ai, colours mapped to our
 // tokens): sticky title, a tab strip with counts and search, a sortable table with a column picker,
@@ -263,7 +264,7 @@ export function ConversationRows({ rows, columns, selected, cursor, empty, membe
                 <div className="cv-person-text">
                   <div className="cv-name">
                     {/* The row's link: keyboard focus, Enter and open-in-new-tab. */}
-                    <a id={`conv-${c.id}`} href={`/inbox/${c.id}`} onFocus={() => onFocusRow(c.id)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(c.id); }}>{contactLabel(c.contact)}</a>
+                    <a id={`conv-${c.id}`} href={deskHref(`/inbox/${c.id}`)} onFocus={() => onFocusRow(c.id)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(c.id); }}>{contactLabel(c.contact)}</a>
                     {c.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
                     {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
                     {/* AI-20: opened from the customer's app with an intent (agents only). */}

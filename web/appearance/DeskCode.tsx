@@ -8,6 +8,7 @@ import { FieldError } from "@/components/ui/field.tsx";
 import { openDeskFile } from "../components/DeskFileNote.tsx";
 import { DESK_FILE } from "../agent/parts.tsx";
 import type { AgentState, Issue } from "../agent/useAgentConfig.ts";
+import { deskHref } from "../lib/router.ts";
 
 // D-84: the Chat widget page in Code: desk.yaml, the desk's settings as a file (the widget's look
 // and the rest: AI switches, hours, assignment). Saved like the Agent page saves, as a new version of
@@ -77,7 +78,7 @@ export function DeskCode({ workspaceId, canEdit }: { workspaceId: string; canEdi
       <section className="agent-form agent-code">
         <p className="muted small">
           Your desk's settings as a file, the same <code>{DESK_FILE}</code> the Agent page and <code>jun pull</code> show. A key you remove is left as it is.{" "}
-          <a href="/agent/desk.yaml" onClick={(e) => { e.preventDefault(); openDeskFile(); }}>Open with the agent's files</a>
+          <a href={deskHref("/agent/desk.yaml")} onClick={(e) => { e.preventDefault(); openDeskFile(); }}>Open with the agent's files</a>
         </p>
         <div className="agent-code-path muted small">
           <code>{DESK_FILE}</code>

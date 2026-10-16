@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.ts";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { ChatgptConnect, type DevChatgpt } from "../agent/ChatgptConnect.tsx";
@@ -26,7 +26,7 @@ const CHOICES: { id: ProviderId; title: string; hint: string }[] = [
 const RETURN_TO = "/welcome/ai";
 
 const link = (href: string, text: string) => (
-  <a href={href} onClick={(e) => { e.preventDefault(); navigate(href); }}>{text}</a>
+  <a href={deskHref(href)} onClick={(e) => { e.preventDefault(); navigate(href); }}>{text}</a>
 );
 
 export function AiStep({ workspaceId, done, reload }: { workspaceId: string; done: boolean; reload: () => Promise<void> }) {
@@ -64,7 +64,7 @@ export function AiStep({ workspaceId, done, reload }: { workspaceId: string; don
   useEffect(() => {
     // Back from a local sign-in (the callback lands on /welcome/ai?chatgpt=connected).
     if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") {
-      window.history.replaceState(null, "", RETURN_TO);
+      window.history.replaceState(null, "", deskHref(RETURN_TO));
       signedIn().catch(() => {});
     } else load().catch(() => {});
   }, [load, signedIn]);

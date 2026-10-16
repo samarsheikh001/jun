@@ -11,6 +11,7 @@ import { searchKnowledge } from "../ai/search.ts";
 import { requireUser } from "../auth/session.ts";
 import { newId } from "../lib/crypto.ts";
 import { readJson, text } from "../lib/validate.ts";
+import { workspaceSlug } from "../lib/workspace-slug.ts";
 import { deskOf, loadDeskState, recordDeskChange, writeAiSettings } from "../lib/desk.ts";
 import { readModel, readReplyCap } from "../ai/desk-file.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
@@ -106,7 +107,10 @@ ai.post("/workspaces/:id/ai/chatgpt/start", async (c) => {
   const url = new URL(c.req.url);
   // Where a local sign-in lands afterwards: Settings, or the Get started step it started from.
   const asked = (await readJson(c.req)).returnTo;
-  const back = typeof asked === "string" && /^\/welcome\/[a-z]+$/.test(asked) ? asked : "/settings";
+  const page = typeof asked === "string" && /^\/welcome\/[a-z]+$/.test(asked) ? asked : "/settings";
+  // D-96: back into this workspace's desk URLs.
+  const slug = await workspaceSlug(c.env.DB, workspaceId);
+  const back = slug ? `/w/${slug}${page}` : page;
 
   // OpenAI's open-source flow requires a 127.0.0.1 loopback redirect; only the port may vary.
   const paste = !isLoopback(url.hostname);

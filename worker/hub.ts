@@ -37,6 +37,8 @@ type AgentAttachment = PresenceEntry & { kind?: "agent"; connectedAt: number; fo
 /** I-14: what a Conversation object or route asks the hub to notify about. */
 export interface NotifyInput extends NotificationEvent {
   workspaceId: string;
+  /** D-96: for the link (/w/<slug>/inbox/…); null before the workspace has one. */
+  workspaceSlug?: string | null;
   /** "Ana Lima", "ana@acme.test" or "Visitor #1234". */
   contact: string;
   /** The visitor's latest message, or the note for a mention. */
@@ -290,6 +292,7 @@ export class WorkspaceHub extends DurableObject<Env> {
       kind: input.kind,
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
+      workspaceSlug: input.workspaceSlug ?? null,
       contact: input.contact,
       text: input.text,
       by: input.by ?? null,
@@ -309,7 +312,9 @@ export class WorkspaceHub extends DurableObject<Env> {
       .bind(subscriptionId, workspaceId, userId)
       .first<SubscriptionRow>();
     if (!row) return null;
-    const payload: NotificationPayload = { id: newId("ntf"), kind: "test", title: "Notifications are on", body: "This device will tell you when a chat needs you.", url: "/settings", tag: "jun-test" };
+    const ws = await this.env.DB.prepare("SELECT slug FROM workspaces WHERE id = ?").bind(workspaceId).first<{ slug: string | null }>();
+    const url = ws?.slug ? `/w/${ws.slug}/settings/notifications` : "/settings";
+    const payload: NotificationPayload = { id: newId("ntf"), kind: "test", title: "Notifications are on", body: "This device will tell you when a chat needs you.", url, tag: "jun-test" };
     const [result] = await this.#sendAll([row], payload);
     return result!;
   }

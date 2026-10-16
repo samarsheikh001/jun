@@ -40,7 +40,10 @@ async function openDesk(path) {
     const p = new URL(c.url).pathname;
     return c.frameType !== "nested" && !p.startsWith("/widget") && p !== "/demo.html";
   });
-  const desk = windows.find((c) => c.focused) || windows[0];
+  // D-96: a tab already on that workspace (/w/<slug>/…) first; another tab switches over.
+  const ws = new URL(url).pathname.match(/^\/w\/[^/]+\//);
+  const onWs = ws ? windows.filter((c) => new URL(c.url).pathname.startsWith(ws[0])) : [];
+  const desk = onWs.find((c) => c.focused) || onWs[0] || windows.find((c) => c.focused) || windows[0];
   if (desk) {
     desk.postMessage({ type: "jun:open", url: new URL(url).pathname + new URL(url).search });
     return desk.focus();

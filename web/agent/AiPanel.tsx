@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { cachedGet, fetchSetting } from "../settings/settingsData.ts";
 import { api } from "../api.ts";
-import { navigate } from "../lib/router.ts";
+import { deskHref, navigate } from "../lib/router.ts";
 import { useAction } from "../useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -70,7 +70,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
   useEffect(() => {
     load().catch(() => {});
     // Back from ChatGPT sign-in (the Shell sends /settings?chatgpt=connected here).
-    if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", "/settings/ai");
+    if (new URLSearchParams(window.location.search).get("chatgpt") === "connected") window.history.replaceState(null, "", deskHref("/settings/ai"));
   }, [load]);
 
   if (!state) return null;
@@ -162,7 +162,7 @@ export function AiPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit
         </details>
         <p className="small muted">
           How it talks and when it hands over are under{" "}
-          <a href="/agent" onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Instructions</a>; tasks, actions and tests are under Agent in the sidebar.
+          <a href={deskHref("/agent")} onClick={(e) => { e.preventDefault(); navigate("/agent", { replace: true }); }}>Instructions</a>; tasks, actions and tests are under Agent in the sidebar.
         </p>
         <DeskFileNote />
         {error && <p className="error">{error}</p>}
@@ -182,7 +182,7 @@ export function GitCard() {
     >
       <p className="small muted">
         Create a token in{" "}
-        <a href="/connect/tokens" onClick={(e) => { e.preventDefault(); navigate("/connect/tokens"); }}>MCP → API tokens</a>, then run:
+        <a href={deskHref("/connect/tokens")} onClick={(e) => { e.preventDefault(); navigate("/connect/tokens"); }}>MCP → API tokens</a>, then run:
       </p>
       <pre className="agent-git-commands">{`npm run jun -- login ${window.location.origin}
 npm run jun -- pull support-agent
@@ -193,7 +193,7 @@ npm run jun -- push support-agent`}</pre>
       {/* D-86 */}
       <p className="small muted">
         No checkout needed: your AI can also change the agent directly over MCP (
-        <a href="/connect" onClick={(e) => { e.preventDefault(); navigate("/connect"); }}>MCP → Connect</a>).
+        <a href={deskHref("/connect")} onClick={(e) => { e.preventDefault(); navigate("/connect"); }}>MCP → Connect</a>).
       </p>
     </SettingsCard>
   );

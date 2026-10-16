@@ -265,7 +265,7 @@ function DeleteWorkspaceCard({ workspace, others }: { workspace: Membership; oth
   const remove = () =>
     run(async () => {
       await api(`/workspaces/${workspace.workspaceId}`, { method: "DELETE", body: { name: typed } });
-      if (next) switchWorkspace(next.workspaceId);
+      if (next) switchWorkspace(next);
     });
   return (
     <SettingsCard

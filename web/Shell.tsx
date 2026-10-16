@@ -23,7 +23,8 @@ import { deskServiceWorker, listenForNotificationClicks, notificationPermission,
 import { LiveSocket } from "./lib/socket.ts";
 import { playChime, unlockSoundOnInteraction } from "./lib/sound.ts";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
-import { navigate, usePath } from "./lib/router.ts";
+import { deskHref, deskPathname, navigate, usePath } from "./lib/router.ts";
+import { slugOf, withoutWorkspace } from "./lib/workspace-url.ts";
 import { movedFromSettings, SettingsDialog } from "./SettingsDialog.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
@@ -65,18 +66,29 @@ function sectionOf(pagePath: string) {
  */
 const LAST_SESSION = "jun:last-session";
 export type LastSession = { name: string; workspace: string; admin?: boolean };
-export function lastSession(): LastSession | null {
+type StoredSession = LastSession & { slug?: string; bySlug?: Record<string, { workspace: string; admin?: boolean }> };
+function storedSession(): StoredSession | null {
   try {
-    const v = JSON.parse(localStorage.getItem(LAST_SESSION) ?? "null") as Partial<LastSession> | null;
-    return v && typeof v.name === "string" && typeof v.workspace === "string" ? { name: v.name, workspace: v.workspace, admin: v.admin === true } : null;
+    const v = JSON.parse(localStorage.getItem(LAST_SESSION) ?? "null") as Partial<StoredSession> | null;
+    return v && typeof v.name === "string" && typeof v.workspace === "string" ? (v as StoredSession) : null;
   } catch {
     return null;
   }
 }
-export function rememberSession(session: LastSession | null) {
+export function lastSession(): LastSession | null {
+  const v = storedSession();
+  if (!v) return null;
+  // D-96: the workspace this tab's URL names, as it was last time (another tab may have shown another one since).
+  const here = slugOf(window.location.pathname);
+  const seen = here ? v.bySlug?.[here] : undefined;
+  return { name: v.name, workspace: seen?.workspace ?? v.workspace, admin: (seen ?? v).admin === true };
+}
+export function rememberSession(session: (LastSession & { slug: string }) | null) {
   try {
-    if (session) localStorage.setItem(LAST_SESSION, JSON.stringify(session));
-    else localStorage.removeItem(LAST_SESSION);
+    if (session) {
+      const bySlug = { ...storedSession()?.bySlug, [session.slug]: { workspace: session.workspace, admin: session.admin === true } };
+      localStorage.setItem(LAST_SESSION, JSON.stringify({ ...session, bySlug }));
+    } else localStorage.removeItem(LAST_SESSION);
   } catch {
     // Storage blocked: the first frame is just blank next time.
   }
@@ -88,7 +100,7 @@ export function rememberSession(session: LastSession | null) {
  * Nothing in the sidebar moves when the Shell takes over.
  */
 export function ShellSkeleton({ session }: { session: LastSession }) {
-  const pagePath = window.location.pathname;
+  const pagePath = deskPathname();
   const section = sectionOf(pagePath);
   return (
     <SidebarProvider className="shell" aria-busy="true">
@@ -102,7 +114,7 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
             <SidebarMenu aria-label="Main">
               {NAV.map(({ id, label, Icon }) => (
                 <SidebarMenuItem key={id}>
-                  <SidebarMenuButton isActive={section === id} tooltip={label} render={<a href={`/${id}`} />}>
+                  <SidebarMenuButton isActive={section === id} tooltip={label} render={<a href={deskHref(`/${id}`)} />}>
                     <Icon />
                     <span>{label}</span>
                   </SidebarMenuButton>
@@ -111,7 +123,7 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
                       {AGENT_SECTIONS.map((a) => (
                         <SidebarMenuSubItem key={a.id}>
                           {a.group && <span className="agent-nav-group">{a.group}</span>}
-                          <SidebarMenuSubButton isActive={agentSection(pagePath) === a.id} href={a.path}>
+                          <SidebarMenuSubButton isActive={agentSection(pagePath) === a.id} href={deskHref(a.path)}>
                             <span>{a.label}</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
@@ -189,9 +201,12 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // one inside the desk: rendered as its new page at once (the dialog never flashes), and the
   // address is replaced before paint.
   useState(() => {
-    const { pathname, search, hash } = window.location;
+    // D-96: first the address goes under its workspace (/w/<slug>/…; old links without one too).
+    currentWorkspace(me);
+    const { search, hash } = window.location;
+    const pathname = deskPathname();
     const target = movedFromSettings(pathname, search, hash) ?? movedFromAgentCode(pathname);
-    if (target) window.history.replaceState(null, "", target);
+    if (target) window.history.replaceState(null, "", deskHref(target));
   });
   const urlPath = usePath();
   const moved = movedFromSettings(urlPath, window.location.search, window.location.hash) ?? movedFromAgentCode(urlPath);
@@ -217,16 +232,22 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     if (openedInDesk.current) window.history.back();
     else navigate(pageBehind.current, { replace: true });
   }, []);
-  // D-95: one of your workspaces at a time (a link's ?ws=, else the one picked last, else the first).
+  // D-95: one of your workspaces at a time; D-96: the one the URL names (/w/<slug>/…).
   const workspace = currentWorkspace(me);
-  // A link into another of your workspaces (a notification opened in this tab) opens that one.
+  // An older notification's link (?ws=<id>) followed inside this tab: that workspace, same page.
   useEffect(() => {
-    const asked = new URLSearchParams(window.location.search).get("ws");
-    if (asked && workspace && asked !== workspace.workspaceId && me.memberships?.some((m) => m.workspaceId === asked)) switchWorkspace(asked, window.location.pathname);
+    const params = new URLSearchParams(window.location.search);
+    const asked = params.get("ws");
+    if (asked === null || !workspace) return;
+    const other = asked !== workspace.workspaceId ? me.memberships?.find((m) => m.workspaceId === asked) : undefined;
+    if (other) return switchWorkspace(other, path);
+    params.delete("ws");
+    const rest = params.toString();
+    navigate(path + (rest ? `?${rest}` : "") + window.location.hash, { replace: true });
   }, [path, workspace, me.memberships]);
   // The next page load draws this sidebar (ShellSkeleton) before /me answers.
   useEffect(() => {
-    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName, admin: workspace.role !== "agent" });
+    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName, admin: workspace.role !== "agent", slug: workspace.workspaceSlug });
   }, [me.user, workspace]);
   const [online, setOnline] = useState<PresenceEntry[]>([]);
   // V-01: kept here (not in the page) because the hub sends the full list only on connect.
@@ -259,7 +280,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         // Not in front of you: a system notification (in front: the inbox's own toasts and lists).
         if (event.type === "notify" && event.mode === "system" && !tabFocused()) void showInPageNotification(event.notification).catch(() => {});
         // I-14 sound: a chime for the same events, unless this tab is in front and showing that chat.
-        if (event.type === "notify" && event.sound !== false && !(tabFocused() && window.location.pathname === event.notification.url.split("?")[0])) playChime();
+        if (event.type === "notify" && event.sound !== false && !(tabFocused() && deskPathname() === withoutWorkspace(event.notification.url.split("?")[0]!))) playChime();
         if (event.type === "presence") setOnline(event.online);
         if (event.type === "visitors") setVisitors(event.visitors);
         if (event.type === "visitor") setVisitors((list) => [...(list ?? []).filter((v) => v.sessionId !== event.visitor.sessionId), event.visitor]);
@@ -355,7 +376,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           onControl: isControlTarget(e.target),
         },
         shortcutState.current,
-        { inbox: window.location.pathname.startsWith("/inbox"), modal: overlay === "palette" ? "palette" : otherDialog || overlay || settingsOpen ? "other" : "none" },
+        { inbox: deskPathname().startsWith("/inbox"), modal: overlay === "palette" ? "palette" : otherDialog || overlay || settingsOpen ? "other" : "none" },
         Date.now(),
       );
       shortcutState.current = state;
@@ -410,7 +431,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                   <SidebarMenuButton
                     isActive={section === id && !settingsOpen}
                     tooltip={dot ? `${label} (not installed yet)` : label}
-                    render={<a href={href} aria-current={section === id && !settingsOpen ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(href); }} />}
+                    render={<a href={deskHref(href)} aria-current={section === id && !settingsOpen ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(href); }} />}
                   >
                     <Icon />
                     <span>{label}{dot && <span className="sr-only">, not installed yet</span>}</span>
@@ -427,7 +448,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                             {a.group && <span className="agent-nav-group">{a.group}</span>}
                             <SidebarMenuSubButton
                               isActive={active}
-                              href={a.path}
+                              href={deskHref(a.path)}
                               aria-current={active ? "page" : undefined}
                               onClick={(e) => { e.preventDefault(); navigate(a.path); }}
                             >
@@ -450,7 +471,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
               <div className="desk-sidebar-expanded"><GetStartedCard onboarding={ob} onHide={() => { api(`/workspaces/${workspace.workspaceId}/onboarding/dismiss`, { body: {} }).then(reloadOnboarding).catch(() => {}); }} /></div>
               <SidebarMenu className="desk-sidebar-collapsed">
                 <SidebarMenuItem>
-                  <SidebarMenuButton tooltip={`Get started (${obDone} of ${STEP_ORDER.length})`} render={<a href="/welcome" onClick={(e) => { e.preventDefault(); navigate("/welcome"); }} />}>
+                  <SidebarMenuButton tooltip={`Get started (${obDone} of ${STEP_ORDER.length})`} render={<a href={deskHref("/welcome")} onClick={(e) => { e.preventDefault(); navigate("/welcome"); }} />}>
                     <FlashIcon />
                     <span>Get started</span>
                   </SidebarMenuButton>
