@@ -25,7 +25,7 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
   const workspaceId = c.req.param("id");
   await requireMember(c, workspaceId);
   const db = c.env.DB;
-  const [knowledge, ai, inbox, team, dismissed, marked] = await Promise.all([
+  const [knowledge, ai, inbox, team, dismissed, marked, reading] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS n FROM kb_sources WHERE workspace_id = ? AND status = 'ready'").bind(workspaceId).first<{ n: number }>(),
     db.prepare("SELECT enabled FROM ai_settings WHERE workspace_id = ?").bind(workspaceId).first<{ enabled: number }>(),
     db.prepare("SELECT widget_key, settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ widget_key: string; settings: string }>(),
@@ -34,6 +34,11 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
     ).bind(workspaceId).first<{ members: number; invites: number }>(),
     db.prepare("SELECT value FROM settings WHERE key = ?").bind(dismissedKey(workspaceId)).first<{ value: string }>(),
     db.prepare("SELECT value FROM settings WHERE key = ?").bind(installMarkedKey(workspaceId)).first<{ value: string }>(),
+    // The newest website still being read, and how many of its pages are in so far.
+    db.prepare(
+      `SELECT s.title, (SELECT COUNT(DISTINCT k.document_id) FROM kb_chunks k WHERE k.source_id = s.id) AS pages FROM kb_sources s
+       WHERE s.workspace_id = ? AND s.kind = 'website' AND s.status IN ('pending', 'syncing') ORDER BY s.created_at DESC LIMIT 1`,
+    ).bind(workspaceId).first<{ title: string; pages: number }>(),
   ]);
   const settings = inbox ? (JSON.parse(inbox.settings) as Record<string, unknown>) : {};
   const done: Record<OnboardingStep, boolean> = {
@@ -46,7 +51,7 @@ onboarding.get("/workspaces/:id/onboarding", async (c) => {
     install: typeof settings.installedAt === "number" || Boolean(marked),
     team: (team?.members ?? 0) > 1 || (team?.invites ?? 0) > 0,
   };
-  return c.json({ steps: done, widgetKey: inbox?.widget_key ?? null, installedOn: settings.installedOn ?? null, dismissed: Boolean(dismissed) });
+  return c.json({ steps: done, widgetKey: inbox?.widget_key ?? null, installedOn: settings.installedOn ?? null, dismissed: Boolean(dismissed), reading: reading ?? null });
 });
 
 onboarding.post("/workspaces/:id/onboarding/dismiss", async (c) => {

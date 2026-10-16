@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { navigate } from "../lib/router.ts";
-import { CheckIcon, ChevronDownIcon, PlusIcon, SettingsIcon } from "@/components/icons";
+import { CheckIcon, ChevronDownIcon, ColumnsIcon, PlusIcon, SettingsIcon } from "@/components/icons";
 import { DeskIcon } from "../components/DeskIcon.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -11,7 +11,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.tsx";
-import { switchWorkspace, type Membership } from "./workspace.ts";
+import { goHome, switchWorkspace, type Membership } from "./workspace.ts";
 
 /** D-95: the sidebar's top: the workspace you're in, a menu to switch, and New workspace (owners). */
 export function WorkspaceSwitcher({ current, all }: { current: Membership; all: Membership[] }) {
@@ -37,6 +37,13 @@ export function WorkspaceSwitcher({ current, all }: { current: Membership; all: 
             ))}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
+          {/* D-97: the desk's home lists them all; with one workspace there's no home (/ is its inbox). */}
+          {all.length > 1 && (
+            <DropdownMenuItem onClick={goHome}>
+              <ColumnsIcon />
+              All workspaces
+            </DropdownMenuItem>
+          )}
           {canCreate && (
             <DropdownMenuItem onClick={() => setCreating(true)}>
               <PlusIcon />
@@ -65,7 +72,8 @@ export function WorkspaceSwitcherSkeleton({ name }: { name: string }) {
   );
 }
 
-function NewWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** D-95: New workspace (owners): a name, then its Get started. Also on the desk's home and in Settings → Desk (D-97). */
+export function NewWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [name, setName] = useState("");
   const { busy, error, run } = useAction();
   const create = () =>

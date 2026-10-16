@@ -786,6 +786,7 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .kb-empty { display: flex; justify-content: center; padding: 64px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--background); color: var(--muted-foreground); text-align: center; }
 .kb-spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--foreground); animation: kb-spin 800ms linear infinite; }
 @keyframes kb-spin { to { rotate: 360deg; } }
+.wl-reading { display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 500; }
 .kb-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; color: var(--muted-foreground); }
 .kb-pager-size, .kb-pager-nav { display: flex; align-items: center; gap: 12px; }
 .kb-pager-nav { gap: 8px; }
@@ -2156,3 +2157,74 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
 .tchat-ended { margin: 0 16px 16px; padding: 10px 12px; border-radius: 12px; background: var(--muted); font-size: 13px; color: var(--muted-foreground); }
 /* D-71: a labelled group in the Agent's sidebar list (Building blocks: Actions, Cards). */
 .agent-nav-group { display: block; margin: 10px 0 2px; padding: 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted-foreground); }
+/* ---------- D-97: the desk's home (/): your workspaces, after Chatbase's agents grid ---------- */
+.home { min-height: 100dvh; background: var(--background); color: var(--foreground); }
+.home-bar {
+  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  height: 56px; padding: 0 24px; border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--background) 85%, transparent); backdrop-filter: blur(8px);
+}
+.home-bar .brand { text-decoration: none; }
+.home-bar-end { display: flex; align-items: center; gap: 6px; }
+.home-user { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 10px 3px 3px; border: 0; border-radius: 999px; background: transparent; color: var(--foreground); font: inherit; font-size: 14px; cursor: pointer; }
+.home-user:hover, .home-user[data-popup-open] { background: var(--muted); }
+.home-user .avatar { margin: 0; width: 28px; height: 28px; flex: none; font-size: 12px; border-color: var(--background); }
+.home-user .avatar::after { display: none; }
+.home-user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.home-main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 64px; }
+.home-head { margin-bottom: 24px; }
+.home-head h1 { margin: 0 0 4px; font-size: 28px; line-height: 36px; letter-spacing: -0.5px; }
+.home-head p { margin: 0; font-size: 14px; line-height: 21px; }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.home-grid > li { display: flex; min-width: 0; }
+.home-card {
+  display: flex; flex-direction: column; width: 100%; min-width: 0; overflow: hidden; padding: 0; border: 1px solid var(--border); border-radius: 16px;
+  background: var(--card); color: var(--card-foreground); font: inherit; text-align: left; text-decoration: none; box-shadow: var(--shadow-sm-tokens);
+  transition: box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens); border-color: color-mix(in oklch, var(--border), var(--foreground) 8%); }
+.home-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+/* The top: a wash of the widget's colour with its logo (or initial) on it. */
+.home-card-top {
+  display: grid; place-items: center; height: 112px; border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(120% 90% at 20% 0%, color-mix(in oklch, var(--ws-color, var(--muted)) 26%, transparent), transparent 70%),
+    radial-gradient(90% 80% at 100% 100%, color-mix(in oklch, var(--ws-color, var(--muted)) 18%, transparent), transparent 70%),
+    var(--muted);
+}
+.home-card-mark {
+  display: grid; place-items: center; width: 48px; height: 48px; overflow: hidden; border-radius: 14px; background: var(--card);
+  font-size: 20px; font-weight: 665; box-shadow: var(--shadow-md-tokens);
+}
+.home-card-mark > img { width: 100%; height: 100%; object-fit: contain; }
+.home-card-body { display: grid; gap: 6px; padding: 16px 18px 18px; }
+.home-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.home-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; font-weight: 665; }
+.home-card-role { flex: none; margin-left: auto; padding: 1px 8px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: 12px; line-height: 18px; }
+.home-card-site { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; font-size: 13px; line-height: 20px; }
+.home-card-site > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
+.home-card-site > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-card-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; padding-top: 12px; border-top: 1px solid var(--border); }
+.home-card-stats > div { min-width: 0; }
+.home-card-stats dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.home-card-stats dd { margin: 2px 0 0; font-family: var(--font-mono); font-size: 18px; line-height: 26px; font-weight: 525; }
+.home-card-stats > [data-attention] dd { color: color-mix(in oklch, var(--warning), var(--foreground) 25%); }
+.home-card-stats dd.home-card-ai { font-family: inherit; font-size: 14px; color: var(--muted-foreground); }
+.home-card-stats dd.home-card-ai[data-on] { color: var(--success); }
+.home-card-new { align-items: center; justify-content: center; gap: 6px; min-height: 240px; border: 1px dashed color-mix(in oklch, var(--border), var(--foreground) 14%); background: transparent; box-shadow: none; cursor: pointer; color: var(--foreground); }
+.home-card-new-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 4px; border-radius: 12px; background: var(--muted); }
+.home-card-new-icon > svg { width: 18px; height: 18px; }
+@media (max-width: 767px) {
+  .home-bar { padding: 0 16px; }
+  .home-main { padding: 24px 16px 48px; }
+  .home-grid { grid-template-columns: minmax(0, 1fr); }
+  .home-card-new { min-height: 140px; padding: 16px; }
+  .home-user-name { display: none; }
+  .home-user { padding: 3px; }
+}
+/* D-97: the settings dialog's three levels: a group per level in the nav, and whose settings over the pane. */
+.settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.settings-nav-group + .settings-nav-group { margin-top: 16px; }
+.settings-nav-group > .settings-nav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-scope { margin: 0 24px -16px; padding: 8px 12px; border-radius: 8px; background: var(--muted); color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
+.settings-scope b { color: var(--foreground); font-weight: 600; }
+@media (max-width: 767px) { .settings-scope { margin: 0 0 -8px; } }

@@ -45,7 +45,7 @@ const NAVIGATION: { label: string; path: string; hint?: string }[] = [
  * dialog's sections, the Chat widget page's Install and Behaviour tabs and the Agent page's Settings tab.
  */
 const SETTINGS_SECTIONS: { heading: string; path: string; area?: string }[] = [
-  { heading: "General", path: "/settings/general" },
+  { heading: "Workspace", path: "/settings/general" },
   { heading: "Install the chat widget", path: "/appearance/install", area: "Chat widget" },
   { heading: "Where to paste it", path: "/appearance/install", area: "Chat widget" },
   { heading: "Allowed websites", path: "/appearance/behaviour", area: "Chat widget" },
@@ -61,7 +61,10 @@ const SETTINGS_SECTIONS: { heading: string; path: string; area?: string }[] = [
   { heading: "Notifications", path: "/settings/notifications" },
   { heading: "Issue trackers", path: "/settings/integrations" },
   { heading: "API tokens", path: "/connect/tokens" },
+  // D-97: yours on every workspace, and the desk's.
+  { heading: "Your account", path: "/settings/account" },
   { heading: "Your passkeys", path: "/settings/account" },
+  { heading: "This desk", path: "/settings/desk" },
 ];
 
 /** Opens the settings dialog or page tab that holds this heading and scrolls to it once it has rendered. */

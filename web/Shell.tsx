@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, PaletteIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, KeyIcon, PaletteIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -32,7 +32,7 @@ import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { ConnectPage } from "./connect/ConnectPage.tsx";
 import { WorkspaceSwitcher, WorkspaceSwitcherSkeleton } from "./workspaces/WorkspaceSwitcher.tsx";
-import { currentWorkspace, switchWorkspace } from "./workspaces/workspace.ts";
+import { currentWorkspace, goHome, switchWorkspace } from "./workspaces/workspace.ts";
 
 const NAV = [
   { id: "dashboard", label: "Dashboard", Icon: ChartColumnIcon },
@@ -65,7 +65,7 @@ function sectionOf(pagePath: string) {
  * per-browser convenience: only the name and workspace shown in the sidebar, never a token).
  */
 const LAST_SESSION = "jun:last-session";
-export type LastSession = { name: string; workspace: string; admin?: boolean };
+export type LastSession = { name: string; workspace: string; admin?: boolean; /** Two or more workspaces: `/` is the desk's home (D-97). */ many?: boolean };
 type StoredSession = LastSession & { slug?: string; bySlug?: Record<string, { workspace: string; admin?: boolean }> };
 function storedSession(): StoredSession | null {
   try {
@@ -81,7 +81,7 @@ export function lastSession(): LastSession | null {
   // D-96: the workspace this tab's URL names, as it was last time (another tab may have shown another one since).
   const here = slugOf(window.location.pathname);
   const seen = here ? v.bySlug?.[here] : undefined;
-  return { name: v.name, workspace: seen?.workspace ?? v.workspace, admin: (seen ?? v).admin === true };
+  return { name: v.name, workspace: seen?.workspace ?? v.workspace, admin: (seen ?? v).admin === true, many: v.many === true };
 }
 export function rememberSession(session: (LastSession & { slug: string }) | null) {
   try {
@@ -247,8 +247,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   }, [path, workspace, me.memberships]);
   // The next page load draws this sidebar (ShellSkeleton) before /me answers.
   useEffect(() => {
-    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName, admin: workspace.role !== "agent", slug: workspace.workspaceSlug });
-  }, [me.user, workspace]);
+    if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName, admin: workspace.role !== "agent", slug: workspace.workspaceSlug, many: (me.memberships?.length ?? 0) > 1 });
+  }, [me.user, me.memberships, workspace]);
   const [online, setOnline] = useState<PresenceEntry[]>([]);
   // V-01: kept here (not in the page) because the hub sends the full list only on connect.
   // Null until that first list arrives, so the Visitors page shows its skeleton, not "nobody".
@@ -518,6 +518,17 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                       Settings
                       <DropdownMenuShortcut>G S</DropdownMenuShortcut>
                     </DropdownMenuItem>
+                    {/* D-97: yours on every workspace, and the desk's home with all of them. */}
+                    <DropdownMenuItem onClick={() => navigate("/settings/account")}>
+                      <KeyIcon />
+                      Your account
+                    </DropdownMenuItem>
+                    {(me.memberships?.length ?? 0) > 1 && (
+                      <DropdownMenuItem onClick={goHome}>
+                        <ColumnsIcon />
+                        All workspaces
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
@@ -568,7 +579,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       )}
       </PageErrorBoundary>
       </ScrollArea>
-      {settingsOpen && <PageErrorBoundary><SettingsDialog me={me} path={path} onClose={closeSettings} /></PageErrorBoundary>}
+      {settingsOpen && <PageErrorBoundary><SettingsDialog me={me} workspace={workspace} path={path} onClose={closeSettings} /></PageErrorBoundary>}
       </SidebarInset>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}
       {overlay === "help" && <ShortcutsHelp onClose={closeOverlay} />}

@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Card as UiCard } from "@/components/ui/card.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
-import { switchWorkspace } from "./workspaces/workspace.ts";
+import { onDeskHome, switchWorkspace } from "./workspaces/workspace.ts";
+import { DeskHome, DeskHomeSkeleton } from "./workspaces/DeskHome.tsx";
+import { HOME_PATHS } from "./lib/workspace-url.ts";
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -29,6 +31,8 @@ export function App() {
     // Signed in here last time: the desk's own frame at once (the page draws its skeleton next);
     // otherwise a blank page, so the sign-in card doesn't follow a flash of the desk.
     const session = path.startsWith("/invite/") || path === "/recover" ? null : lastSession();
+    // D-97: the desk's home, when this browser last saw two or more workspaces.
+    if (session?.many && HOME_PATHS.includes(path)) return <DeskHomeSkeleton name={session.name} />;
     return session ? <ShellSkeleton session={session} /> : null;
   }
   if (invite?.[1]) return <InvitePage token={invite[1]} signedInAs={me.user?.name ?? null} onDone={done} />;
@@ -36,6 +40,8 @@ export function App() {
   // T-11: a fresh desk goes straight to "Get started".
   if (!me.setupComplete) return <SetupPage onDone={() => { window.history.replaceState(null, "", "/welcome"); refresh(); }} />;
   if (!me.user) return <SignedOut><LoginPage onDone={refresh} /></SignedOut>;
+  // D-97: `/` with two or more workspaces is the desk's home; anything else is one workspace.
+  if (onDeskHome(me)) return <DeskHome me={me} onSignOut={refresh} />;
   return <Shell me={me} onSignOut={refresh} />;
 }
 

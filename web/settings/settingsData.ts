@@ -57,7 +57,7 @@ function loadThisDevice(): Promise<string | null> {
   return request;
 }
 
-type SectionId = "general" | "ai" | "inbox" | "team" | "notifications" | "integrations" | "account";
+type SectionId = "general" | "ai" | "inbox" | "team" | "notifications" | "integrations" | "account" | "desk";
 
 /** Every GET a section's panels make on opening. */
 export function sectionRequests(id: SectionId, workspaceId: string, canInvite: boolean): string[] {
@@ -70,15 +70,20 @@ export function sectionRequests(id: SectionId, workspaceId: string, canInvite: b
     case "notifications": return [`${ws}/notifications`, `${ws}/push/subscriptions`, THIS_DEVICE];
     case "integrations": return [`${ws}/trackers`];
     case "account": return ["/passkeys"];
+    case "desk": return [];
   }
 }
 
-const ALL_SECTIONS: SectionId[] = ["general", "ai", "inbox", "team", "notifications", "integrations", "account"];
+const WORKSPACE_SECTIONS: SectionId[] = ["general", "ai", "inbox", "team", "notifications", "integrations"];
 
-/** On opening the dialog: every section's data in parallel (each URL once if it's already on its way). */
-export function prefetchSettings(workspaceId: string, canInvite: boolean) {
-  for (const id of ALL_SECTIONS) {
-    for (const url of sectionRequests(id, workspaceId, canInvite)) {
+/**
+ * On opening the dialog: every section's data in parallel (each URL once if it's already on its way).
+ * No workspace (the desk's home, D-97): only your account's.
+ */
+export function prefetchSettings(workspaceId: string | null, canInvite: boolean) {
+  const ids: SectionId[] = [...(workspaceId ? WORKSPACE_SECTIONS : []), "account"];
+  for (const id of ids) {
+    for (const url of sectionRequests(id, workspaceId ?? "", canInvite)) {
       if (inflight.has(url)) continue;
       if (url === THIS_DEVICE) void loadThisDevice();
       else void fetchSetting(url).catch(() => {});

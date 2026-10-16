@@ -6,6 +6,7 @@ import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
 import { withFreeSlug, workspaceSlug } from "../lib/workspace-slug.ts";
 import { dismissedKey, installMarkedKey } from "./onboarding.ts";
+import { workspaceSummary, type WorkspaceSummaryRow } from "../../shared/workspace-summary.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -79,6 +80,25 @@ workspaces.post("/workspaces", requireUser, async (c) => {
     return slug;
   });
   return c.json({ workspaceId, workspaceName: name, workspaceSlug, role: "owner" });
+});
+
+// D-97: the desk's home, one card per workspace you're in: its widget's look and install, open
+// chats, the ones waiting for a person, AI on or off. One query, whatever the number of workspaces.
+workspaces.get("/workspaces", requireUser, async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT w.id AS workspaceId, w.name AS workspaceName, w.slug AS workspaceSlug, m.role,
+       i.widget_key AS widgetKey, i.settings,
+       (SELECT value FROM settings s WHERE s.key = 'onboarding_install_marked:' || w.id) AS installMarked,
+       (SELECT enabled FROM ai_settings a WHERE a.workspace_id = w.id) AS aiEnabled,
+       (SELECT COUNT(*) FROM conversations cv WHERE cv.workspace_id = w.id AND cv.status = 'open') AS open,
+       (SELECT COUNT(*) FROM conversations cv WHERE cv.workspace_id = w.id AND cv.status = 'open' AND cv.handling = 'human') AS waiting
+     FROM members m JOIN workspaces w ON w.id = m.workspace_id
+     LEFT JOIN inboxes i ON i.id = (SELECT id FROM inboxes WHERE workspace_id = w.id ORDER BY created_at LIMIT 1)
+     WHERE m.user_id = ? ORDER BY m.created_at`,
+  )
+    .bind(c.get("user").id)
+    .all<WorkspaceSummaryRow>();
+  return c.json({ workspaces: rows.results.map(workspaceSummary) });
 });
 
 workspaces.patch("/workspaces/:id", requireUser, async (c) => {

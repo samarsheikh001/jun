@@ -27,17 +27,32 @@ function remember(workspaceId: string) {
   }
 }
 
+let home = false;
+
 /** The workspace this page load shows. The first call puts the address under it (/w/<slug>/…). */
 export function currentWorkspace(me: Me): Membership | undefined {
   const all = me.memberships ?? [];
   // Decided once per page load.
   const kept = all.find((m) => m.workspaceId === shown);
-  if (kept) return kept;
-  const { workspace, url } = deskLocation(all, window.location, picked());
+  if (kept || home) return kept;
+  const decided = deskLocation(all, window.location, picked());
+  const { workspace, url } = decided;
+  home = decided.home === true;
   shown = workspace?.workspaceId;
   if (workspace) remember(workspace.workspaceId);
   if (url) window.history.replaceState(window.history.state, "", url);
   return workspace;
+}
+
+/** D-97: this page load is the desk's home (`/`, your workspaces), not a workspace. */
+export function onDeskHome(me: Me): boolean {
+  currentWorkspace(me);
+  return home;
+}
+
+/** The desk's home, a fresh page load (only with two or more workspaces; one goes to its inbox). */
+export function goHome() {
+  window.location.assign("/");
 }
 
 /** Open another workspace (a fresh page load), on `path`. */

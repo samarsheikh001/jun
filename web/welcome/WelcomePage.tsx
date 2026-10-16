@@ -17,6 +17,8 @@ export interface Onboarding {
   widgetKey: string | null;
   installedOn: string | null;
   dismissed: boolean;
+  /** A website being read right now (its crawl runs in the background). */
+  reading: { title: string; pages: number } | null;
 }
 
 export const STEP_ORDER: Step[] = ["account", "knowledge", "ai", "brand", "install", "team"];
@@ -126,11 +128,19 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
     account: <p className="muted small">Done. Keep your setup token somewhere safe: it's how you get back in if you lose every passkey.</p>,
     knowledge: s.knowledge ? (
       <p className="muted small">Your knowledge is indexed. Add more or check what was read under {link("/knowledge", "Knowledge")}.</p>
+    ) : onboarding.reading ? (
+      <>
+        <p className="wl-reading" role="status">
+          <span className="kb-spinner" aria-hidden="true" />
+          Reading {onboarding.reading.title}… {onboarding.reading.pages === 1 ? "1 page" : `${onboarding.reading.pages} pages`} so far
+        </p>
+        <p className="muted small">It runs in the background, so you can go on to the next step. This one ticks itself off when the site is read; what's in so far is under {link("/knowledge", "Knowledge")}.</p>
+      </>
     ) : (
       <>
         <form className="row" onSubmit={addSite}>
           <Input name="url" type="url" required placeholder="https://docs.yourcompany.com" aria-label="Docs URL" style={{ flex: 1 }} />
-          <Button disabled={busy}>Add website</Button>
+          <Button disabled={busy}>{busy ? "Adding…" : "Add website"}</Button>
         </form>
         <p className="muted small">Paste your help center or docs site; we read its sitemap and re-sync daily. Crawling takes a minute or two, and this step ticks itself off when pages are indexed. Files and snippets are under {link("/knowledge", "Knowledge")}.</p>
       </>

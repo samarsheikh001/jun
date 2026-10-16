@@ -13,7 +13,6 @@ import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { previewChime } from "../lib/sound.ts";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
-import { setCodeView, useCodeView } from "../agent/parts.tsx";
 import { DeskCode } from "./DeskCode.tsx";
 import { UploadIcon } from "../components/icons.tsx";
 
@@ -24,8 +23,9 @@ export type WidgetTab = "install" | "behaviour";
 
 /** The Appearance page: the widget's look, as a form or as desk.yaml (Form / Code). */
 export function AppearancePage({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
-  // D-84: Form / Code, the same remembered switch as the Agent pages. Code is desk.yaml.
-  const code = useCodeView();
+  // D-84: Form / Code; Code is desk.yaml. Its own switch, always opening on Form (the look is
+  // picked by eye; the Agent pages' remembered Code view doesn't carry over).
+  const [code, setCode] = useState(false);
   return (
     <PageTabs
       title="Appearance"
@@ -33,7 +33,7 @@ export function AppearancePage({ workspaceId, workspaceName, canEdit }: { worksp
       className="widget-page"
       tabsHidden
       actions={
-        <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
+        <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
           <TabsList className="kb-tabs agent-view-switch" aria-label="View">
             <TabsTrigger value="form">Form</TabsTrigger>
             <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>

@@ -45,7 +45,6 @@ test("old URLs move under a workspace: ?ws=, else the last one used, else the fi
   assert.deepEqual(deskLocation(all, at("/inbox/cv_1?ws=ws_b"), "ws_a"), { workspace: all[1], url: "/w/beta/inbox/cv_1" });
   assert.deepEqual(deskLocation(all, at("/settings/developer?x=1#api-tokens"), "ws_b"), { workspace: all[1], url: "/w/beta/settings/developer?x=1#api-tokens" });
   assert.deepEqual(deskLocation(all, at("/agent"), "ws_gone"), { workspace: all[0], url: "/w/acme/agent" });
-  assert.deepEqual(deskLocation(all, at("/"), null), { workspace: all[0], url: "/w/acme/inbox" });
   // ?ws= that isn't yours: dropped.
   assert.deepEqual(deskLocation(all, at("/inbox?ws=ws_x&topic=t"), null), { workspace: all[0], url: "/w/acme/inbox?topic=t" });
   // ?ws= on a prefixed URL wins (an older notification opened in a tab on another workspace).
@@ -55,4 +54,18 @@ test("old URLs move under a workspace: ?ws=, else the last one used, else the fi
 test("an unknown slug opens the first workspace's inbox", () => {
   assert.deepEqual(deskLocation(all, at("/w/nope/agent"), "ws_b"), { workspace: all[0], url: "/w/acme/inbox" });
   assert.deepEqual(deskLocation([], at("/inbox"), null), { workspace: undefined, url: null });
+});
+
+test("the desk's home: / with two or more workspaces, the inbox with one", () => {
+  assert.deepEqual(deskLocation(all, at("/"), "ws_b"), { workspace: undefined, url: null, home: true });
+  assert.deepEqual(deskLocation(all, at("/settings/account"), null), { workspace: undefined, url: null, home: true });
+  assert.deepEqual(deskLocation(all, at("/settings/desk/"), null), { workspace: undefined, url: null, home: true });
+  // The workspace's own sections and ?ws= links still open a workspace.
+  assert.deepEqual(deskLocation(all, at("/settings/team"), "ws_b"), { workspace: all[1], url: "/w/beta/settings/team" });
+  assert.deepEqual(deskLocation(all, at("/?ws=ws_b"), null), { workspace: all[1], url: "/w/beta/inbox" });
+  // Inside a workspace the same sections stay there.
+  assert.deepEqual(deskLocation(all, at("/w/acme/settings/account"), null), { workspace: all[0], url: null });
+  const one = [all[0]!];
+  assert.deepEqual(deskLocation(one, at("/"), null), { workspace: all[0], url: "/w/acme/inbox" });
+  assert.deepEqual(deskLocation(one, at("/settings/desk"), null), { workspace: all[0], url: "/w/acme/settings/desk" });
 });

@@ -9,14 +9,15 @@ import { cachedGet, fetchSetting, prefetchSettings, sectionRequests, useSectionR
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { navigate } from "./lib/router.ts";
 import { AiPanel, GitCard } from "./agent/AiPanel.tsx";
-import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "./lib/theme.ts";
+import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref, type ThemePref } from "./lib/theme.ts";
 import { useAction } from "./useAction.ts";
 import { UPDATE_HELP, useUpdate } from "./lib/updates.ts";
 import { JUN_VERSION } from "../shared/version.ts";
-import { currentWorkspace, switchWorkspace, type Membership } from "./workspaces/workspace.ts";
+import { goHome, switchWorkspace, type Membership } from "./workspaces/workspace.ts";
+import { NewWorkspaceDialog } from "./workspaces/WorkspaceSwitcher.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import {
-  BugIcon, ChevronLeftIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SparkleIcon, SunIcon, UsersIcon, XIcon,
+  BugIcon, ChevronLeftIcon, ColumnsIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SparkleIcon, SunIcon, UsersIcon, XIcon,
 } from "@/components/icons";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -34,16 +35,21 @@ const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString() : "n
 // at the bottom) and one section at a time in the pane. The URL follows the
 // open section (/settings/<id>, /settings = the first), so links, the back button and reloads work;
 // the page you came from stays behind it.
+// D-97: three levels, grouped in the nav and named over each section: this workspace's settings,
+// yours (on every workspace) and the desk's (all of its workspaces). The desk's home opens the same
+// dialog with only the last two, at /settings/account and /settings/desk.
 export const SETTINGS_SECTIONS = [
-  { id: "general", label: "General", Icon: SettingsIcon },
-  { id: "ai", label: "AI", Icon: SparkleIcon },
-  { id: "inbox", label: "Inbox", Icon: InboxIcon },
-  { id: "team", label: "Team", Icon: UsersIcon },
-  { id: "notifications", label: "Notifications", Icon: NotificationIcon },
-  { id: "integrations", label: "Issue trackers", Icon: BugIcon },
-  { id: "account", label: "Passkeys", Icon: KeyIcon },
+  { id: "general", label: "General", Icon: SettingsIcon, level: "workspace" },
+  { id: "ai", label: "AI", Icon: SparkleIcon, level: "workspace" },
+  { id: "inbox", label: "Inbox", Icon: InboxIcon, level: "workspace" },
+  { id: "team", label: "Team", Icon: UsersIcon, level: "workspace" },
+  { id: "notifications", label: "Notifications", Icon: NotificationIcon, level: "workspace" },
+  { id: "integrations", label: "Issue trackers", Icon: BugIcon, level: "workspace" },
+  { id: "account", label: "Account", Icon: KeyIcon, level: "account" },
+  { id: "desk", label: "Desk", Icon: ColumnsIcon, level: "desk" },
 ] as const;
 type SectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
+type Level = (typeof SETTINGS_SECTIONS)[number]["level"];
 
 const THEME_ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon } as const;
 
@@ -70,35 +76,38 @@ export function movedFromSettings(path: string, search: string, hash: string): s
   return null;
 }
 
-/** Open while the URL is /settings…; `onClose` leaves it (back to the page behind). */
-export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; onClose: () => void }) {
-  const workspace = currentWorkspace(me);
+/**
+ * Open while the URL is /settings…; `onClose` leaves it (back to the page behind). `workspace`:
+ * the one you're in; none on the desk's home, which has only your account and the desk.
+ */
+export function SettingsDialog({ me, workspace, path, onClose }: { me: Me; workspace: Membership | undefined; path: string; onClose: () => void }) {
   const sub = path.replace(/^\/settings\/?/, "").split("/")[0] ?? "";
-  const section = SETTINGS_SECTIONS.find((s) => s.id === sub) ?? SETTINGS_SECTIONS[0];
+  const sections = workspace ? SETTINGS_SECTIONS : SETTINGS_SECTIONS.filter((s) => s.level !== "workspace");
+  const section = sections.find((s) => s.id === sub) ?? sections[0]!;
   // Phones show the nav as a list first (Town's mobile layout); a section URL opens straight on it.
   const [mobileList, setMobileList] = useState(!sub);
   const pane = useRef<HTMLDivElement>(null);
   const themePref = useThemePref();
   // Every section's data at once, so switching sections never waits or fills in piece by piece.
-  const workspaceForPrefetch = currentWorkspace(me);
   useEffect(() => {
-    if (workspaceForPrefetch) prefetchSettings(workspaceForPrefetch.workspaceId, workspaceForPrefetch.role !== "agent");
-  }, [workspaceForPrefetch]);
+    prefetchSettings(workspace?.workspaceId ?? null, Boolean(workspace && workspace.role !== "agent"));
+  }, [workspace]);
 
   useEffect(() => {
-    if (sub && !SETTINGS_SECTIONS.some((s) => s.id === sub)) return navigate("/settings", { replace: true });
+    if (sub && !sections.some((s) => s.id === sub)) return navigate(workspace ? "/settings" : "/settings/account", { replace: true });
     if (sub) return;
     const { hash } = window.location;
-    if (LEGACY_HASHES[hash]) navigate(LEGACY_HASHES[hash], { replace: true });
-  }, [sub]);
+    if (workspace && LEGACY_HASHES[hash]) navigate(LEGACY_HASHES[hash], { replace: true });
+  }, [sub, sections, workspace]);
   // A new section starts at the top (an #anchor scrolls itself into view).
   useEffect(() => {
     if (!window.location.hash) pane.current?.scrollTo(0, 0);
   }, [section.id]);
 
-  if (!workspace || !me.user) return null;
-  const { workspaceId } = workspace;
-  const canEdit = workspace.role !== "agent";
+  if (!me.user) return null;
+  const workspaceId = workspace?.workspaceId ?? "";
+  const role: Role = workspace?.role ?? "agent";
+  const canEdit = role !== "agent";
   const open = (id: SectionId) => {
     setMobileList(false);
     navigate(`/settings/${id}`, { replace: true });
@@ -107,17 +116,32 @@ export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; on
   const nextTheme = THEME_PREFS[(THEME_PREFS.indexOf(themePref) + 1) % THEME_PREFS.length]!;
   const ThemeIcon = THEME_ICON[themePref];
 
+  const groups: { level: Level; label: string }[] = [
+    ...(workspace ? [{ level: "workspace" as const, label: `Workspace · ${workspace.workspaceName}` }] : []),
+    { level: "account", label: "You" },
+    { level: "desk", label: "This desk" },
+  ];
   const nav = (
     <>
-      <span className="settings-nav-label">Settings</span>
-      {SETTINGS_SECTIONS.map(({ id, label, Icon }) => (
-        <button key={id} type="button" data-plain className="settings-nav-item" aria-current={id === section.id ? "page" : undefined} onClick={() => open(id)}>
-          <Icon />
-          <span>{label}</span>
-        </button>
+      {groups.map((g) => (
+        <div key={g.level} className="settings-nav-group" role="group" aria-label={g.label}>
+          <span className="settings-nav-label">{g.label}</span>
+          {sections.filter((s) => s.level === g.level).map(({ id, label, Icon }) => (
+            <button key={id} type="button" data-plain className="settings-nav-item" aria-current={id === section.id ? "page" : undefined} onClick={() => open(id)}>
+              <Icon />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
       ))}
     </>
   );
+  // Over each section: whose settings these are.
+  const scope = section.level === "workspace"
+    ? <>Only <b>{workspace?.workspaceName}</b>: its chat widget, inbox, AI and team.</>
+    : section.level === "account"
+      ? <>Yours, the same in every workspace on this desk.</>
+      : <>The whole desk: every workspace on it.</>;
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -140,7 +164,8 @@ export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; on
             Settings
           </button>
           <div className="settings-sections">
-            <Section id={section.id} me={me} workspaceId={workspaceId} canEdit={canEdit} role={workspace.role} myId={me.user.id} />
+            <p className="settings-scope" data-level={section.level}>{scope}</p>
+            <Section id={section.id} me={me} workspace={workspace} workspaceId={workspaceId} canEdit={canEdit} role={role} myId={me.user.id} />
           </div>
         </div>
         <DialogClose className="settings-close" aria-label="Close settings">
@@ -153,17 +178,20 @@ export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; on
 
 /** Each section's cards, for its skeleton: the same titles in the same order. */
 const SECTION_CARDS: Record<SectionId, (canInvite: boolean) => string[]> = {
-  general: () => ["General"],
+  general: () => ["Workspace"],
   ai: () => ["AI replies", "Keep it in git"],
   inbox: () => ["Assignment", "Business hours", "Saved replies", "Tags", "Topics"],
   team: (canInvite) => ["Members", ...(canInvite ? ["Invite people"] : [])],
   notifications: () => ["This device", "Notify me when"],
   integrations: () => ["Issue trackers", "GitHub", "Linear"],
-  account: () => ["Your passkeys"],
+  account: () => ["Your account", "Your passkeys"],
+  desk: () => ["This desk"],
 };
 
 /** A section shows only once all of its data is in (fetched when Settings opened), then all at once. */
-function Section(props: { id: SectionId; me: Me; workspaceId: string; canEdit: boolean; role: Role; myId: string }) {
+type SectionProps = { id: SectionId; me: Me; workspace: Membership | undefined; workspaceId: string; canEdit: boolean; role: Role; myId: string };
+
+function Section(props: SectionProps) {
   const canInvite = props.role !== "agent";
   const ready = useSectionReady(sectionRequests(props.id, props.workspaceId, canInvite));
   if (!ready) {
@@ -181,10 +209,10 @@ function Section(props: { id: SectionId; me: Me; workspaceId: string; canEdit: b
   return <SectionPanels {...props} />;
 }
 
-function SectionPanels({ id, me, workspaceId, canEdit, role, myId }: { id: SectionId; me: Me; workspaceId: string; canEdit: boolean; role: Role; myId: string }) {
+function SectionPanels({ id, me, workspace, workspaceId, canEdit, role, myId }: SectionProps) {
   switch (id) {
     case "general":
-      return <GeneralPanel me={me} />;
+      return workspace ? <GeneralPanel me={me} workspace={workspace} /> : null;
     case "ai":
       return (
         <>
@@ -209,28 +237,71 @@ function SectionPanels({ id, me, workspaceId, canEdit, role, myId }: { id: Secti
     case "integrations":
       return <IssueTrackersPanel workspaceId={workspaceId} canEdit={canEdit} />;
     case "account":
-      return <PasskeysPanel />;
+      return (
+        <>
+          <AccountPanel me={me} />
+          <PasskeysPanel />
+        </>
+      );
+    case "desk":
+      return <DeskPanel me={me} onHome={!workspace} />;
   }
 }
 
 const ROLE_LABEL: Record<Role, string> = { owner: "Owner", admin: "Admin", agent: "Agent" };
 
-/** Town's General: who you're signed in as, in which workspace; D-95: owners and admins rename it, owners delete it. */
-function GeneralPanel({ me }: { me: Me }) {
-  const workspace = currentWorkspace(me);
+/** The workspace's General: its name and your role in it; D-95: owners and admins rename it, owners delete it. */
+function GeneralPanel({ me, workspace }: { me: Me; workspace: Membership }) {
   return (
     <>
-      <SettingsCard title="General" description="Who you're signed in as, in which workspace.">
-        <SettingRow label="Name"><span className="setting-row-value">{me.user?.name}</span></SettingRow>
-        {me.user?.email && <SettingRow label="Email"><span className="setting-row-value">{me.user.email}</span></SettingRow>}
-        {workspace && (workspace.role === "agent"
-          ? <SettingRow label="Workspace"><span className="setting-row-value">{workspace.workspaceName}</span></SettingRow>
-          : <WorkspaceNameRow workspace={workspace} />)}
-        {workspace && <SettingRow label="Role" description="Owners and admins change workspace settings; agents answer chats."><span className="setting-row-value">{ROLE_LABEL[workspace.role]}</span></SettingRow>}
-        <VersionRow admin={Boolean(workspace && workspace.role !== "agent")} />
+      <SettingsCard title="Workspace" description="This website or product: its name, and what you can do in it.">
+        {workspace.role === "agent"
+          ? <SettingRow label="Name"><span className="setting-row-value">{workspace.workspaceName}</span></SettingRow>
+          : <WorkspaceNameRow workspace={workspace} />}
+        <SettingRow label="Your role" description="Owners and admins change workspace settings; agents answer chats."><span className="setting-row-value">{ROLE_LABEL[workspace.role]}</span></SettingRow>
       </SettingsCard>
-      {workspace?.role === "owner" && <DeleteWorkspaceCard workspace={workspace} others={(me.memberships ?? []).filter((m) => m.workspaceId !== workspace.workspaceId)} />}
+      {workspace.role === "owner" && <DeleteWorkspaceCard workspace={workspace} others={(me.memberships ?? []).filter((m) => m.workspaceId !== workspace.workspaceId)} />}
     </>
+  );
+}
+
+/** D-97: yours, on every workspace: who you're signed in as, and this browser's theme. */
+function AccountPanel({ me }: { me: Me }) {
+  const themePref = useThemePref();
+  return (
+    <SettingsCard title="Your account" description="One account for every workspace you're in on this desk.">
+      <SettingRow label="Name"><span className="setting-row-value">{me.user?.name}</span></SettingRow>
+      {me.user?.email && <SettingRow label="Email"><span className="setting-row-value">{me.user.email}</span></SettingRow>}
+      <SettingRow label="Theme" description="Saved in this browser.">
+        <SelectField value={themePref} onValueChange={(value) => setThemePref(value as ThemePref)} aria-label="Theme">
+          {THEME_PREFS.map((p) => <SelectOption key={p} value={p}>{THEME_LABEL[p]}</SelectOption>)}
+        </SelectField>
+      </SettingRow>
+    </SettingsCard>
+  );
+}
+
+/** D-97: the desk itself, shared by all of its workspaces: Jun's version, and the workspaces. */
+function DeskPanel({ me, onHome }: { me: Me; onHome: boolean }) {
+  const all = me.memberships ?? [];
+  const admin = all.some((m) => m.role !== "agent");
+  const owner = all.some((m) => m.role === "owner");
+  const [creating, setCreating] = useState(false);
+  return (
+    <SettingsCard title="This desk" description="Shared by every workspace on it: one Jun, deployed to your Cloudflare account.">
+      <VersionRow admin={admin} />
+      <SettingRow
+        label="Workspaces"
+        description={owner ? "One for each website or product, each with its own widget, inbox, AI agent and team." : "The ones you're in. Owners create new ones."}
+      >
+        <div className="row">
+          <span className="setting-row-value">{all.length === 1 ? "1 workspace" : `${all.length} workspaces`}</span>
+          {all.length > 1 && !onHome && <Button size="sm" variant="outline" onClick={goHome}>All workspaces</Button>}
+          {owner && <Button size="sm" variant="outline" onClick={() => setCreating(true)}>New workspace</Button>}
+        </div>
+      </SettingRow>
+      <NewWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
+    </SettingsCard>
   );
 }
 
@@ -246,7 +317,7 @@ function WorkspaceNameRow({ workspace }: { workspace: Membership }) {
     });
   return (
     <SettingRow
-      label="Workspace"
+      label="Name"
       htmlFor="ws-rename"
       description={error ? <span className="error">{error}</span> : "Shown in the sidebar, and to customers until the chat widget has its own name."}
     >
@@ -265,7 +336,9 @@ function DeleteWorkspaceCard({ workspace, others }: { workspace: Membership; oth
   const remove = () =>
     run(async () => {
       await api(`/workspaces/${workspace.workspaceId}`, { method: "DELETE", body: { name: typed } });
-      if (next) switchWorkspace(next);
+      // D-97: two or more left: the desk's home; else the one that's left.
+      if (others.length > 1) goHome();
+      else if (next) switchWorkspace(next);
     });
   return (
     <SettingsCard

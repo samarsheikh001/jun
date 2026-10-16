@@ -52,6 +52,10 @@ export async function addWebsite(env: Env, workspaceId: string, body: Record<str
     throw new HttpError(400, "invalid_field", "Enter a full URL, like https://docs.example.com.");
   }
   const maxPages = Math.min(Math.max(Number(body.maxPages ?? DEFAULT_MAX_PAGES) || DEFAULT_MAX_PAGES, 1), 2000);
+  const known = await env.DB.prepare("SELECT title FROM kb_sources WHERE workspace_id = ? AND kind = 'website' AND url = ?")
+    .bind(workspaceId, url.toString())
+    .first<{ title: string }>();
+  if (known) throw new HttpError(409, "already_added", `${known.title} is already in your knowledge. Re-sync it there to read it again.`);
   const id = newId("src");
   const title = url.host + (url.pathname === "/" ? "" : url.pathname);
   await env.DB.prepare("INSERT INTO kb_sources (id, workspace_id, kind, url, title, settings, created_at) VALUES (?, ?, 'website', ?, ?, ?, ?)")
