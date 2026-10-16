@@ -82,7 +82,7 @@ await step("without a token: 401 with WWW-Authenticate and where to get one; a b
   const none = await fetch(MCP, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });
   assert.equal(none.status, 401);
   assert.match(none.headers.get("www-authenticate") ?? "", /^Bearer/);
-  assert.match(((await none.json()) as { error: { message: string } }).error.message, /Settings → Developer → API tokens/);
+  assert.match(((await none.json()) as { error: { message: string } }).error.message, /MCP → API tokens/);
   assert.equal((await rpc("ping", undefined, { authorization: "Bearer jun_nope" })).status, 401);
   const get = await fetch(MCP, { headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" } });
   assert.equal(get.status, 405);

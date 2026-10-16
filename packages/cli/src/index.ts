@@ -17,7 +17,7 @@ import { FileCredentialStore } from "./store.ts";
 const HELP = `jun — Jun developer CLI
 
 Support agent as code (talks to your deployed desk):
-  jun login <desk-url> [--token jun_…]   Connect to a desk with an API token (Settings → Developer → API tokens)
+  jun login <desk-url> [--token jun_…]   Connect to a desk with an API token (MCP → API tokens)
   jun init [dir]                         Start a config folder (default: support-agent)
   jun pull [dir]                         Download the desk's live agent config, and its settings as desk.yaml
   jun push [dir] [-m "message"]          Validate and make the folder's config live (--force overwrites dashboard edits);
@@ -102,7 +102,7 @@ async function main(argv: string[]): Promise<void> {
         let token = values.token ?? process.env.JUN_DESK_TOKEN;
         if (!token) {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
-          token = (await rl.question("API token (Settings → Developer → API tokens): ")).trim();
+          token = (await rl.question("API token (MCP → API tokens): ")).trim();
           rl.close();
         }
         const desk = await login(arg, token);

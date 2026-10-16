@@ -32,6 +32,7 @@ import {
   Key01Icon,
   LayoutThreeColumnIcon,
   LinkSquare02Icon,
+  McpServerIcon,
   Logout01Icon,
   Moon02Icon,
   MoreHorizontalIcon,
@@ -82,6 +83,7 @@ export const DownloadIcon = make(Download04Icon);
 export const EditIcon = make(Edit02Icon);
 export const ExpandIcon = make(ArrowExpandDiagonal01Icon);
 export const ExternalLinkIcon = make(LinkSquare02Icon);
+export const McpIcon = make(McpServerIcon);
 export const FileIcon = make(File01Icon);
 export const FlashIcon = make(HugeFlashIcon);
 export const GlobeIcon = make(Globe02Icon);

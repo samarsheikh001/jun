@@ -1,12 +1,12 @@
 import { sha256 } from "./crypto.ts";
 
-// Personal API tokens (`jun_…`, Settings → Developer → API tokens): the `jun` CLI (AI-18) and the
+// Personal API tokens (`jun_…`, MCP → API tokens): the `jun` CLI (AI-18) and the
 // desk's MCP server (D-86) send one as `Authorization: Bearer jun_…`. A token acts as the person who
 // made it, in one workspace, for the agent's config only. Stored as a SHA-256 hash.
 
 export const TOKEN_PREFIX = "jun_";
 
-export const BAD_TOKEN_MESSAGE = "This API token isn't valid. Create a new one in Settings → Developer → API tokens.";
+export const BAD_TOKEN_MESSAGE = "This API token isn't valid. Create a new one in MCP → API tokens.";
 
 export interface TokenLogin {
   tokenId: string;

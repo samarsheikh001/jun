@@ -57,7 +57,7 @@ function loadThisDevice(): Promise<string | null> {
   return request;
 }
 
-type SectionId = "general" | "ai" | "inbox" | "team" | "notifications" | "integrations" | "developer" | "account";
+type SectionId = "general" | "ai" | "inbox" | "team" | "notifications" | "integrations" | "account";
 
 /** Every GET a section's panels make on opening. */
 export function sectionRequests(id: SectionId, workspaceId: string, canInvite: boolean): string[] {
@@ -69,12 +69,11 @@ export function sectionRequests(id: SectionId, workspaceId: string, canInvite: b
     case "team": return [`${ws}/members`, ...(canInvite ? [`${ws}/invites`] : [])];
     case "notifications": return [`${ws}/notifications`, `${ws}/push/subscriptions`, THIS_DEVICE];
     case "integrations": return [`${ws}/trackers`];
-    case "developer": return [`${ws}/tokens`];
     case "account": return ["/passkeys"];
   }
 }
 
-const ALL_SECTIONS: SectionId[] = ["general", "ai", "inbox", "team", "notifications", "integrations", "developer", "account"];
+const ALL_SECTIONS: SectionId[] = ["general", "ai", "inbox", "team", "notifications", "integrations", "account"];
 
 /** On opening the dialog: every section's data in parallel (each URL once if it's already on its way). */
 export function prefetchSettings(workspaceId: string, canInvite: boolean) {

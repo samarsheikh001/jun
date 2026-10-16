@@ -7,7 +7,7 @@ import { mcpServer, memberRole } from "./tools.ts";
 // cookies are read, so the CSRF guard of /api doesn't apply; the Origin check is in serveMcp.
 // OAuth (for claude.ai's connectors) is a follow-up.
 
-const NO_TOKEN = "Send an API token: Authorization: Bearer jun_… Create one in Settings → Developer → API tokens.";
+const NO_TOKEN = "Send an API token: Authorization: Bearer jun_… Create one in MCP → API tokens.";
 
 function refuse(status: 401 | 403, message: string): Response {
   return new Response(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32001, message } }), {

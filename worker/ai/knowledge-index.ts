@@ -51,6 +51,12 @@ export class KnowledgeIndex extends DurableObject<Env> {
     this.#cache = undefined;
   }
 
+  /** D-95: the workspace was deleted. */
+  async wipe(): Promise<void> {
+    this.ctx.storage.sql.exec("DELETE FROM vectors");
+    this.#cache = undefined;
+  }
+
   async count(): Promise<number> {
     return this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM vectors").one().n;
   }

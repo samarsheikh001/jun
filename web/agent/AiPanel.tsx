@@ -182,7 +182,7 @@ export function GitCard() {
     >
       <p className="small muted">
         Create a token in{" "}
-        <a href="/settings/developer#api-tokens" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#api-tokens"); }}>Settings → Developer → API tokens</a>, then run:
+        <a href="/connect/tokens" onClick={(e) => { e.preventDefault(); navigate("/connect/tokens"); }}>MCP → API tokens</a>, then run:
       </p>
       <pre className="agent-git-commands">{`npm run jun -- login ${window.location.origin}
 npm run jun -- pull support-agent
@@ -193,7 +193,7 @@ npm run jun -- push support-agent`}</pre>
       {/* D-86 */}
       <p className="small muted">
         No checkout needed: your AI can also change the agent directly over MCP (
-        <a href="/settings/developer#mcp" onClick={(e) => { e.preventDefault(); navigate("/settings/developer#mcp"); }}>Settings → Developer → Connect your AI</a>).
+        <a href="/connect" onClick={(e) => { e.preventDefault(); navigate("/connect"); }}>MCP → Connect</a>).
       </p>
     </SettingsCard>
   );

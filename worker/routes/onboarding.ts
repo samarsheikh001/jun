@@ -9,8 +9,8 @@ export type OnboardingStep = "account" | "knowledge" | "ai" | "brand" | "install
 
 // Set only by the sidebar card's × ("hide for good"). The old `onboarding_dismissed:` key was set by leaving Get started
 // for the inbox, which hid the card from people who hadn't finished; it's ignored now.
-const dismissedKey = (workspaceId: string) => `onboarding_hidden:${workspaceId}`;
-const installMarkedKey = (workspaceId: string) => `onboarding_install_marked:${workspaceId}`;
+export const dismissedKey = (workspaceId: string) => `onboarding_hidden:${workspaceId}`;
+export const installMarkedKey = (workspaceId: string) => `onboarding_install_marked:${workspaceId}`;
 
 async function requireMember(c: AppContext, workspaceId: string): Promise<void> {
   const row = await c.env.DB.prepare("SELECT 1 FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first();

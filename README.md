@@ -132,7 +132,7 @@ Pasted credentials are kept in the workspace's Durable Object storage, not the d
 
 ## Support agent as code
 
-The AI's persona, procedures, tools and tests are files. Edit them on the **Agent** page, or keep them in git and use the `jun` CLI from a checkout of this repo (create a token in Settings → Developer → API tokens):
+The AI's persona, procedures, tools and tests are files. Edit them on the **Agent** page, or keep them in git and use the `jun` CLI from a checkout of this repo (create a token in MCP → API tokens):
 
 ```sh
 npm run jun -- login https://your-desk.example.com
@@ -199,13 +199,13 @@ Not in the file: logos (upload them on the Chat widget page), keys and secrets (
 
 ### Connect your own AI (MCP)
 
-Every desk serves an MCP server at `/mcp`, so Claude Code, Cursor, Codex or Claude Desktop can change the support agent directly: tasks, actions, widgets, tests and desk settings, each change checked and saved as a version (History, restore). Create a token in Settings → Developer → API tokens, then:
+Every desk serves an MCP server at `/mcp`, so Claude Code, Cursor, Codex or Claude Desktop can change the support agent directly: tasks, actions, widgets, tests and desk settings, each change checked and saved as a version (History, restore). Create a token in MCP → API tokens, then:
 
 ```sh
 claude mcp add --transport http jun https://your-desk.example.com/mcp --header "Authorization: Bearer jun_…"
 ```
 
-Settings → Developer shows the snippets for each client.
+The desk's **MCP** page (in the sidebar) connects Claude Code, Cursor, Codex or any MCP app with one button.
 
 ## Develop
 

@@ -191,7 +191,7 @@ support AI here, and don't edit this file, \`CLAUDE.md\` or \`README.md\`: \`jun
 ## The loop
 
 The CLI talks to the desk with an API token: \`jun login <desk-url>\` (a token from the desk's
-Settings → Developer → API tokens), or \`JUN_DESK_URL\` and \`JUN_DESK_TOKEN\` in the environment.
+MCP → API tokens), or \`JUN_DESK_URL\` and \`JUN_DESK_TOKEN\` in the environment.
 
 1. Edit the files (formats below).
 2. Test: \`jun eval .\` runs \`tests/*.yaml\` and replays recent real conversations against the

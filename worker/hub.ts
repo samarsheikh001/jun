@@ -125,6 +125,16 @@ export class WorkspaceHub extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": SOCKET_PROTOCOL } });
   }
 
+  /** RPC (D-95): the workspace was deleted: close its sockets and forget everything kept here. */
+  async wipe(): Promise<void> {
+    for (const ws of this.ctx.getWebSockets()) ws.close(4404, "Workspace deleted");
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.#chatgpt = undefined;
+    this.#vapid = undefined;
+    this.#sweepArmed = false;
+  }
+
   /** RPC: a valid ChatGPT access token for this workspace (dev only), refreshing if needed. */
   async chatgptAccessToken(workspaceId: string, forceRefresh: boolean): Promise<string> {
     if (!this.#chatgpt) {
@@ -279,6 +289,7 @@ export class WorkspaceHub extends DurableObject<Env> {
       id: newId("ntf"),
       kind: input.kind,
       conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
       contact: input.contact,
       text: input.text,
       by: input.by ?? null,

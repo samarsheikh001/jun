@@ -136,6 +136,8 @@ export function notificationPayload(input: {
   text: string;
   by?: string | null;
   auto?: boolean;
+  /** D-95: the desk may hold several workspaces; the link opens this one. */
+  workspaceId?: string;
 }): NotificationPayload {
   const { kind, contact, by } = input;
   const title =
@@ -148,7 +150,7 @@ export function notificationPayload(input: {
     kind,
     title: snippet(title, 120),
     body: snippet(input.text) || (kind === "mention" ? "Open the conversation to read the note." : "Open the conversation to reply."),
-    url: `/inbox/${input.conversationId}`,
+    url: `/inbox/${input.conversationId}${input.workspaceId ? `?ws=${encodeURIComponent(input.workspaceId)}` : ""}`,
     tag: input.conversationId,
   };
 }

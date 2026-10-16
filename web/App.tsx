@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Card as UiCard } from "@/components/ui/card.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
+import { switchWorkspace } from "./workspaces/workspace.ts";
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -30,7 +31,7 @@ export function App() {
     const session = path.startsWith("/invite/") || path === "/recover" ? null : lastSession();
     return session ? <ShellSkeleton session={session} /> : null;
   }
-  if (invite?.[1]) return <InvitePage token={invite[1]} onDone={done} />;
+  if (invite?.[1]) return <InvitePage token={invite[1]} signedInAs={me.user?.name ?? null} onDone={done} />;
   if (path === "/recover") return <RecoverPage onDone={done} />;
   // T-11: a fresh desk goes straight to "Get started".
   if (!me.setupComplete) return <SetupPage onDone={() => { window.history.replaceState(null, "", "/welcome"); refresh(); }} />;
@@ -123,7 +124,7 @@ function RecoverPage({ onDone }: { onDone: () => void }) {
   );
 }
 
-function InvitePage({ token, onDone }: { token: string; onDone: () => void }) {
+function InvitePage({ token, signedInAs, onDone }: { token: string; signedInAs: string | null; onDone: () => void }) {
   const [invite, setInvite] = useState<{ workspaceName: string; role: string } | null>(null);
   const { busy, error, run } = useAction();
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -132,7 +133,23 @@ function InvitePage({ token, onDone }: { token: string; onDone: () => void }) {
   }, [token]);
 
   if (loadError) return <Card title="Invite not available"><p className="error">{loadError}</p></Card>;
-  if (!invite) return <div className="center muted">Loading…</div>;
+  if (!invite) return null;
+  // D-95: already on this desk (another workspace): join with the same account, no new passkey.
+  const join = () =>
+    run(async () => {
+      const joined = await api<{ workspaceId: string }>(`/invites/${token}/accept`, { body: {} });
+      switchWorkspace(joined.workspaceId);
+    });
+  const role = `You've been invited as ${invite.role === "admin" ? "an admin" : "an agent"}.`;
+  if (signedInAs) {
+    return (
+      <Card title={`Join ${invite.workspaceName}`} subtitle={role}>
+        {error && <p className="error">{error}</p>}
+        <Button disabled={busy} onClick={join}>{busy ? "Joining…" : `Join as ${signedInAs}`}</Button>
+        <p className="muted small">It appears in your workspace menu, next to your others.</p>
+      </Card>
+    );
+  }
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const v = formValues(e);
@@ -142,13 +159,19 @@ function InvitePage({ token, onDone }: { token: string; onDone: () => void }) {
     });
   };
   return (
-    <Card title={`Join ${invite.workspaceName}`} subtitle={`You've been invited as ${invite.role === "admin" ? "an admin" : "an agent"}.`}>
+    <Card title={`Join ${invite.workspaceName}`} subtitle={role}>
       <form onSubmit={submit}>
         <Field label="Your name" name="name" required autoComplete="name" />
         <Field label="Email" name="email" type="email" required autoComplete="email" />
         {error && <p className="error">{error}</p>}
         <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and join"}</Button>
       </form>
+      <p className="muted small">
+        Already have an account on this desk?{" "}
+        <a href="#" onClick={(e) => { e.preventDefault(); run(async () => { await signInWithPasskey(); const joined = await api<{ workspaceId: string }>(`/invites/${token}/accept`, { body: {} }); switchWorkspace(joined.workspaceId); }); }}>
+          Sign in to join
+        </a>
+      </p>
     </Card>
   );
 }

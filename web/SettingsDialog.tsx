@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
 import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
 import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsPanel } from "./settings/InboxPanels.tsx";
@@ -13,12 +13,13 @@ import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "./lib/them
 import { useAction } from "./useAction.ts";
 import { UPDATE_HELP, useUpdate } from "./lib/updates.ts";
 import { JUN_VERSION } from "../shared/version.ts";
+import { currentWorkspace, switchWorkspace, type Membership } from "./workspaces/workspace.ts";
+import { Input } from "@/components/ui/input.tsx";
 import {
-  BugIcon, ChevronLeftIcon, CodeIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SparkleIcon, SunIcon, UsersIcon, XIcon,
+  BugIcon, ChevronLeftIcon, InboxIcon, KeyIcon, MonitorIcon, MoonIcon, NotificationIcon, SettingsIcon, SparkleIcon, SunIcon, UsersIcon, XIcon,
 } from "@/components/icons";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { Input } from "@/components/ui/input.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 
 interface Passkey { id: string; name: string | null; backedUp: number; createdAt: number; lastUsedAt: number | null }
@@ -40,7 +41,6 @@ export const SETTINGS_SECTIONS = [
   { id: "team", label: "Team", Icon: UsersIcon },
   { id: "notifications", label: "Notifications", Icon: NotificationIcon },
   { id: "integrations", label: "Issue trackers", Icon: BugIcon },
-  { id: "developer", label: "Developer", Icon: CodeIcon },
   { id: "account", label: "Passkeys", Icon: KeyIcon },
 ] as const;
 type SectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
@@ -64,13 +64,15 @@ export function movedFromSettings(path: string, search: string, hash: string): s
   if (!path.startsWith("/settings")) return null;
   const sub = path.replace(/^\/settings\/?/, "").split("/")[0] ?? "";
   if (sub === "widget") return "/appearance/install";
+  // D-86: Connect your AI and API tokens are the MCP page now.
+  if (sub === "developer") return hash === "#api-tokens" ? "/connect/tokens" : "/connect";
   if (!sub && (hash === "#ai-assistant" || new URLSearchParams(search).get("chatgpt") === "connected")) return `/settings/ai${search}`;
   return null;
 }
 
 /** Open while the URL is /settings…; `onClose` leaves it (back to the page behind). */
 export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; onClose: () => void }) {
-  const workspace = me.memberships?.[0];
+  const workspace = currentWorkspace(me);
   const sub = path.replace(/^\/settings\/?/, "").split("/")[0] ?? "";
   const section = SETTINGS_SECTIONS.find((s) => s.id === sub) ?? SETTINGS_SECTIONS[0];
   // Phones show the nav as a list first (Town's mobile layout); a section URL opens straight on it.
@@ -78,7 +80,7 @@ export function SettingsDialog({ me, path, onClose }: { me: Me; path: string; on
   const pane = useRef<HTMLDivElement>(null);
   const themePref = useThemePref();
   // Every section's data at once, so switching sections never waits or fills in piece by piece.
-  const workspaceForPrefetch = me.memberships?.[0];
+  const workspaceForPrefetch = currentWorkspace(me);
   useEffect(() => {
     if (workspaceForPrefetch) prefetchSettings(workspaceForPrefetch.workspaceId, workspaceForPrefetch.role !== "agent");
   }, [workspaceForPrefetch]);
@@ -157,7 +159,6 @@ const SECTION_CARDS: Record<SectionId, (canInvite: boolean) => string[]> = {
   team: (canInvite) => ["Members", ...(canInvite ? ["Invite people"] : [])],
   notifications: () => ["This device", "Notify me when"],
   integrations: () => ["Issue trackers", "GitHub", "Linear"],
-  developer: () => ["API tokens", "Connect your AI (MCP)"],
   account: () => ["Your passkeys"],
 };
 
@@ -207,8 +208,6 @@ function SectionPanels({ id, me, workspaceId, canEdit, role, myId }: { id: Secti
       return <NotificationsPanel workspaceId={workspaceId} />;
     case "integrations":
       return <IssueTrackersPanel workspaceId={workspaceId} canEdit={canEdit} />;
-    case "developer":
-      return <TokensPanel workspaceId={workspaceId} />;
     case "account":
       return <PasskeysPanel />;
   }
@@ -216,16 +215,73 @@ function SectionPanels({ id, me, workspaceId, canEdit, role, myId }: { id: Secti
 
 const ROLE_LABEL: Record<Role, string> = { owner: "Owner", admin: "Admin", agent: "Agent" };
 
-/** Town's General: who you're signed in as, in which workspace (read-only: there's no rename API yet). */
+/** Town's General: who you're signed in as, in which workspace; D-95: owners and admins rename it, owners delete it. */
 function GeneralPanel({ me }: { me: Me }) {
-  const workspace = me.memberships?.[0];
+  const workspace = currentWorkspace(me);
   return (
-    <SettingsCard title="General" description="Who you're signed in as, in which workspace.">
-      <SettingRow label="Name"><span className="setting-row-value">{me.user?.name}</span></SettingRow>
-      {me.user?.email && <SettingRow label="Email"><span className="setting-row-value">{me.user.email}</span></SettingRow>}
-      {workspace && <SettingRow label="Workspace"><span className="setting-row-value">{workspace.workspaceName}</span></SettingRow>}
-      {workspace && <SettingRow label="Role" description="Owners and admins change workspace settings; agents answer chats."><span className="setting-row-value">{ROLE_LABEL[workspace.role]}</span></SettingRow>}
-      <VersionRow admin={Boolean(workspace && workspace.role !== "agent")} />
+    <>
+      <SettingsCard title="General" description="Who you're signed in as, in which workspace.">
+        <SettingRow label="Name"><span className="setting-row-value">{me.user?.name}</span></SettingRow>
+        {me.user?.email && <SettingRow label="Email"><span className="setting-row-value">{me.user.email}</span></SettingRow>}
+        {workspace && (workspace.role === "agent"
+          ? <SettingRow label="Workspace"><span className="setting-row-value">{workspace.workspaceName}</span></SettingRow>
+          : <WorkspaceNameRow workspace={workspace} />)}
+        {workspace && <SettingRow label="Role" description="Owners and admins change workspace settings; agents answer chats."><span className="setting-row-value">{ROLE_LABEL[workspace.role]}</span></SettingRow>}
+        <VersionRow admin={Boolean(workspace && workspace.role !== "agent")} />
+      </SettingsCard>
+      {workspace?.role === "owner" && <DeleteWorkspaceCard workspace={workspace} others={(me.memberships ?? []).filter((m) => m.workspaceId !== workspace.workspaceId)} />}
+    </>
+  );
+}
+
+function WorkspaceNameRow({ workspace }: { workspace: Membership }) {
+  const [name, setName] = useState(workspace.workspaceName);
+  const { busy, error, run } = useAction();
+  const changed = name.trim() !== "" && name.trim() !== workspace.workspaceName;
+  const save = () =>
+    run(async () => {
+      await api(`/workspaces/${workspace.workspaceId}`, { method: "PATCH", body: { name } });
+      // The sidebar, the switcher and every page read the name from /me: start fresh with it.
+      window.location.reload();
+    });
+  return (
+    <SettingRow
+      label="Workspace"
+      htmlFor="ws-rename"
+      description={error ? <span className="error">{error}</span> : "Shown in the sidebar, and to customers until the chat widget has its own name."}
+    >
+      <form className="ws-rename" onSubmit={(e) => { e.preventDefault(); if (changed) save(); }}>
+        <Input id="ws-rename" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} />
+        {changed && <Button size="sm" disabled={busy}>{busy ? "Saving…" : "Save"}</Button>}
+      </form>
+    </SettingRow>
+  );
+}
+
+function DeleteWorkspaceCard({ workspace, others }: { workspace: Membership; others: Membership[] }) {
+  const [typed, setTyped] = useState("");
+  const { busy, error, run } = useAction();
+  const next = others[0];
+  const remove = () =>
+    run(async () => {
+      await api(`/workspaces/${workspace.workspaceId}`, { method: "DELETE", body: { name: typed } });
+      if (next) switchWorkspace(next.workspaceId);
+    });
+  return (
+    <SettingsCard
+      title="Delete workspace"
+      description="Deletes its conversations, contacts, knowledge, AI agent, chat widget and API tokens for good; its widget stops working on your website. Teammates who are only in this workspace lose their account."
+    >
+      {next ? (
+        <SettingRow label="Confirm" htmlFor="ws-delete" description={error ? <span className="error">{error}</span> : <>Type <b>{workspace.workspaceName}</b> to delete it.</>}>
+          <form className="ws-rename" onSubmit={(e) => { e.preventDefault(); if (typed === workspace.workspaceName) remove(); }}>
+            <Input id="ws-delete" value={typed} autoComplete="off" onChange={(e) => setTyped(e.target.value)} />
+            <Button size="sm" variant="destructive" disabled={busy || typed !== workspace.workspaceName}>{busy ? "Deleting…" : "Delete"}</Button>
+          </form>
+        </SettingRow>
+      ) : (
+        <p className="small muted">This is your only workspace. To delete it, first create another one from the workspace menu at the top of the sidebar.</p>
+      )}
     </SettingsCard>
   );
 }
@@ -386,104 +442,6 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
         </SettingsCard>
       )}
     </>
-  );
-}
-
-interface TokenRow {
-  id: string;
-  name: string;
-  createdAt: number;
-  lastUsedAt: number | null;
-}
-
-/** Personal API tokens for the `jun` CLI (pull, push, eval). */
-function TokensPanel({ workspaceId }: { workspaceId: string }) {
-  const base = `/workspaces/${workspaceId}/tokens`;
-  const [tokens, setTokens] = useState<TokenRow[]>(() => cachedGet<{ tokens: TokenRow[] }>(base)?.tokens ?? []);
-  const [created, setCreated] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
-  const load = useCallback(async () => setTokens((await fetchSetting<{ tokens: TokenRow[] }>(base)).tokens), [base]);
-  useEffect(() => {
-    load().catch(() => {});
-  }, [load]);
-
-  const create = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const name = String(new FormData(form).get("name"));
-    run(async () => {
-      setCreated((await api<{ token: string }>(base, { body: { name } })).token);
-      form.reset();
-      await load();
-    });
-  };
-
-  return (
-    <>
-      <SettingsCard
-        title="API tokens"
-        id="api-tokens"
-        description={<>For the <code>jun</code> CLI (keep the agent in git, run evals and push changes: <code>npm run jun -- login {window.location.origin}</code> in your Jun checkout) and for your AI's MCP connection (below). A token acts as you, for this workspace's agent config only.</>}
-      >
-        {created && (
-          <div className="invite">
-            <span className="small strong">Copy it now: it won't be shown again.</span>
-            <code className="small">{created}</code>
-            <Button variant="outline" size="sm" onClick={() => { void navigator.clipboard?.writeText(created); }}>Copy</Button>
-          </div>
-        )}
-        <form className="settings-inline-form" onSubmit={create}>
-          <Input name="name" placeholder="Token name, e.g. laptop or GitHub Actions" aria-label="Token name" required maxLength={80} />
-          <Button disabled={busy}>Create token</Button>
-        </form>
-        {error && <p className="error small">{error}</p>}
-        {tokens.length > 0 && (
-          <ul className="list">
-            {tokens.map((t) => (
-              <li key={t.id} className="row">
-                <span className="strong">{t.name}</span>
-                <span className="muted small">created {new Date(t.createdAt).toLocaleDateString()} · {t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleDateString()}` : "never used"}</span>
-                <span className="spacer" />
-                <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); })}>Revoke</Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SettingsCard>
-      <McpCard token={created} />
-    </>
-  );
-}
-
-/** D-86: the snippets that connect a person's own AI to this desk's MCP server, each with a Copy button. */
-function McpCard({ token }: { token: string | null }) {
-  const url = `${window.location.origin}/mcp`;
-  const key = token ?? "jun_…";
-  const snippets = [
-    { label: "Claude Code", text: `claude mcp add --transport http jun ${url} --header "Authorization: Bearer ${key}"` },
-    { label: "Cursor (.cursor/mcp.json)", text: JSON.stringify({ mcpServers: { jun: { url, headers: { Authorization: `Bearer ${key}` } } } }, null, 2) },
-    { label: "Codex (~/.codex/config.toml)", text: `[mcp_servers.jun]\nurl = "${url}"\nbearer_token_env_var = "JUN_DESK_TOKEN"\n\n# and in your shell: export JUN_DESK_TOKEN=${key}` },
-  ];
-  return (
-    <SettingsCard
-      title="Connect your AI (MCP)"
-      id="mcp"
-      description={<>Let your own AI (Claude Code, Cursor, Codex, Claude Desktop…) change the support agent: tasks, actions, widgets, tests and desk settings, tested and saved as versions you can restore. No checkout or CLI. It uses an API token from above{token ? " (the one you just created is filled in below)" : ""}.</>}
-    >
-      <p className="small muted">MCP address: <code>{url}</code></p>
-      {snippets.map((s) => (
-        <div key={s.label} className="mcp-snippet">
-          <div className="mcp-snippet-head">
-            <span className="small strong">{s.label}</span>
-            <Button variant="outline" size="sm" type="button" onClick={() => { void navigator.clipboard?.writeText(s.text); }}>Copy</Button>
-          </div>
-          <pre className="agent-git-commands">{s.text}</pre>
-        </div>
-      ))}
-      <p className="small muted">
-        Then ask it things like "add a refund task that looks up the order with our API, test it, and make it live". <a href="https://jun-6ced7499.mintlify.app/code/mcp" target="_blank" rel="noreferrer">How it works</a>
-      </p>
-    </SettingsCard>
   );
 }
 

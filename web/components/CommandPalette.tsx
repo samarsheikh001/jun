@@ -60,7 +60,7 @@ const SETTINGS_SECTIONS: { heading: string; path: string; area?: string }[] = [
   { heading: "Team", path: "/settings/team" },
   { heading: "Notifications", path: "/settings/notifications" },
   { heading: "Issue trackers", path: "/settings/integrations" },
-  { heading: "API tokens", path: "/settings/developer" },
+  { heading: "API tokens", path: "/connect/tokens" },
   { heading: "Your passkeys", path: "/settings/account" },
 ];
 

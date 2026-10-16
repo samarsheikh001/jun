@@ -138,6 +138,14 @@ export class Conversation extends DurableObject<Env> {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
+  /** RPC (D-95): its workspace was deleted: close the sockets and forget what's kept here. */
+  async wipe(): Promise<void> {
+    for (const ws of this.ctx.getWebSockets()) ws.close(4404, "Conversation deleted");
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.#ref = undefined;
+  }
+
   #bind(ref: ConversationRef): ConversationRef {
     if (!this.#ref) {
       this.#ref = ref;

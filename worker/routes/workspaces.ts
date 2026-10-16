@@ -4,6 +4,7 @@ import { finishRegistration, startRegistration } from "../auth/passkeys.ts";
 import { createSession, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
+import { dismissedKey, installMarkedKey } from "./onboarding.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -51,6 +52,97 @@ async function findInvite(c: AppContext, token: string) {
 }
 
 export const workspaces = new Hono<AppEnv>();
+
+// D-95: one desk, several workspaces (one per website or product), each with its own widget,
+// inbox, AI agent, knowledge and team. Owners create them; the desk's sidebar switches between them.
+workspaces.post("/workspaces", requireUser, async (c) => {
+  const userId = c.get("user").id;
+  const owner = await c.env.DB.prepare("SELECT 1 FROM members WHERE user_id = ? AND role = 'owner' LIMIT 1").bind(userId).first();
+  if (!owner) throw new HttpError(403, "forbidden", "Only an owner can create workspaces.");
+  const name = text(await readJson(c.req), "name", { max: 100 });
+  const workspaceId = newId("ws");
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)").bind(workspaceId, name, now),
+    c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)").bind(workspaceId, userId, now),
+    // Its own website widget, with its own key (as in first-run setup).
+    c.env.DB.prepare("INSERT INTO inboxes (id, workspace_id, name, widget_key, created_at) VALUES (?, ?, 'Website', ?, ?)").bind(
+      newId("inb"),
+      workspaceId,
+      `wk_${randomToken(12)}`,
+      now,
+    ),
+  ]);
+  return c.json({ workspaceId, workspaceName: name, role: "owner" });
+});
+
+workspaces.patch("/workspaces/:id", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireRole(c, workspaceId, ["owner", "admin"]);
+  const name = text(await readJson(c.req), "name", { max: 100 });
+  await c.env.DB.prepare("UPDATE workspaces SET name = ? WHERE id = ?").bind(name, workspaceId).run();
+  return c.json({ name });
+});
+
+workspaces.delete("/workspaces/:id", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  const userId = c.get("user").id;
+  await requireRole(c, workspaceId, ["owner"]);
+  const body = await readJson(c.req);
+  const ws = await c.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(workspaceId).first<{ name: string }>();
+  if (!ws || text(body, "name", { max: 100 }) !== ws.name) throw new HttpError(400, "name_mismatch", "Type the workspace's name exactly to delete it.");
+  const other = await c.env.DB.prepare("SELECT 1 FROM members WHERE user_id = ? AND workspace_id != ? LIMIT 1").bind(userId, workspaceId).first();
+  if (!other) throw new HttpError(409, "last_workspace", "This is your only workspace. Create another one before deleting this one.");
+
+  // What lives outside D1's cascades: files in R2 and each Durable Object's own storage.
+  const db = c.env.DB;
+  const [files, inboxes, conversations] = await Promise.all([
+    db.prepare("SELECT key FROM files WHERE workspace_id = ?").bind(workspaceId).all<{ key: string }>(),
+    db.prepare("SELECT settings FROM inboxes WHERE workspace_id = ?").bind(workspaceId).all<{ settings: string | null }>(),
+    db.prepare("SELECT id FROM conversations WHERE workspace_id = ?").bind(workspaceId).all<{ id: string }>(),
+  ]);
+  const keys = files.results.map((f) => f.key);
+  for (const inbox of inboxes.results) {
+    try {
+      const s = JSON.parse(inbox.settings ?? "{}") as Record<string, unknown>;
+      for (const k of [s.logoKey, s.logoDarkKey]) if (typeof k === "string") keys.push(k);
+    } catch {
+      // Unreadable settings: no logos to remove.
+    }
+  }
+
+  await db.batch([
+    // People who were only in this workspace lose their account (cascades to passkeys and sessions),
+    // as when they're removed from their last workspace.
+    db.prepare(
+      `DELETE FROM users WHERE id IN (SELECT user_id FROM members WHERE workspace_id = ?)
+       AND NOT EXISTS (SELECT 1 FROM members m WHERE m.user_id = users.id AND m.workspace_id != ?)`,
+    ).bind(workspaceId, workspaceId),
+    // No foreign key on these two.
+    db.prepare("DELETE FROM kb_chunks WHERE workspace_id = ?").bind(workspaceId),
+    db.prepare("DELETE FROM debug_snapshots WHERE workspace_id = ?").bind(workspaceId),
+    db.prepare("DELETE FROM settings WHERE key IN (?, ?)").bind(dismissedKey(workspaceId), installMarkedKey(workspaceId)),
+    // Everything else cascades from the workspace row.
+    db.prepare("DELETE FROM workspaces WHERE id = ?").bind(workspaceId),
+  ]);
+
+  c.executionCtx.waitUntil(
+    (async () => {
+      const env = c.env;
+      let cursor: string | undefined;
+      do {
+        const listed = await env.FILES.list({ prefix: `kb/${workspaceId}/`, cursor });
+        keys.push(...listed.objects.map((o) => o.key));
+        cursor = listed.truncated ? listed.cursor : undefined;
+      } while (cursor);
+      for (let i = 0; i < keys.length; i += 1000) await env.FILES.delete(keys.slice(i, i + 1000));
+      await env.WORKSPACE_HUB.getByName(workspaceId).wipe();
+      await env.KNOWLEDGE_INDEX.getByName(workspaceId).wipe();
+      for (const { id } of conversations.results) await env.CONVERSATION.getByName(id).wipe().catch(() => {});
+    })().catch((e: unknown) => console.error("workspace delete cleanup", workspaceId, e)),
+  );
+  return c.json({ ok: true });
+});
 
 workspaces.get("/workspaces/:id/members", requireUser, async (c) => {
   const workspaceId = c.req.param("id");
@@ -139,12 +231,31 @@ workspaces.get("/invites/:token", async (c) => {
   return c.json({ workspaceName: invite.workspaceName, role: invite.role });
 });
 
+// D-95: someone with an account on this desk (signed in) joins with it, no new passkey.
+workspaces.post("/invites/:token/accept", requireUser, async (c) => {
+  const invite = await findInvite(c, c.req.param("token"));
+  const userId = c.get("user").id;
+  const now = Date.now();
+  const used = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL").bind(now, invite.tokenHash),
+    // Already a member: keep the role they have.
+    c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING").bind(
+      invite.workspaceId,
+      userId,
+      invite.role,
+      now,
+    ),
+  ]);
+  if (!used[0]?.meta.changes) throw new HttpError(410, "invite_invalid", "This invite link is invalid, used, or expired.");
+  return c.json({ workspaceId: invite.workspaceId });
+});
+
 workspaces.post("/invites/:token/options", async (c) => {
   const invite = await findInvite(c, c.req.param("token"));
   const body = await readJson(c.req);
   const user = { id: newId("usr"), name: text(body, "name", { max: 100 }), email: email(body) };
   const taken = await c.env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(user.email).first();
-  if (taken) throw new HttpError(409, "email_taken", "An account with that email already exists. Sign in instead.");
+  if (taken) throw new HttpError(409, "email_taken", "An account with that email already exists. Sign in with it to join.");
   return c.json(await startRegistration(c, "invite", user, { user, inviteHash: invite.tokenHash, workspaceId: invite.workspaceId, role: invite.role }));
 });
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, PaletteIcon, FlashIcon, HelpIcon, InboxIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, PaletteIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -29,6 +29,9 @@ import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
 import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
+import { ConnectPage } from "./connect/ConnectPage.tsx";
+import { WorkspaceSwitcher, WorkspaceSwitcherSkeleton } from "./workspaces/WorkspaceSwitcher.tsx";
+import { currentWorkspace, switchWorkspace } from "./workspaces/workspace.ts";
 
 const NAV = [
   { id: "dashboard", label: "Dashboard", Icon: ChartColumnIcon },
@@ -39,12 +42,15 @@ const NAV = [
   // Chat widget (Install, Behaviour) and Appearance (the look) share /appearance* (old links keep working).
   { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance/install" },
   { id: "appearance", label: "Appearance", Icon: PaletteIcon, href: "/appearance" },
+  // D-86: connect your own AI to the desk's MCP server (/mcp is the server itself).
+  { id: "connect", label: "MCP", Icon: McpIcon },
 ] as const;
 
 /** Which sidebar entry a path belongs to. */
 function sectionOf(pagePath: string) {
   return pagePath.startsWith("/knowledge") ? "knowledge"
     : pagePath.startsWith("/agent") ? "agent"
+    : pagePath.startsWith("/connect") ? "connect"
     : pagePath.startsWith("/appearance/install") || pagePath.startsWith("/appearance/behaviour") ? "widget"
     : pagePath.startsWith("/appearance") ? "appearance"
     : pagePath.startsWith("/visitors") ? "visitors"
@@ -89,7 +95,7 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
       <Sidebar collapsible="icon" className="desk-sidebar">
         <SidebarHeader className="desk-sidebar-head">
           <SidebarTrigger />
-          <div className="brand"><DeskIcon /><span>Jun</span></div>
+          <WorkspaceSwitcherSkeleton name={session.workspace} />
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -211,7 +217,13 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     if (openedInDesk.current) window.history.back();
     else navigate(pageBehind.current, { replace: true });
   }, []);
-  const workspace = me.memberships?.[0];
+  // D-95: one of your workspaces at a time (a link's ?ws=, else the one picked last, else the first).
+  const workspace = currentWorkspace(me);
+  // A link into another of your workspaces (a notification opened in this tab) opens that one.
+  useEffect(() => {
+    const asked = new URLSearchParams(window.location.search).get("ws");
+    if (asked && workspace && asked !== workspace.workspaceId && me.memberships?.some((m) => m.workspaceId === asked)) switchWorkspace(asked, window.location.pathname);
+  }, [path, workspace, me.memberships]);
   // The next page load draws this sidebar (ShellSkeleton) before /me answers.
   useEffect(() => {
     if (me.user && workspace) rememberSession({ name: me.user.name, workspace: workspace.workspaceName, admin: workspace.role !== "agent" });
@@ -247,7 +259,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         // Not in front of you: a system notification (in front: the inbox's own toasts and lists).
         if (event.type === "notify" && event.mode === "system" && !tabFocused()) void showInPageNotification(event.notification).catch(() => {});
         // I-14 sound: a chime for the same events, unless this tab is in front and showing that chat.
-        if (event.type === "notify" && event.sound !== false && !(tabFocused() && window.location.pathname === event.notification.url)) playChime();
+        if (event.type === "notify" && event.sound !== false && !(tabFocused() && window.location.pathname === event.notification.url.split("?")[0])) playChime();
         if (event.type === "presence") setOnline(event.online);
         if (event.type === "visitors") setVisitors(event.visitors);
         if (event.type === "visitor") setVisitors((list) => [...(list ?? []).filter((v) => v.sessionId !== event.visitor.sessionId), event.visitor]);
@@ -384,7 +396,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       <Sidebar collapsible="icon" className="desk-sidebar">
         <SidebarHeader className="desk-sidebar-head">
           <SidebarTrigger />
-          <div className="brand"><DeskIcon /><span>Jun</span></div>
+          <WorkspaceSwitcher current={workspace} all={me.memberships ?? [workspace]} />
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -526,6 +538,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <WidgetPage workspaceId={workspace.workspaceId} canEdit={canEdit} tab={widgetTab} install={install} reloadInstall={reloadOnboarding} />
       ) : section === "appearance" ? (
         <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+      ) : section === "connect" ? (
+        <ConnectPage workspaceId={workspace.workspaceId} tab={pagePath.startsWith("/connect/tokens") ? "tokens" : "connect"} />
       ) : section === "agent" ? (
         <AgentPage workspaceId={workspace.workspaceId} canEdit={canEdit} path={pagePath} />
       ) : (

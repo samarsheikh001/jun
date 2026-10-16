@@ -42,7 +42,7 @@ async function openDesk(path) {
   });
   const desk = windows.find((c) => c.focused) || windows[0];
   if (desk) {
-    desk.postMessage({ type: "jun:open", url: new URL(url).pathname });
+    desk.postMessage({ type: "jun:open", url: new URL(url).pathname + new URL(url).search });
     return desk.focus();
   }
   return self.clients.openWindow(url);
