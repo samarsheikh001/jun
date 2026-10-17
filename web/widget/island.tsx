@@ -282,7 +282,7 @@ export function NudgeLine({ logoUrl, text, from, onAsk, onDismiss }: { logoUrl: 
         {text}
       </span>
       <button type="button" className="i-ask" onClick={onAsk}>Ask</button>
-      <button type="button" className="i-ghost i-x" aria-label="Dismiss" onClick={onDismiss}>×</button>
+      <button type="button" className="i-ghost i-x" data-cuelume-close data-cuelume-emphasis="subtle" aria-label="Dismiss" onClick={onDismiss}>×</button>
     </div>
   );
 }
@@ -292,7 +292,7 @@ export function StatusLine({ logoUrl, label, onOpen }: { logoUrl: string | null;
   // D-78: a run's line opens to its steps and the chat.
   if (onOpen) {
     return (
-      <button type="button" className="i-status i-status-btn" aria-label={`${label} Show the steps`} onClick={onOpen}>
+      <button type="button" className="i-status i-status-btn" data-cuelume-open data-cuelume-emphasis="subtle" aria-label={`${label} Show the steps`} onClick={onOpen}>
         <Mark logoUrl={logoUrl} pulse />
         <span className="i-status-text" role="status">{label}</span>
         <span className="i-up" aria-hidden="true">{chevron(CHEVRON_UP)}</span>
@@ -353,7 +353,7 @@ export function IslandTop({ who, view, exit }: {
   return (
     <div className="i-top">
       {who && <span className="i-who">{who}</span>}
-      {view && <button type="button" className="i-pill-chip" onClick={view.run}>{view.label}</button>}
+      {view && <button type="button" className="i-pill-chip" data-cuelume-open data-cuelume-emphasis="subtle" onClick={view.run}>{view.label}</button>}
       <span className="i-spacer" />
       {exit && <button type="button" className="i-exit" onClick={exit.run}>{exit.label}</button>}
     </div>

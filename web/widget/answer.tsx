@@ -6,6 +6,7 @@ import type { AiStep, Source } from "../../shared/protocol.ts";
 import { WIDGET_ONLY_BODY, type MessageWidget } from "../../shared/widgets.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import type { AiAnswerView } from "../components/MessageList.tsx";
+import { cue } from "../lib/sound.ts";
 import { ActionCard } from "./action.tsx";
 import { WidgetCard, WidgetPeek, type WidgetActionEvent, type WidgetActionOutcome, type WidgetChangeEvent, type WidgetClientEvent } from "./chatkit/WidgetCard.tsx";
 
@@ -91,7 +92,15 @@ function CopyButton({ text }: { text: string }) {
       className="w-answer-btn"
       aria-label={copied ? "Copied" : "Copy answer"}
       title={copied ? "Copied" : "Copy"}
-      onClick={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined)}
+      onClick={() =>
+        void navigator.clipboard?.writeText(text).then(
+          () => {
+            cue("success", { emphasis: "subtle" });
+            setCopied(true);
+          },
+          () => undefined,
+        )
+      }
     >
       {copied ? (
         <Icon><path d="M20 6 9 17l-5-5" /></Icon>
@@ -131,7 +140,7 @@ function StepRow({ step }: { step: StepLine }) {
   return (
     <li className={`w-row${open ? " open" : ""}${step.error ? " error" : ""}`}>
       <div className="w-row-line">
-        <button type="button" className="w-row-btn" aria-expanded={more ? open : undefined} disabled={!more} onClick={() => setOpen(!open)}>
+        <button type="button" className="w-row-btn" data-cuelume-tap={open ? "close" : "open"} data-cuelume-emphasis="subtle" aria-expanded={more ? open : undefined} disabled={!more} onClick={() => setOpen(!open)}>
           <span className="w-row-icon">
             {running ? (
               <span className="w-step-spin" role="img" aria-label="In progress" />
@@ -188,7 +197,7 @@ function Steps({ steps, working, folded = false, head }: { steps: StepLine[]; wo
   if (steps.length === 1 && !folded) return <div className={`w-steps${working ? " working" : ""}`}>{rows}</div>;
   return (
     <div className={`w-steps${working ? " working" : ""}`}>
-      <button type="button" className="w-steps-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="w-steps-head" data-cuelume-tap={open ? "close" : "open"} data-cuelume-emphasis="subtle" aria-expanded={open} onClick={() => setOpen(!open)}>
         {working && head && <span className="w-step-spin" role="img" aria-label="In progress" />}
         <svg className="w-steps-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{chevron}</svg>
         <span className={`w-steps-count${working ? " w-steps-shimmer" : ""}`}>{head ?? `${steps.length} steps`}</span>
@@ -335,7 +344,7 @@ export function AiAnswer({
         <>
           <div className={`w-answer-row${live ? " w-anim-in" : ""}`}>
             <CopyButton text={plain} />
-            <button type="button" className="w-src-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            <button type="button" className="w-src-toggle" data-cuelume-tap={open ? "close" : "open"} data-cuelume-emphasis="subtle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
               <span className="w-src-stack">
                 {stack.map((s) => <SourceIcon key={sourceLabel(s)} source={s} className="w-src-avatar" />)}
               </span>
@@ -369,7 +378,7 @@ export function AiAnswer({
         <ActionCard action={action} latest={latest} createdAt={answer.createdAt ?? 0} onInput={controls.onInput} onRun={controls.onRun} onCancel={controls.onCancel} {...(controls.onAllowAlways ? { onAllowAlways: controls.onAllowAlways } : {})} />
       )}
       {!waiting && controls?.onAskFirst && (
-        <button type="button" className="w-act-ask" onClick={controls.onAskFirst}>Acting on the page without asking · Ask me first</button>
+        <button type="button" className="w-act-ask" data-cuelume-toggle onClick={controls.onAskFirst}>Acting on the page without asking · Ask me first</button>
       )}
 
       {done && latest && onFollowUp && followUps.length > 0 && (

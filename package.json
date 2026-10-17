@@ -51,6 +51,7 @@
     "ai": "^7.0.127",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "cuelume": "^0.2.8",
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0",
     "hono": "^4.13.13",

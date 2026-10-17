@@ -311,7 +311,7 @@
     '<div class="from"></div><p></p><button class="go">Chat with us</button></div>' +
     '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg><span class="badge"></span></button><iframe class="frame" title="Chat" allow="clipboard-write; display-capture"></iframe></div>';
+    '<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg><span class="badge"></span></button><iframe class="frame" title="Chat" allow="clipboard-write; display-capture; autoplay"></iframe></div>';
 
   var wrap = root.querySelector(".w"), card = root.querySelector(".nudge");
   var button = root.querySelector(".btn");

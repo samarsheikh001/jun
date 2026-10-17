@@ -280,7 +280,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         // Not in front of you: a system notification (in front: the inbox's own toasts and lists).
         if (event.type === "notify" && event.mode === "system" && !tabFocused()) void showInPageNotification(event.notification).catch(() => {});
         // I-14 sound: a chime for the same events, unless this tab is in front and showing that chat.
-        if (event.type === "notify" && event.sound !== false && !(tabFocused() && deskPathname() === withoutWorkspace(event.notification.url.split("?")[0]!))) playChime();
+        if (event.type === "notify" && event.sound !== false && !(tabFocused() && deskPathname() === withoutWorkspace(event.notification.url.split("?")[0]!))) playChime({ emphasis: "strong" });
         if (event.type === "presence") setOnline(event.online);
         if (event.type === "visitors") setVisitors(event.visitors);
         if (event.type === "visitor") setVisitors((list) => [...(list ?? []).filter((v) => v.sessionId !== event.visitor.sessionId), event.visitor]);

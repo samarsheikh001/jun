@@ -25,7 +25,7 @@ function Field({ name, param, value, onChange }: { name: string; param: ActionPa
         <span className="w-act-label">{text}</span>
         <div className="w-act-chips">
           {[true, false].map((v) => (
-            <button key={String(v)} type="button" className={`w-act-chip${value === v ? " on" : ""}`} aria-pressed={value === v} onClick={() => onChange(v)}>{v ? "Yes" : "No"}</button>
+            <button key={String(v)} type="button" data-cuelume-select className={`w-act-chip${value === v ? " on" : ""}`} aria-pressed={value === v} onClick={() => onChange(v)}>{v ? "Yes" : "No"}</button>
           ))}
         </div>
       </div>
@@ -37,7 +37,7 @@ function Field({ name, param, value, onChange }: { name: string; param: ActionPa
         <span className="w-act-label">{text}</span>
         <div className="w-act-chips">
           {param.enum.map((v) => (
-            <button key={String(v)} type="button" className={`w-act-chip${value === v ? " on" : ""}`} aria-pressed={value === v} onClick={() => onChange(v)}>{String(v)}</button>
+            <button key={String(v)} type="button" data-cuelume-select className={`w-act-chip${value === v ? " on" : ""}`} aria-pressed={value === v} onClick={() => onChange(v)}>{String(v)}</button>
           ))}
         </div>
       </div>
@@ -128,7 +128,7 @@ export function ActionCard({
         })}
         {errors.length > 0 && <p className="w-act-error" role="alert">{errors.map(([k, e]) => `${label(k)} ${e}`).join(". ")}.</p>}
         <div className="w-act-row">
-          <button type="submit" className="w-act-btn" disabled={!filled}>Continue</button>
+          <button type="submit" className="w-act-btn" data-cuelume-tap disabled={!filled}>Continue</button>
           <button type="button" className="w-act-ghost" onClick={onCancel}>Cancel</button>
         </div>
       </form>

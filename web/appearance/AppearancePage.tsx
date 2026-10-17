@@ -357,8 +357,8 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
           <section className="appear-group">
             <h2>Extras</h2>
             <SwitchRow
-              title="Sound for new replies"
-              hint="A soft chime for a teammate's reply, and for the AI's while the chat is closed or in another tab."
+              title="Sounds"
+              hint="Soft sounds as visitors use the chat, a cue for each new reply, and a bell when the AI needs their OK."
               checked={draft.sound !== false}
               disabled={off}
               onChange={(checked) => edit({ sound: checked })}

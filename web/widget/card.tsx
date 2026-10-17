@@ -187,12 +187,12 @@ export function MiniCard({
         {logoUrl && <img className="w-mini-logo" src={logoUrl} alt={name} />}
         <span className="w-mini-name">{name}</span>
         <span className="w-mini-sub">{sub}</span>
-        <button className="w-mini-x" aria-label="Hide until the next page" title="Hide" onClick={onHide}>{icon("M6 6l12 12M18 6L6 18")}</button>
+        <button className="w-mini-x" data-cuelume-close data-cuelume-emphasis="subtle" aria-label="Hide until the next page" title="Hide" onClick={onHide}>{icon("M6 6l12 12M18 6L6 18")}</button>
       </div>
       <p className="w-mini-welcome">{welcome}</p>
       <div className="w-mini-actions">
         <button className="w-mini-act" onClick={onContact}>Contact the team</button>
-        <button className="w-mini-act" onClick={onNewChat}>Start a new chat</button>
+        <button className="w-mini-act" data-cuelume-tap onClick={onNewChat}>Start a new chat</button>
       </div>
       {/* The open chat's composer as a picture (same "+", placeholder and empty Send): one look closed and open. */}
       <button className="w-mini-composer" onClick={onType}>

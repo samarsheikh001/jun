@@ -10,7 +10,7 @@ import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type Me
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
-import { playChime, unlockSoundOnInteraction } from "../lib/sound.ts";
+import { bindSounds, cue, playChime, setSoundOn, unlockSoundOnInteraction } from "../lib/sound.ts";
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
 import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
 import { Badge, MiniCard, morph, useCardFrame, usePhoneFrame } from "./card.tsx";
@@ -398,6 +398,21 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     return () => cancelAnimationFrame(frame);
   }, [open, morphing]);
   const phoneFrame = usePhoneFrame();
+  // W-20: the controls' sounds (`data-cuelume-*`), under the desk's sound switch; silent until the config says.
+  const soundOn = config ? config.sound !== false : false;
+  useEffect(() => bindSounds(), []);
+  useEffect(() => {
+    setSoundOn(soundOn);
+    if (soundOn) unlockSoundOnInteraction();
+  }, [soundOn]);
+  // The chat opening and closing, however it happens (the host's button, Esc, the island, a morph).
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (wasOpen.current === open) return;
+    wasOpen.current = open;
+    cue(open ? "open" : "close", config && asIsland(config) ? { emphasis: "subtle" } : {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   /** D-34: the panel's Expand (740px tall), the card hidden for this page (then a "Chat with us" pill), the suggestions dismissed. */
   const [grown, setGrown] = useState(false);
   const [miniHidden, setMiniHidden] = useState(false);
@@ -759,7 +774,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       <header className="w-head">
         <span className="w-title">
           {view.kind === "thread" && conversations.some((c) => c.id !== view.id) && (
-            <button className="w-hdr-btn" aria-label="Your conversations" title="Your conversations" onClick={() => setView({ kind: "list" })}>
+            <button className="w-hdr-btn" data-cuelume-navigate aria-label="Your conversations" title="Your conversations" onClick={() => setView({ kind: "list" })}>
               <Icon d="M15 18l-6-6 6-6" />
             </button>
           )}
@@ -771,7 +786,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         </span>
         {framed && (
           <span className="w-hdr-actions">
-            <button className="w-hdr-btn" aria-label={grown ? "Minimize" : "Expand"} title={grown ? "Minimize" : "Expand"} onClick={() => setGrown((g) => !g)}>
+            <button className="w-hdr-btn" data-cuelume-toggle data-cuelume-emphasis="subtle" aria-label={grown ? "Minimize" : "Expand"} title={grown ? "Minimize" : "Expand"} onClick={() => setGrown((g) => !g)}>
               <Icon d={grown ? "M6 9l6 6 6-6" : "M18 15l-6-6-6 6"} />
             </button>
             <button className="w-close" aria-label="Close chat" onClick={() => postToHost({ type: "jun:close" })}>×</button>
@@ -785,7 +800,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             <ul>
               {conversations.map((c) => (
                 <li key={c.id}>
-                  <button className={`w-conv ${unread(c) ? "unread" : ""}`} onClick={() => setView({ kind: "thread", id: c.id })}>
+                  <button className={`w-conv ${unread(c) ? "unread" : ""}`} data-cuelume-navigate onClick={() => setView({ kind: "thread", id: c.id })}>
                     <span className="w-conv-text">
                       <span className="w-conv-preview">{c.lastMessagePreview || "Conversation"}</span>
                       <span className="w-conv-meta">{c.status === "resolved" ? "Resolved · " : ""}{formatTime(c.lastMessageAt)}</span>
@@ -797,7 +812,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
             </ul>
           </section>
           <div className="w-actions">
-            <button className="w-action-btn" onClick={() => setView({ kind: "thread", id: null })}>Start a new chat</button>
+            <button className="w-action-btn" data-cuelume-tap onClick={() => setView({ kind: "thread", id: null })}>Start a new chat</button>
           </div>
           <Badge />
         </div>
@@ -967,12 +982,11 @@ function WidgetThread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, open, thread.state]);
 
-  // W-20: a soft chime for a new public reply: a teammate's always, the AI's while the visitor isn't
-  // looking (the widget folded or closed, or the tab hidden). Messages the thread loaded with it (history) only set
-  // where "new" starts; a reply updated in place keeps its seq, so it never chimes twice.
-  useEffect(() => {
-    if (sound) unlockSoundOnInteraction();
-  }, [sound]);
+  // W-20: a cue for each new public reply (cuelume's `ready`): a teammate's and an AI reply the
+  // visitor isn't looking at (the widget folded or closed, or the tab hidden) at full weight, an AI
+  // reply that finished in front of them softly. A website-action step isn't a reply: its card has
+  // its own cue (below). Messages the thread loaded with it (history) only set where "new" starts;
+  // a reply updated in place keeps its seq, so it never sounds twice.
   const heardSeq = useRef<number | null>(null);
   const openRef = useRef(open);
   openRef.current = open;
@@ -990,9 +1004,38 @@ function WidgetThread({
     // A teammate's reply chimes even with the chat open: it comes minutes later, when the visitor has
     // looked away. An AI reply only while they aren't looking (it streams in front of them).
     const teammate = fresh.some((m) => m.authorType === "agent");
-    const ai = fresh.some((m) => m.authorType === "ai");
-    if (sound && (teammate || (ai && (!openRef.current || document.visibilityState === "hidden")))) playChime();
+    const ai = fresh.some((m) => m.authorType === "ai" && !m.meta.action);
+    if (!sound || !(teammate || ai)) return;
+    if (teammate || !openRef.current || document.visibilityState === "hidden") playChime();
+    else cue("ready", { emphasis: "subtle" });
   }, [thread.messages, initial, sound]);
+  // A card that waits on the visitor (Confirm, or details the AI couldn't fill) rings once: `attention`;
+  // a step that failed: `error`. Each run sounds once per state, never for what the history brought.
+  const heardRuns = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    if (initial === null) return;
+    const first = heardRuns.current === null;
+    const heard = (heardRuns.current ??= new Map());
+    let ring: "attention" | "error" | null = null;
+    for (const m of thread.messages) {
+      const action = m.authorType === "ai" ? m.meta.action : undefined;
+      if (!action) continue;
+      const state = action.status === "pending" ? (action.risk === "confirm" || action.missing.length > 0 ? "ask" : "run") : action.status;
+      if (heard.get(action.runId) === state) continue;
+      heard.set(action.runId, state);
+      if (first) continue;
+      if (state === "error") ring = "error";
+      else if (state === "ask" && ring !== "error") ring = "attention";
+    }
+    if (sound && ring) cue(ring);
+  }, [thread.messages, initial, sound]);
+  // A message that couldn't be sent.
+  const failedCount = thread.pending.filter((p) => p.failed).length;
+  const heardFailed = useRef(failedCount);
+  useEffect(() => {
+    if (sound && failedCount > heardFailed.current) cue("error", { emphasis: "subtle" });
+    heardFailed.current = failedCount;
+  }, [failedCount, sound]);
 
   const startingId = useRef("");
   // Creating the conversation takes a round trip. Messages sent meanwhile are held (shown as
@@ -1007,6 +1050,8 @@ function WidgetThread({
   const flushing = useRef<Promise<void>>(Promise.resolve());
   const send = async (body: string, attachments: Attachment[]) => {
     setError(null);
+    // Typed and sent, or a suggestion tapped: one press, however it was sent (Enter too).
+    cue("tap");
     if (conversationId ? holding.current > 0 : creating.current) {
       holding.current++;
       setHeld((h) => [...h, { clientMsgId: crypto.randomUUID(), body, attachments }]);
@@ -1205,6 +1250,10 @@ function WidgetThread({
             });
           });
           // W-27: a refused press (the action's widget_failed line) comes back here; the card says why.
+          cue("tap");
+          void outcome.then((r) => {
+            if (!r.ok) cue("error", { emphasis: "subtle" });
+          });
           return outcome;
         }}
         // D-51: ChatKit's handler "client" goes to the host page (the loader's widgetAction event).
@@ -1215,9 +1264,18 @@ function WidgetThread({
               controls: {
                 running: actionRunning(action),
                 onInput: (input: Record<string, unknown>) => thread.actionInput(action.runId, input),
-                onRun: (input: Record<string, unknown>) => startAction(action, input),
-                onCancel: () => thread.actionResult(action.runId, "cancelled"),
-                onUndo: () => postToHost({ type: "jun:undo", runId: action.runId }),
+                onRun: (input: Record<string, unknown>) => {
+                  cue("tap");
+                  startAction(action, input);
+                },
+                onCancel: () => {
+                  cue("close", { emphasis: "subtle" });
+                  thread.actionResult(action.runId, "cancelled");
+                },
+                onUndo: () => {
+                  cue("navigate", { emphasis: "subtle", direction: "back" });
+                  postToHost({ type: "jun:undo", runId: action.runId });
+                },
                 // AI-32: page control can be allowed for good from its Confirm card, and asked again after.
                 ...(offerAllowAlways && isPageControl(action.name) && action.risk === "confirm" && !allowPage ? { onAllowAlways: () => allowAlways(true) } : {}),
                 ...(action.runId === lastPageStep ? { onAskFirst: () => allowAlways(false) } : {}),
@@ -1433,7 +1491,7 @@ function WidgetThread({
     // W-07: a person is always one click away while the AI is answering: a quiet chip over the row.
     const human = conversationId && handling === "ai" ? (
       <div className="i-foot">
-        <button type="button" className="i-pill-chip" onClick={() => thread.requestHuman()}>Talk to a person</button>
+        <button type="button" className="i-pill-chip" data-cuelume-tap onClick={() => thread.requestHuman()}>Talk to a person</button>
       </div>
     ) : null;
     const row = <IslandRow logoUrl={island.logoUrl}>{composer}</IslandRow>;
@@ -1612,7 +1670,7 @@ function WidgetThread({
         <div className="w-suggest" role="group" aria-label="Suggested questions">
           <div className="w-suggest-head">
             <span>Ask us things like:</span>
-            <button className="w-x" aria-label="Dismiss" onClick={classic.hideSuggestions}>×</button>
+            <button className="w-x" data-cuelume-close data-cuelume-emphasis="subtle" aria-label="Dismiss" onClick={classic.hideSuggestions}>×</button>
           </div>
           <div className="w-suggest-list">
             {classic.suggestions.map((q) => (
@@ -1624,7 +1682,7 @@ function WidgetThread({
       <div className="w-actions">
         {/* W-07: the team is always one click away while the AI is answering. */}
         <button className="w-action-btn" disabled={Boolean(conversationId && handling !== "ai") || Boolean(starting && !conversationId)} onClick={contactTeam}>Contact the team</button>
-        <button className="w-action-btn" onClick={classic.newChat}>Start a new chat</button>
+        <button className="w-action-btn" data-cuelume-tap onClick={classic.newChat}>Start a new chat</button>
       </div>
       {extras}
       {composer}
@@ -1781,11 +1839,11 @@ function EmailAsk({
       <div className="row">
         <span className="small strong">{away ? "We're away right now." : nobodyOnline ? "Nobody's online right now." : "Sorry for the wait."} Get the reply by email?</span>
         <span className="spacer" />
-        <button type="button" className="ghost icon small w-x" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
+        <button type="button" className="ghost icon small w-x" data-cuelume-close data-cuelume-emphasis="subtle" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
       </div>
       <div className="row">
         <input name="email" type="email" required maxLength={320} placeholder="you@company.com" aria-label="Your email" autoComplete="email" />
-        <button disabled={busy}>Save</button>
+        <button data-cuelume-tap disabled={busy}>Save</button>
       </div>
       {error && <p className="error small">{error}</p>}
     </form>
@@ -1838,8 +1896,8 @@ function CsatAsk({
         <textarea name="comment" rows={2} maxLength={MAX_CSAT_COMMENT} placeholder="Optional" aria-label="Your comment" autoFocus />
         <div className="row">
           <span className="spacer" />
-          <button type="button" className="ghost small" onClick={() => setDone(true)}>Skip</button>
-          <button className="small" disabled={busy}>Send</button>
+          <button type="button" className="ghost small" data-cuelume-close data-cuelume-emphasis="subtle" onClick={() => setDone(true)}>Skip</button>
+          <button className="small" data-cuelume-tap disabled={busy}>Send</button>
         </div>
         {error && <p className="error small">{error}</p>}
       </form>
@@ -1855,9 +1913,9 @@ function CsatAsk({
       <div className="row">
         <span className="small strong">How did we do?</span>
         <span className="spacer" />
-        <button type="button" className="ghost w-thumb" disabled={busy} aria-label="Good" title="Good" onClick={() => void rate("good")}>👍</button>
-        <button type="button" className="ghost w-thumb" disabled={busy} aria-label="Bad" title="Bad" onClick={() => void rate("bad")}>👎</button>
-        <button type="button" className="ghost icon small w-x" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
+        <button type="button" className="ghost w-thumb" data-cuelume-select disabled={busy} aria-label="Good" title="Good" onClick={() => void rate("good")}>👍</button>
+        <button type="button" className="ghost w-thumb" data-cuelume-select disabled={busy} aria-label="Bad" title="Bad" onClick={() => void rate("bad")}>👎</button>
+        <button type="button" className="ghost icon small w-x" data-cuelume-close data-cuelume-emphasis="subtle" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
       </div>
       {error && <p className="error small">{error}</p>}
     </div>
