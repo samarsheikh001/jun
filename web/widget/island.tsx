@@ -188,6 +188,9 @@ export function Island({ state, live, neon, onOpen, autoFold = null, hug = false
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
     const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    // The first render read the loader's default frame (380px wide); the frame may have taken our
+    // jun:css size before this listener existed, so read it again now.
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
