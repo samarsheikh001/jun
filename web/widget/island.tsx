@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { playNow } from "../lib/sound.ts";
 
 // W-04 "island" mode (D-39, D-89): one small control at the bottom centre of the page that changes
 // shape to fit each moment and always returns to a resting pill. The frame is transparent and always shown; it tells the loader its size and the part of it that's drawn
@@ -70,6 +71,11 @@ const GLOW = 32;
 const edge = (width: number) => (width < 640 ? 12 : 24);
 /** The frame's spring: a slight overshoot, about 0.65s (the proposal's stiffness 380 / damping 30). */
 export const SPRING = "cubic-bezier(.34, 1.25, .5, 1)";
+/** W-34: one JunDesk.highlight() call: `n` counts the calls (each plays it again), `sound` if it asked for one. */
+export interface Highlight {
+  n: number;
+  sound: boolean;
+}
 /** W-34: how long JunDesk.highlight()'s lift and glow last (widget.css `i-flash`). */
 const FLASH_MS = 1_400;
 
@@ -169,15 +175,17 @@ function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) |
  * finished answer may fold itself (see useAutoFold). `hug` (D-79): a one-line pill (the working line,
  * the folded reply) is as wide as its line, within HUG_MIN..HUG_MAX, and springs as the line changes.
  * `highlight` (W-34): bumped by the host page's JunDesk.highlight(); the folded island lifts a little
- * and glows once (just the glow under reduced motion). Open, it's already in view: nothing happens.
+ * and glows once (just the glow under reduced motion), with cuelume's `attention` when the call asked
+ * for `sound` (and the desk's sound switch is on). Open, it's already in view: nothing happens.
  */
-export function Island({ state, live, neon, onOpen, autoFold = null, hug = false, highlight = 0, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: number; children: ReactNode }) {
+export function Island({ state, live, neon, onOpen, autoFold = null, hug = false, highlight = null, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: Highlight | null; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
   const folded = state === "rest" || state === "intro" || state === "nudge";
   const [flash, setFlash] = useState(0);
   useEffect(() => {
     if (!highlight || !folded) return;
-    setFlash(highlight);
+    setFlash(highlight.n);
+    if (highlight.sound) playNow("attention");
     const timer = setTimeout(() => setFlash(0), FLASH_MS);
     return () => clearTimeout(timer);
     // Only a new call plays it, not the island folding later.

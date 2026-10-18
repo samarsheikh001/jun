@@ -31,10 +31,11 @@
         <h2>Island</h2>
         <p>
           <button id="highlight">Highlight the island</button>
+          <button id="highlight-sound">Highlight with sound</button>
           <button id="dark-page">Dark page</button>
           <button id="intro">Show first-visit questions again</button>
         </p>
-        <p class="note">For the island mode (desk: Appearance). Highlight is <code>JunDesk.highlight()</code> (W-34): the folded island glows once. With Island colour on Auto (D-99) the island turns light on a dark page and near-black again on a light one. The first-visit questions show once per browser when the desk has suggested questions: this forgets that they were shown and reloads (a chat on this browser stops them too).</p>
+        <p class="note">For the island mode (desk: Appearance). Highlight is <code>JunDesk.highlight()</code> (W-34): the folded island glows once; <code>{ sound: true }</code> adds a short cue (from a click, with the desk's sounds on). With Island colour on Auto (D-99) the island turns light on a dark page and near-black again on a light one. The first-visit questions show once per browser when the desk has suggested questions: this forgets that they were shown and reloads (a chat on this browser stops them too).</p>
       </div>
       <div class="card">
         <h2>Billing</h2>
@@ -94,6 +95,7 @@
       };
       // The island card: JunDesk.highlight(), a dark page for the auto colour, and the first-visit questions again.
       document.getElementById("highlight").onclick = function () { if (window.JunDesk && window.JunDesk.highlight) window.JunDesk.highlight(); };
+      document.getElementById("highlight-sound").onclick = function () { if (window.JunDesk && window.JunDesk.highlight) window.JunDesk.highlight({ sound: true }); };
       document.getElementById("dark-page").onclick = function () {
         var dark = document.documentElement.classList.toggle("dark-page");
         this.textContent = dark ? "Light page" : "Dark page";

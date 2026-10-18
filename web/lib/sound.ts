@@ -87,9 +87,18 @@ export function playChime(options: PlayOptions = {}, now = Date.now()): boolean 
   return true;
 }
 
+/**
+ * Loads cuelume if needed and plays a cue now, for a sound asked for by a click: a "Test sound"
+ * button, or (W-34) the host page's JunDesk.highlight({ sound: true }) from its own button, whose
+ * click reaches this frame through the iframe's `allow="autoplay"`. Without a click, nothing.
+ */
+export function playNow(name: SoundName, options?: PlayOptions): void {
+  void load().then(async (m) => {
+    if (m && (await m.unlock())) m.play(name, options);
+  });
+}
+
 /** "Test sound" buttons: call from the click itself (it unlocks), so it plays. */
 export function previewChime(): void {
-  void load().then(async (m) => {
-    if (m && (await m.unlock())) m.play("ready", { emphasis: "strong" });
-  });
+  playNow("ready", { emphasis: "strong" });
 }

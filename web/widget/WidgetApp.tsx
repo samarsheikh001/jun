@@ -14,7 +14,7 @@ import { bindSounds, cue, playChime, setSoundOn, unlockSoundOnInteraction } from
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
 import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
 import { Badge, MiniCard, morph, useCardFrame, usePhoneFrame } from "./card.tsx";
-import { Island, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
+import { Island, type Highlight, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
@@ -377,7 +377,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [hostTheme, setHostTheme] = useState<WidgetTheme | null>(null);
   const [backdrop, setBackdrop] = useState<Backdrop>(null);
   /** W-34: JunDesk.highlight() calls from the host page, counted (each one plays the island's glow once). */
-  const [highlight, setHighlight] = useState(0);
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
   const config = useMemo(() => {
     const look = saved && draft ? { ...saved, ...draft } : saved;
     return look && hostTheme ? { ...look, theme: hostTheme } : look;
@@ -537,7 +537,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         const t = data.theme;
         setHostTheme(t === "light" || t === "dark" || t === "auto" ? t : null);
       }
-      if (data?.type === "jun:highlight") setHighlight((n) => n + 1);
+      if (data?.type === "jun:highlight") setHighlight((h) => ({ n: (h?.n ?? 0) + 1, sound: data.sound === true }));
       if (data?.type === "jun:backdrop") setBackdrop(data.dark === true ? "dark" : data.dark === false ? "light" : null);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
@@ -935,8 +935,8 @@ function WidgetThread({
     neon: boolean;
     /** The cards' palette: dark on the near-black surface, else the frame's theme. */
     cardTheme: "light" | "dark";
-    /** W-34: bumped by each JunDesk.highlight(). */
-    highlight: number;
+    /** W-34: the latest JunDesk.highlight() call. */
+    highlight: Highlight | null;
     unread: boolean;
     setOpen: (open: boolean) => void;
     newChat: () => void;
