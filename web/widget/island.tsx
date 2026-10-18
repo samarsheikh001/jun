@@ -70,6 +70,8 @@ const GLOW = 32;
 const edge = (width: number) => (width < 640 ? 12 : 24);
 /** The frame's spring: a slight overshoot, about 0.65s (the proposal's stiffness 380 / damping 30). */
 export const SPRING = "cubic-bezier(.34, 1.25, .5, 1)";
+/** W-34: how long JunDesk.highlight()'s lift and glow last (widget.css `i-flash`). */
+const FLASH_MS = 1_400;
 
 /**
  * Sizes the frame: a fixed transparent box at the bottom centre (up to 720×680), clipped to the
@@ -166,9 +168,21 @@ function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) |
  * rising into place from the pill's row with a short fade and un-blur. `autoFold`: set while a
  * finished answer may fold itself (see useAutoFold). `hug` (D-79): a one-line pill (the working line,
  * the folded reply) is as wide as its line, within HUG_MIN..HUG_MAX, and springs as the line changes.
+ * `highlight` (W-34): bumped by the host page's JunDesk.highlight(); the folded island lifts a little
+ * and glows once (just the glow under reduced motion). Open, it's already in view: nothing happens.
  */
-export function Island({ state, live, neon, onOpen, autoFold = null, hug = false, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; children: ReactNode }) {
+export function Island({ state, live, neon, onOpen, autoFold = null, hug = false, highlight = 0, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: number; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
+  const folded = state === "rest" || state === "intro" || state === "nudge";
+  const [flash, setFlash] = useState(0);
+  useEffect(() => {
+    if (!highlight || !folded) return;
+    setFlash(highlight);
+    const timer = setTimeout(() => setFlash(0), FLASH_MS);
+    return () => clearTimeout(timer);
+    // Only a new call plays it, not the island folding later.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight]);
   const boxRef = useRef<HTMLDivElement>(null);
   useAutoFold(boxRef, autoFold);
   // "/" opens the resting island from inside the frame too (after Escape the focus is still here;
@@ -236,7 +250,8 @@ export function Island({ state, live, neon, onOpen, autoFold = null, hug = false
   return (
     <div className="i-root">
       {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
-      <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}`} style={{ width: w, height: h }}>
+      <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}${flash ? " i-flash" : ""}`} style={{ width: w, height: h }}>
+        {flash > 0 && <div key={flash} className="i-flash-glow" aria-hidden="true" />}
         {neon && <div className="i-glow" aria-hidden="true" />}
         {neon && <div className="i-ring" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">

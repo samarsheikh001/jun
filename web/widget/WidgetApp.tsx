@@ -376,6 +376,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   /** D-92: the host site's theme (data-theme, JunDesk.setTheme), over the desk's; null = the desk's. */
   const [hostTheme, setHostTheme] = useState<WidgetTheme | null>(null);
   const [backdrop, setBackdrop] = useState<Backdrop>(null);
+  /** W-34: JunDesk.highlight() calls from the host page, counted (each one plays the island's glow once). */
+  const [highlight, setHighlight] = useState(0);
   const config = useMemo(() => {
     const look = saved && draft ? { ...saved, ...draft } : saved;
     return look && hostTheme ? { ...look, theme: hostTheme } : look;
@@ -535,6 +537,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         const t = data.theme;
         setHostTheme(t === "light" || t === "dark" || t === "auto" ? t : null);
       }
+      if (data?.type === "jun:highlight") setHighlight((n) => n + 1);
       if (data?.type === "jun:backdrop") setBackdrop(data.dark === true ? "dark" : data.dark === false ? "light" : null);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
@@ -730,6 +733,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           placeholder: config.placeholder,
           neon: config.neon,
           cardTheme,
+          highlight,
           unread: Boolean(summary && unread(summary)),
           setOpen: setIslandOpen,
           newChat: () => {
@@ -931,6 +935,8 @@ function WidgetThread({
     neon: boolean;
     /** The cards' palette: dark on the near-black surface, else the frame's theme. */
     cardTheme: "light" | "dark";
+    /** W-34: bumped by each JunDesk.highlight(). */
+    highlight: number;
     unread: boolean;
     setOpen: (open: boolean) => void;
     newChat: () => void;
@@ -1571,7 +1577,7 @@ function WidgetThread({
     const folded = restSummary(thread.messages) ?? (serverLine && !serverLine.waiting ? serverLine.text : null);
     const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || waitingLine || (conversationId && folded)));
     return (
-      <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
+      <Island state={shown} live={live} neon={island.neon} highlight={island.highlight} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
         {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} waiting={waitingLine} onOpen={() => island.setOpen(true)} />}
         {shown === "intro" && (
           <div className="i-open">

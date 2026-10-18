@@ -15,6 +15,8 @@
  * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool) / .registerAction(tool)
  *      / .setTheme("light" | "dark" | "auto" | null): follow the site's own dark mode (D-92); null goes back to
  *      the desk's setting. data-theme="dark" on this tag sets it from the first paint.
+ *      / .highlight(): the island lifts and glows once, to point at it from your own "Ask our AI" button
+ *      (W-34; it doesn't open it: open() does). Island mode only.
  * Card actions with ChatKit's handler: "client" (D-51) come to the page, never to the server:
  *   JunDesk.onWidgetAction(function (a) { a.type; a.payload; a.values; a.widget; }) (returns a remover),
  *   or the "jundesk:widget-action" window event (same object as event.detail).
@@ -450,6 +452,7 @@
       setOpen(true);
     },
     close: function () { setOpen(false); },
+    highlight: function () { post({ type: "jun:highlight" }); },
     toggle: function () { setOpen(!open); },
     // D-92: "light", "dark" or "auto" (the visitor's system) from the site's own theme switch; null = the desk's.
     setTheme: function (t) {

@@ -112,6 +112,9 @@ export function InstallTab({ workspaceId, canEdit, install, reload }: { workspac
         <p className="muted">
           Cookie banner? Add <code>data-consent="required"</code>: the widget then stores nothing and doesn't show the visitor on your live list until you call <code>JunDesk.consent(true)</code>.
         </p>
+        <p className="muted">
+          Your own "Ask our AI" button? Call <code>JunDesk.open()</code> to open the chat, or <code>JunDesk.highlight()</code> to make the island glow once so people see where it is.
+        </p>
       </SettingsCard>
 
       <SettingsCard title="Where to paste it" description="On a site builder or framework, it goes wherever the platform lets you add code to every page's head.">

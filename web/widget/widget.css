@@ -337,6 +337,13 @@ html.island.island-dark {
 .i-ring { inset: 0; padding: 1.5px; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; z-index: 1; }
 .i-glow { inset: -2px; filter: blur(14px); opacity: 0.55; }
 @keyframes i-turn { to { --i-angle: 360deg; } }
+/* W-34: JunDesk.highlight(): the folded island lifts a little and the neon colours glow behind it once
+   (1.4s, FLASH_MS); under reduced motion only the glow. Stays inside the frame's 32px of clip room. */
+.i-box.i-flash { animation: i-lift 1.4s cubic-bezier(0.34, 1.25, 0.5, 1); }
+@keyframes i-lift { 0%, 100% { transform: none; } 30% { transform: translateY(-4px) scale(1.03); } }
+.i-flash-glow { position: absolute; inset: -2px; z-index: -1; border-radius: inherit; background: conic-gradient(from 0deg, #ff5ec8, #8b5cff, #35c8ff, #3dffa8, #ffd54a, #ff7a5c, #ff5ec8); filter: blur(9px); opacity: 0; pointer-events: none; animation: i-flash 1.4s ease-out; }
+@keyframes i-flash { 25% { opacity: 0.9; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .i-box.i-flash { animation: none; } }
 /* Content sits on the bottom edge (the box stays put while the shell grows) and rises out of the
    pill's row from a blur after the old content has gone, so the island reads as one thing growing. */
 .i-view { position: absolute; left: 0; bottom: 0; animation: i-in 0.34s 0.12s both; }
