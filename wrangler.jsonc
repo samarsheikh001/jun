@@ -36,6 +36,11 @@
   // day). Without it, or in local dev (Quick Actions need a remote binding), previews are text only.
   "browser": { "binding": "BROWSER" },
 
+  // Email replies (C-02, optional): sends a teammate's reply to a customer who has left the chat. Nothing
+  // is sent until an admin sets a from address on a domain onboarded to Email Sending (Channels → Email);
+  // replies come back through Email Routing to this Worker's email() handler.
+  "send_email": [{ "name": "EMAIL" }],
+
   // Website crawling (K-01): one message per page.
   "queues": {
     "producers": [{ "binding": "CRAWL_QUEUE", "queue": "jun-desk-crawl" }],

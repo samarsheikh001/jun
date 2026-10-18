@@ -33,6 +33,8 @@ import { compileTemplate } from "../shared/jinja.ts";
 import { markWidgetUsed, matchWidgetAction, matchWidgetChange, MAX_PAGE_ACTION_DATA, PAGE_ACTION_BUTTON, pageActionCard, pageActionWidget, renderActionLine, TOOL_ACTION, toolActionInput, WIDGET_ONLY_BODY, widgetActionUsed, type MessageWidget, type WidgetActionMeta } from "../shared/widgets.ts";
 import { AI_OFF_HANDOFF_REASON } from "../shared/metrics.ts";
 import { newId } from "./lib/crypto.ts";
+import { EMAIL_IDS_KEY, emailUnseenReplies, EmailSendError, type InboundEmail } from "./lib/email.ts";
+import { EMAIL_DELAY_MS, MAX_INBOUND_PER_HOUR } from "../shared/email.ts";
 import { notifyTeam } from "./lib/notify.ts";
 import { loadToolSecrets, secretScrubber } from "./lib/tool-secrets.ts";
 
@@ -94,6 +96,13 @@ function unmarkWidget(widget: MessageWidget, item: string | undefined): MessageW
 const PENDING_WIDGETS_KEY = "pendingWidgets:";
 /** D-51: how many field changes may run a tool in one conversation (each can call the customer's API). */
 const WIDGET_CHANGES_KEY = "widgetChanges";
+/** C-02: when to email the replies the customer hasn't seen, and when the first of them came (a cap on the wait). */
+const EMAIL_DUE_KEY = "email:due";
+const EMAIL_FIRST_KEY = "email:first";
+/** C-02: emails in from the customer this hour. */
+const EMAIL_IN_KEY = "email:in";
+/** A visitor socket that hasn't pinged for this long (clients ping every 30 s) is a closed tab. */
+const VISITOR_GONE_MS = 75_000;
 const MAX_WIDGET_CHANGES = 200;
 /** D-51: at least this long between two change runs of one card. */
 const WIDGET_CHANGE_GAP_MS = 400;
@@ -314,6 +323,25 @@ export class Conversation extends DurableObject<Env> {
     await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body, clientMsgId, internal: true, ...(meta ? { meta } : {}) });
   }
 
+  /** RPC (C-02): the customer answered by email: their message in the chat (from another address, a note for agents). */
+  async receiveEmail(refIn: ConversationRef, contactId: string, email: InboundEmail): Promise<void> {
+    const ref = this.#bind(refIn);
+    const hour = Math.floor(Date.now() / 3_600_000);
+    const seen = this.ctx.storage.kv.get<{ hour: number; count: number }>(EMAIL_IN_KEY);
+    const count = seen?.hour === hour ? seen.count : 0;
+    if (count >= MAX_INBOUND_PER_HOUR) return;
+    this.ctx.storage.kv.put(EMAIL_IN_KEY, { hour, count: count + 1 });
+    // The next email threads under it.
+    if (email.messageId) this.ctx.storage.kv.put(EMAIL_IDS_KEY, [...(this.ctx.storage.kv.get<string[]>(EMAIL_IDS_KEY) ?? []), email.messageId].slice(-10));
+    if (!email.fromCustomer) {
+      const body = `An email from ${email.from} came to this chat's reply address. It isn't the customer's address, so only the team sees it:
+
+${email.body}`;
+      return this.addNote(ref, body, email.clientMsgId);
+    }
+    await this.#addMessage(ref, { role: "visitor", contactId }, { clientMsgId: email.clientMsgId, body: email.body, attachments: email.attachments }, { via: "email" });
+  }
+
   /** RPC (I-02): a new chat went straight to the team (AI off): give it to an online teammate if the workspace uses round robin. */
   async assignIfNeeded(refIn: ConversationRef): Promise<void> {
     await this.#autoAssign(this.#bind(refIn));
@@ -329,7 +357,7 @@ export class Conversation extends DurableObject<Env> {
   // ---------- messages ----------
 
   /** A message from a participant. Idempotent per clientMsgId. */
-  async #addMessage(refIn: ConversationRef, participant: Participant, input: SendInput): Promise<Message> {
+  async #addMessage(refIn: ConversationRef, participant: Participant, input: SendInput, via?: Pick<MessageMeta, "via">): Promise<Message> {
     const ref = this.#bind(refIn);
     // W-09: a card's button. The card must offer that action and not have been used; the message
     // reads as the button's label (from the card, not the client) and carries what was entered.
@@ -393,6 +421,7 @@ export class Conversation extends DurableObject<Env> {
       clientMsgId: input.clientMsgId,
       ...(note ? { internal: true, meta: mentions.length ? { mentions } : {} } : {}),
       ...(used?.meta ? { meta: { widgetAction: used.meta } } : {}),
+      ...(via ? { meta: via } : {}),
     });
     if (participant.role === "agent" && mentions.length) await this.#notifyMentions(ref, participant, message);
     if (toolRun && created) {
@@ -670,6 +699,7 @@ export class Conversation extends DurableObject<Env> {
     };
     this.#broadcast({ type: "message", message }, { agentsOnly: internal });
     this.ctx.waitUntil(this.#publish(ref));
+    if (!internal && (input.authorType === "agent" || input.authorType === "ai")) this.#scheduleEmail();
     return { message, created: true };
   }
 
@@ -715,6 +745,55 @@ export class Conversation extends DurableObject<Env> {
     }
     // With the team (from the start, or just handed off) and outside business hours: say so.
     await this.#maybeAway(ref);
+    await this.#emailIfDue(ref);
+  }
+
+  // ---------- email (C-02) ----------
+
+  /**
+   * A reply the customer may not see: email it in a couple of minutes unless they're back by then.
+   * Later replies push it back (one email for a few), never past five times the delay.
+   */
+  #scheduleEmail(): void {
+    const now = Date.now();
+    const first = this.ctx.storage.kv.get<number>(EMAIL_FIRST_KEY) ?? now;
+    // JUN_EMAIL_DELAY_MS: only the e2e dev server sets it (vite.config.ts).
+    const delay = Number((this.env as { JUN_EMAIL_DELAY_MS?: string }).JUN_EMAIL_DELAY_MS) || EMAIL_DELAY_MS;
+    const due = Math.min(now + delay, first + 5 * delay);
+    this.ctx.storage.kv.put(EMAIL_FIRST_KEY, first);
+    this.ctx.storage.kv.put(EMAIL_DUE_KEY, due);
+    this.ctx.waitUntil(this.#alarmBy(due));
+  }
+
+  /** The one alarm also runs AI turns: move it earlier, never later. */
+  async #alarmBy(at: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+
+  async #emailIfDue(ref: ConversationRef): Promise<void> {
+    const due = this.ctx.storage.kv.get<number>(EMAIL_DUE_KEY);
+    if (due === undefined) return;
+    if (due > Date.now()) return this.#alarmBy(due);
+    this.ctx.storage.kv.delete(EMAIL_DUE_KEY);
+    this.ctx.storage.kv.delete(EMAIL_FIRST_KEY);
+    // Still in the chat (a tab that pings): they've seen it.
+    const now = Date.now();
+    const here = this.ctx.getWebSockets("visitor").some((ws) => {
+      const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws);
+      return !pinged || now - pinged.getTime() < VISITOR_GONE_MS;
+    });
+    if (here) return;
+    try {
+      const sent = await emailUnseenReplies(this.env, ref, this.ctx.storage.kv);
+      if (sent) await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body: sent.note, clientMsgId: `email-out:${sent.through}`, internal: true });
+    } catch (error) {
+      if (!(error instanceof EmailSendError)) return console.error("email reply failed", error);
+      // Once a day per reason, so a domain that isn't verified yet doesn't fill the chat with notes.
+      const day = new Date(now).toISOString().slice(0, 10);
+      const body = `Couldn't email the reply to the customer: ${error.message}. Channels → Email has the setup.`;
+      await this.#insert(ref, { authorType: "system", authorId: null, authorName: null, body, clientMsgId: `email-failed:${error.code}:${day}`, internal: true });
+    }
   }
 
   /**

@@ -6,7 +6,7 @@ An open-source support desk for B2B SaaS where the AI already knows what broke. 
 
 What you get:
 
-- **A chat widget** (about 4 KB) with live replies, typing indicators, read receipts, file uploads, your colour and logo, and business hours. When nobody's around it asks for an email, so you can reply after they've left, and when a conversation is resolved it asks for a quick 👍 or 👎.
+- **A chat widget** (about 4 KB) with live replies, typing indicators, read receipts, file uploads, your colour and logo, and business hours. When nobody's around it asks for an email, so you can reply after they've left (with [email replies](#email-replies-optional) on, the desk emails the reply and the customer can answer by email), and when a conversation is resolved it asks for a quick 👍 or 👎.
 - **An AI agent** that answers from your docs with citations and hands off to a person when it can't help, or when the customer asks. It runs on Workers AI out of the box, so you don't need an API key, and it can use OpenAI instead.
 - **Support that sees the bug.** Recent errors, failed requests and pages visited are captured in the visitor's browser, masked twice (in the browser and on the server), and shown to your agents and the AI. If something on the page breaks, the widget can offer help on its own: "Adding a team member didn't work. Want a hand?"
 - **A support agent you keep in git.** The AI's rules, procedures, tools and tests are plain files. `jun eval` replays recent real conversations against your edits before you push them, so you see which answers would change.
@@ -121,6 +121,16 @@ Each teammate turns them on in **Settings → Notifications** ("Turn on notifica
 
 **iPhone and iPad:** Safari only allows push for web apps on the Home Screen. Open the desk in Safari, tap Share → **Add to Home Screen**, open Jun from there and turn notifications on.
 
+## Email replies (optional)
+
+When a customer has left the chat, the desk can email them the replies they haven't seen, and their answer to that email lands back in the same conversation. It's off until you set it up in **Channels → Email**:
+
+1. **Sending** (needs the Workers Paid plan to send to anyone): onboard your domain to Cloudflare Email Sending, `npx wrangler email sending enable acme.com`, and enter a from address on it (`support@acme.com`).
+2. **Receiving** (free): turn on Email Routing for a reply domain (`npx wrangler email routing enable reply.acme.com`; a subdomain keeps your main domain's mail where it is) and add a catch-all rule that sends its mail to this desk's Worker. Enter that domain.
+3. Press **Send me a test**, then turn email replies on.
+
+Each conversation gets its own reply address on that domain. Replies go out a couple of minutes after the last one, a few at once, never while the customer is still in the chat. Only the new part of an answer is kept (quotes and signatures are cut), attachments come along, out-of-office replies are ignored, and mail from any other address shows only to the team as a note. Without email set up, the widget still asks a waiting visitor for their address so your team can write back.
+
 ## Issue trackers
 
 An agent's "Create issue" files to GitHub, Linear, or either (they pick when both are set up). Set them up in **Settings → Issue trackers**:
@@ -221,7 +231,7 @@ npm run dev                      # dashboard + Worker on http://localhost:5173
 |---|---|
 | `npm run dev` | Applies local D1 migrations, then runs Vite with the Worker in the Workers runtime |
 | `npm test` | Unit tests |
-| `npm run test:e2e` | Twelve end-to-end suites against a dev server on a fresh database, with real AI through your ChatGPT login (`npm run jun -- login chatgpt` once; `E2E_AI_PROVIDER=workers-ai` uses Workers AI instead). Start the server with `JUN_STATE_DIR=.wrangler/e2e-state npx vite --port 5174` (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
+| `npm run test:e2e` | Twelve end-to-end suites against a dev server on a fresh database, with real AI through your ChatGPT login (`npm run jun -- login chatgpt` once; `E2E_AI_PROVIDER=workers-ai` uses Workers AI instead). Start the server with `JUN_STATE_DIR=.wrangler/e2e-state JUN_EMAIL_DELAY_MS=3000 npx vite --port 5174` (the delay makes email replies go out after 3 s instead of 2 min) (after `npx wrangler d1 migrations apply DB --local --persist-to .wrangler/e2e-state`), then run `BASE_URL=http://localhost:5174 npm run test:e2e` |
 | `npm run typecheck` | Packages, Worker and dashboard |
 | `npm run build` / `npm run deploy` | Build, then migrate and deploy to your Cloudflare account |
 

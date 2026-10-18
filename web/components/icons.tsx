@@ -34,6 +34,9 @@ import {
   LinkSquare02Icon,
   McpServerIcon,
   Logout01Icon,
+  Mail01Icon,
+  MessageMultiple01Icon,
+  SlackIcon as HugeSlackIcon,
   Moon02Icon,
   MoreHorizontalIcon,
   Notification01Icon,
@@ -70,6 +73,9 @@ export const BookOpenIcon = make(BookOpen01Icon);
 export const BotIcon = make(HugeBotIcon);
 export const BugIcon = make(Bug01Icon);
 export const ChatIcon = make(BubbleChatIcon);
+export const ChannelsIcon = make(MessageMultiple01Icon);
+export const MailIcon = make(Mail01Icon);
+export const SlackIcon = make(HugeSlackIcon);
 export const PaletteIcon = make(PaintBoardIcon);
 export const CodeIcon = make(SourceCodeIcon);
 export const ChartColumnIcon = make(Analytics01Icon);

@@ -138,7 +138,11 @@ export default defineConfig({
   // touch your own local desk). Pair with `wrangler ... --persist-to` on the same path.
   // Tailwind (shadcn/ui) only processes CSS that imports it: web/desk.css, the dashboard's sheet.
   // The widget frame keeps its own plain CSS (web/styles.css + web/widget/widget.css).
-  plugins: [preactWidget(), react(), tailwindcss(), minifyLoader(), buildWidget(), pageControlChunk(), cloudflare(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {})],
+  plugins: [preactWidget(), react(), tailwindcss(), minifyLoader(), buildWidget(), pageControlChunk(), cloudflare({
+    ...(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {}),
+    // e2e-email: email replies after seconds instead of minutes.
+    ...(process.env.JUN_EMAIL_DELAY_MS ? { config: { vars: { JUN_EMAIL_DELAY_MS: process.env.JUN_EMAIL_DELAY_MS } } } : {}),
+  })],
   // Listen on 127.0.0.1: dev-only "Sign in with ChatGPT" must return to a 127.0.0.1
   // loopback URL (OpenAI forbids substituting localhost), and on Windows Vite would
   // otherwise bind IPv6 only. http://localhost:5173 still works in browsers.

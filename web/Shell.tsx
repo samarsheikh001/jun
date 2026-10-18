@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BookOpenIcon, BotIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, KeyIcon, PaletteIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BookOpenIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ColumnsIcon, KeyIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -31,6 +31,7 @@ import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.ts
 import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { ConnectPage } from "./connect/ConnectPage.tsx";
+import { CHANNEL_SECTIONS, channelSection, ChannelsOverview, EmailChannelPage } from "./channels/ChannelsPage.tsx";
 import { WorkspaceSwitcher, WorkspaceSwitcherSkeleton } from "./workspaces/WorkspaceSwitcher.tsx";
 import { currentWorkspace, goHome, switchWorkspace } from "./workspaces/workspace.ts";
 
@@ -40,9 +41,9 @@ const NAV = [
   { id: "visitors", label: "Visitors", Icon: UsersIcon },
   { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
   { id: "agent", label: "Agent", Icon: BotIcon },
-  // Chat widget (Install, Behaviour) and Appearance (the look) share /appearance* (old links keep working).
-  { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance/install" },
-  { id: "appearance", label: "Appearance", Icon: PaletteIcon, href: "/appearance" },
+  // Where customers reach you: Chat widget (Install, Behaviour) and Appearance keep /appearance*, Email is
+  // /channels/email (C-02); /channels lists them.
+  { id: "channels", label: "Channels", Icon: ChannelsIcon, href: "/channels" },
   // D-86: connect your own AI to the desk's MCP server (/mcp is the server itself).
   { id: "connect", label: "MCP", Icon: McpIcon },
 ] as const;
@@ -52,8 +53,7 @@ function sectionOf(pagePath: string) {
   return pagePath.startsWith("/knowledge") ? "knowledge"
     : pagePath.startsWith("/agent") ? "agent"
     : pagePath.startsWith("/connect") ? "connect"
-    : pagePath.startsWith("/appearance/install") || pagePath.startsWith("/appearance/behaviour") ? "widget"
-    : pagePath.startsWith("/appearance") ? "appearance"
+    : pagePath.startsWith("/channels") || pagePath.startsWith("/appearance") ? "channels"
     : pagePath.startsWith("/visitors") ? "visitors"
     : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
     : pagePath.startsWith("/welcome") ? "welcome"
@@ -112,12 +112,25 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu aria-label="Main">
-              {NAV.map(({ id, label, Icon }) => (
+              {NAV.map((item) => {
+                const { id, label, Icon } = item;
+                return (
                 <SidebarMenuItem key={id}>
-                  <SidebarMenuButton isActive={section === id} tooltip={label} render={<a href={deskHref(`/${id}`)} />}>
+                  <SidebarMenuButton isActive={section === id} tooltip={label} render={<a href={deskHref("href" in item ? item.href : `/${id}`)} />}>
                     <Icon />
                     <span>{label}</span>
                   </SidebarMenuButton>
+                  {id === "channels" && section === "channels" && (
+                    <SidebarMenuSub aria-label="Channels">
+                      {CHANNEL_SECTIONS.map((ch) => (
+                        <SidebarMenuSubItem key={ch.id}>
+                          <SidebarMenuSubButton isActive={channelSection(pagePath) === ch.id} href={deskHref(ch.path)}>
+                            <span>{ch.label}</span>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  )}
                   {id === "agent" && section === "agent" && (
                     <SidebarMenuSub aria-label="Agent">
                       {AGENT_SECTIONS.map((a) => (
@@ -131,7 +144,8 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
                     </SidebarMenuSub>
                   )}
                 </SidebarMenuItem>
-              ))}
+                );
+              })}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
@@ -424,20 +438,42 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <SidebarMenu aria-label="Main">
               {NAV.map((item) => {
                 const { id, label, Icon } = item;
-                const dot = id === "widget" && notInstalled;
+                const dot = id === "channels" && notInstalled;
                 const href = "href" in item ? item.href : `/${id}`;
                 return (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
                     isActive={section === id && !settingsOpen}
-                    tooltip={dot ? `${label} (not installed yet)` : label}
+                    tooltip={dot ? `${label} (chat widget not installed yet)` : label}
                     render={<a href={deskHref(href)} aria-current={section === id && !settingsOpen ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(href); }} />}
                   >
                     <Icon />
-                    <span>{label}{dot && <span className="sr-only">, not installed yet</span>}</span>
+                    <span>{label}{dot && <span className="sr-only">, chat widget not installed yet</span>}</span>
                   </SidebarMenuButton>
                   {dot && <span className="nav-dot" aria-hidden="true" />}
                   {id === "visitors" && visitors && visitors.length > 0 && <SidebarMenuBadge className="nav-count">{visitors.length}</SidebarMenuBadge>}
+                  {/* The channels open under it while you're there, like the Agent's parts. */}
+                  {id === "channels" && section === "channels" && !settingsOpen && (
+                    <SidebarMenuSub aria-label="Channels">
+                      {CHANNEL_SECTIONS.map((ch) => {
+                        const active = channelSection(pagePath) === ch.id;
+                        const chDot = ch.id === "widget" && notInstalled;
+                        return (
+                          <SidebarMenuSubItem key={ch.id}>
+                            <SidebarMenuSubButton
+                              isActive={active}
+                              href={deskHref(ch.path)}
+                              aria-current={active ? "page" : undefined}
+                              onClick={(e) => { e.preventDefault(); navigate(ch.path); }}
+                            >
+                              <span>{ch.label}{chDot && <span className="sr-only">, not installed yet</span>}</span>
+                              {chDot && <span className="ml-auto size-2 shrink-0 rounded-full bg-[var(--warning)]" aria-hidden="true" />}
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
+                    </SidebarMenuSub>
+                  )}
                   {/* The Agent's parts open under it while you're there (Chatbase's "Build"); the icon rail shows only Agent. */}
                   {id === "agent" && section === "agent" && !settingsOpen && (
                     <SidebarMenuSub aria-label="Agent">
@@ -566,10 +602,16 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <VisitorsPage workspaceId={workspace.workspaceId} visitors={visitors} />
       ) : section === "dashboard" ? (
         <ReportsPage workspaceId={workspace.workspaceId} />
-      ) : section === "widget" ? (
-        <WidgetPage workspaceId={workspace.workspaceId} canEdit={canEdit} tab={widgetTab} install={install} reloadInstall={reloadOnboarding} />
-      ) : section === "appearance" ? (
-        <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+      ) : section === "channels" ? (
+        channelSection(pagePath) === "widget" ? (
+          <WidgetPage workspaceId={workspace.workspaceId} canEdit={canEdit} tab={widgetTab} install={install} reloadInstall={reloadOnboarding} />
+        ) : channelSection(pagePath) === "appearance" ? (
+          <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+        ) : channelSection(pagePath) === "email" ? (
+          <EmailChannelPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+        ) : (
+          <ChannelsOverview workspaceId={workspace.workspaceId} install={install} />
+        )
       ) : section === "connect" ? (
         <ConnectPage workspaceId={workspace.workspaceId} tab={pagePath.startsWith("/connect/tokens") ? "tokens" : "connect"} />
       ) : section === "agent" ? (

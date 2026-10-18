@@ -4,6 +4,7 @@ import { labelAllWorkspaces } from "./ai/topics.ts";
 import { ai, handleChatGPTCallback } from "./routes/ai.ts";
 import { auth } from "./routes/auth.ts";
 import { conversations } from "./routes/conversations.ts";
+import { email } from "./routes/email.ts";
 import { files } from "./routes/files.ts";
 import { inbox } from "./routes/inbox.ts";
 import { issues } from "./routes/issues.ts";
@@ -16,6 +17,7 @@ import { visitors } from "./routes/visitors.ts";
 import { workspaces } from "./routes/workspaces.ts";
 import { agent } from "./routes/agent.ts";
 import { frameAncestors } from "./lib/origins.ts";
+import { receiveEmail } from "./lib/email.ts";
 import { handleMcp } from "./mcp/route.ts";
 import { HttpError, type AppEnv } from "./types.ts";
 
@@ -63,6 +65,7 @@ app.route("/", metrics);
 app.route("/", topics);
 app.route("/", issues);
 app.route("/", notifications);
+app.route("/", email);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 
@@ -99,6 +102,10 @@ export default {
     // D-86: the MCP server for a person's own AI (API token; JSON-RPC over POST).
     if (pathname === "/mcp") return handleMcp(request, env, ctx);
     return app.fetch(request, env, ctx);
+  },
+  // C-02: a customer's reply to an email from the desk (Email Routing sends the reply domain here).
+  async email(message, env) {
+    await receiveEmail(message, env);
   },
   // Website crawling (K-01).
   async queue(batch, env) {

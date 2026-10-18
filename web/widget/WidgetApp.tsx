@@ -315,6 +315,8 @@ interface WidgetConfig extends WidgetLook {
   hours: { open: boolean; back: string | null } | null;
   /** W-12: ask for a rating when a conversation is resolved. */
   csat: boolean;
+  /** C-02: the desk emails replies to a customer who has left (else the email is only for the team). */
+  emailReplies?: boolean;
 }
 
 /** In a frame on a host page (the loader's, or the Appearance preview), as the morphing island (D-39). */
@@ -682,6 +684,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const threadProps = {
     api,
     csat: config.csat,
+    emailReplies: config.emailReplies === true,
     offerAllowAlways: (config.pageControlConfirm ?? "allow-always") === "allow-always",
     away: Boolean(config.hours && !config.hours.open),
     placeholder: config.placeholder,
@@ -888,6 +891,7 @@ function WidgetThread({
   conversationId,
   summary,
   csat,
+  emailReplies,
   offerAllowAlways,
   away,
   opener,
@@ -908,6 +912,7 @@ function WidgetThread({
   conversationId: string | null;
   summary: ConversationSummary | null;
   csat: boolean;
+  emailReplies: boolean;
   /** AI-32: the desk lets visitors choose "Always allow" for page control. */
   offerAllowAlways: boolean;
   away: boolean;
@@ -1443,7 +1448,7 @@ function WidgetThread({
         <CsatAsk api={api} conversationId={conversationId} rated={summary.csat.ratedThisRound} onConversation={onConversation} />
       )}
       {conversationId && (
-        <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
+        <EmailAsk api={api} conversationId={conversationId} contact={contact} away={away} emailReplies={emailReplies} waiting={handling === "human" ? lastVisitorWaiting(thread.messages) : null} />
       )}
     </>
   );
@@ -1837,12 +1842,15 @@ function EmailAsk({
   conversationId,
   contact,
   away,
+  emailReplies,
   waiting,
 }: {
   api: WidgetApi;
   conversationId: string;
   contact: ConversationSummary["contact"] | null;
   away: boolean;
+  /** C-02: the desk sends replies by email; otherwise the team gets back to them by email themselves. */
+  emailReplies: boolean;
   waiting: Message | null;
 }) {
   const [now, setNow] = useState(Date.now());
@@ -1870,7 +1878,13 @@ function EmailAsk({
     return () => clearTimeout(timer);
   }, [waiting, away, due]);
 
-  if (saved) return <div className="w-email small"><span>Thanks. If you've gone by the time we reply, we'll email you at <strong>{saved}</strong>.</span></div>;
+  if (saved) {
+    return (
+      <div className="w-email small">
+        <span>{emailReplies ? <>Thanks. If you've gone by the time we reply, we'll email the reply to <strong>{saved}</strong>. You can answer it by email too.</> : <>Thanks. If you've gone by the time we reply, the team will get back to you at <strong>{saved}</strong>.</>}</span>
+      </div>
+    );
+  }
   if (dismissed || !waiting || !contact || contact.verified || contact.email) return null;
   if (!away && !nobodyOnline && now < due) return null;
 
@@ -1891,7 +1905,7 @@ function EmailAsk({
   return (
     <form className="w-email" onSubmit={submit}>
       <div className="row">
-        <span className="small strong">{away ? "We're away right now." : nobodyOnline ? "Nobody's online right now." : "Sorry for the wait."} Get the reply by email?</span>
+        <span className="small strong">{away ? "We're away right now." : nobodyOnline ? "Nobody's online right now." : "Sorry for the wait."} {emailReplies ? "Get the reply by email?" : "Leave your email for the team?"}</span>
         <span className="spacer" />
         <button type="button" className="ghost icon small w-x" data-cuelume-close data-cuelume-emphasis="subtle" aria-label="No thanks" onClick={() => setDismissed(true)}>×</button>
       </div>

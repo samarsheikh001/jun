@@ -40,6 +40,8 @@ export interface MessageMeta {
   widgets?: MessageWidget[];
   /** W-09: on a visitor message sent by pressing a card's button (or submitting its form). */
   widgetAction?: WidgetActionMeta;
+  /** C-02: the customer wrote this by replying to an email from the desk. */
+  via?: "email";
 }
 
 export type IssueProvider = "github" | "linear";

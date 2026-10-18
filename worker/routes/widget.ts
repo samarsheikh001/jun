@@ -22,6 +22,8 @@ import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { loadAgentConfig } from "../ai/config-store.ts";
 import { intentSkill } from "../ai/config.ts";
 import { islandLine } from "../../shared/island.ts";
+import { emailOn, emailSettings } from "../../shared/email.ts";
+import { canSendEmail } from "../lib/email.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
 // random token their browser keeps (sent as `X-Visitor-Token`, or as the second
@@ -110,6 +112,8 @@ widget.get("/widget/:key/config", async (c) => {
       openers: s.proactive === false ? [] : forLoader(storedOpeners(s.openers)),
       // W-12: ask for a rating when a conversation is resolved (on unless turned off).
       csat: s.csat !== false,
+      // C-02: replies go out by email (the widget's email ask says so only then).
+      emailReplies: emailOn(emailSettings(s.email), canSendEmail(c.env)),
       // AI-32 (D-93): the loader loads page control (unless the snippet says data-page-control="off").
       pageControl: s.pageControl !== false,
       // AI-32: whether the Confirm card offers "Always allow" (the frame), or asks / runs (the DO decides).
