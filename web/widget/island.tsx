@@ -16,15 +16,21 @@ import { playNow } from "../lib/sound.ts";
 const postToHost = (message: unknown) => window.parent !== window && window.parent.postMessage(message, "*");
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** How many times the hint types through the suggested questions before it stays still. */
+const TYPE_ROUNDS = 2;
+
 /**
  * The resting pill's hint: types each suggested question out (about 42ms a letter), then the next
- * one every 5.7s. Without suggestions it shows the placeholder.
+ * one every 5.7s, TYPE_ROUNDS times through, then rests on the first (D-105: each letter is a
+ * render, which kept a slow device busy for as long as the page stayed open). Without suggestions
+ * it shows the placeholder.
  */
 function Typewriter({ phrases, fallback }: { phrases: string[]; fallback: string }) {
   const [index, setIndex] = useState(0);
   const [length, setLength] = useState(0);
-  const phrase = phrases.length ? phrases[index % phrases.length]! : fallback;
-  const animate = phrases.length > 0 && !reducedMotion();
+  const done = index >= phrases.length * TYPE_ROUNDS;
+  const phrase = phrases.length ? phrases[done ? 0 : index % phrases.length]! : fallback;
+  const animate = phrases.length > 0 && !done && !reducedMotion();
 
   useEffect(() => {
     if (!animate) return;
