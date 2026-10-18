@@ -389,8 +389,8 @@ window.JunDesk?.logout();
  */
 /**
  * D-103: how to build a good card, for a person's AI over the MCP (resource jun://guide/widget-design).
- * The rules follow our renderer (web/widget/chatkit/) and the support templates
- * (shared/support-widget-templates.ts): keep them in step.
+ * The rules follow our renderer (web/widget/chatkit/) and ChatKit Studio's gallery
+ * (shared/widget-templates.ts): keep them in step.
  */
 export const WIDGET_DESIGN_GUIDE = `# Building a good card
 
@@ -399,17 +399,15 @@ A widget is a card in the customer's chat: the answer to one question, at the ch
 
 ## The loop
 
-1. **Start from a template.** \`widget_templates\` with \`for\` (what the card shows, like "the customer's
-   invoices") lists the closest first. Jun's support templates (account_overview, plan_picker,
-   order_status, order_list, invoices, refund_request, usage_limits, ticket_status, confirm_change)
-   already follow these rules. \`create_widget { name, fromTemplate }\` copies one.
+1. **Start from a template.** \`widget_templates\` with \`for\` (what the card shows) lists ChatKit
+   Studio's gallery cards closest first; \`create_widget { name, fromTemplate }\` copies one. Even when
+   none shows your data, open two or three (\`get_widget_template\`) and copy how they're built.
 2. **Fit it to the real data.** Call the action (\`try_action\`) and shape the template to its JSON:
    rename fields, drop rows the result doesn't have, keep the layout. Put that result in \`sample\` and
    update \`jsonSchema\` to match. Add \`states\` for the cases that look different (empty, overdue,
    cancelled, past due).
-3. **Rename the buttons' actions.** A template's \`tool:upgrade_plan\`, \`tool:order_status\`,
-   \`tool:request_refund\` and \`tool:apply_change\` are placeholders: point them at your own actions, with
-   a payload holding what the action needs.
+3. **Point the buttons at your actions.** A gallery card's actions (\`calendar.add\`, …) are examples:
+   replace them with \`tool:<your action>\` and a payload holding what the action needs.
 4. **Look at it.** \`preview_widget\` for the sample and each state (\`state\`), in light and dark
    (\`theme\`). Read the picture, not just "No problems". Fix what looks wrong and preview again.
 5. **Connect it.** \`update_action { name, widget }\`, then \`test_chat\` with a question that should show it.
@@ -470,7 +468,7 @@ has one thing the eye lands on first, and so should yours.
 - Words say what happens: "Switch to Pro", "Pay now", "Request refund". Not "Submit" or "OK".
 - A button that changes something runs \`tool:<action>\`; the action's \`widget_done\` line tells the
   customer it worked. For a change that needs a yes, use the Card's own \`confirm\` and \`cancel\`
-  (cancel \`{"type":"dismiss"}\`), like confirm_change: an icon in a coloured circle, the question,
+  (cancel \`{"type":"dismiss"}\`), like the gallery's create_event: an icon in a coloured circle, the question,
   and what changes (from with \`"lineThrough":true\` → to) on a soft panel, plus what it costs.
 - Forms: \`"asForm":true\` on the Card with \`confirm\`, a \`Label\` over each field (\`fieldName\`), and
   \`"required":true\` on what the action needs. A \`Select\` for a known set of answers.

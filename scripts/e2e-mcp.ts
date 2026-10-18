@@ -159,12 +159,8 @@ await step("create_action (httpbin), create_task using it, create_widget from a 
   assert.match(task, /add task mcp-refunds/);
   const uses = await ok("task_uses", { name: "mcp-refunds" });
   assert.match(uses, /mcp_order_lookup/);
-  // D-103: the closest template first, Jun's support templates before ChatKit's gallery.
-  assert.match(await ok("widget_templates", { for: "the customer's order status" }), /^Closest first:\n- order_status:/);
-  assert.match(await ok("widget_templates"), /^Support templates[\s\S]*- invoices:[\s\S]*ChatKit Studio's gallery:[\s\S]*- ride_status:/);
-  const support = await ok("create_widget", { name: "mcp_invoices", fromTemplate: "invoices" });
-  assert.match(support, /add widget mcp_invoices/);
-  assert.match(await ok("preview_widget", { name: "mcp_invoices", state: "Overdue" }), /^No problems\./);
+  // D-103: the closest template first.
+  assert.match(await ok("widget_templates", { for: "where is my flight" }), /^Closest first:\n- flight_tracker:/);
   const widget = await ok("create_widget", { name: "mcp_ride", fromTemplate: "ride_status", title: "Your ride" });
   assert.match(widget, /add widget mcp_ride/);
   const preview = await ok("preview_widget", { name: "mcp_ride" });

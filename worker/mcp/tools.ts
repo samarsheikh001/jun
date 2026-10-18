@@ -1007,7 +1007,7 @@ const WIDGETS: Tool[] = [
     title: "Create a widget",
     description:
       "Adds a widget (a card). Start from the closest template (fromTemplate; widget_templates with `for` finds it), then change its data and look; a template and sample of your own only when none is close. Show it from an action with update_action widget: <name>. Rename a template's tool:<name> buttons to your own actions.",
-    inputSchema: schema({ name: S.string("File name: a lowercase letter, then lowercase letters, digits, _ and -."), fromTemplate: S.string("A template's id, like order_status or invoices."), ...WIDGET_FIELDS, ...SAVE }, ["name"]),
+    inputSchema: schema({ name: S.string("File name: a lowercase letter, then lowercase letters, digits, _ and -."), fromTemplate: S.string("A gallery template's id, like flight_tracker."), ...WIDGET_FIELDS, ...SAVE }, ["name"]),
     annotations: WRITE,
     run: (ctx, args) =>
       commit(ctx, args, (files) => {
@@ -1057,8 +1057,8 @@ const WIDGETS: Tool[] = [
     name: "widget_templates",
     title: "Widget templates",
     description:
-      "Ready cards to start from: Jun's support templates (account, plans, order status, orders, invoices, refund form, usage, ticket, confirm a change) and ChatKit Studio's gallery. Pass `for` (what the card shows) to get the closest first. create_widget fromTemplate copies one; get_widget_template shows its file.",
-    inputSchema: schema({ for: S.string("Optional: what the card is for, like \"the customer's invoices\" or \"confirm a plan change\".") }),
+      "ChatKit Studio's gallery of ready cards (flight tracker, events, purchases, charts…): id, name, what it shows and its data's parameters. Pass `for` (what the card shows) to get the closest first. create_widget fromTemplate copies one; get_widget_template shows its file.",
+    inputSchema: schema({ for: S.string("Optional: what the card is for, like \"a purchase confirmation\" or \"usage over the last days\".") }),
     annotations: READ,
     async run(_ctx, args) {
       const request = str(args, "for") ?? "";
@@ -1075,11 +1075,10 @@ const WIDGETS: Tool[] = [
       };
       const next = `\nStart from the closest one: create_widget { name, fromTemplate }, change its data to your action's result (update_widget), then preview_widget and look at the picture. ${WIDGET_DESIGN_GUIDE_URI} has the rules for a good card.`;
       if (request) {
-        if (!found.length) return done(`No template matches "${request}". Call widget_templates without \`for\` to see them all, or start from the closest support template.`);
+        if (!found.length) return done(`No template matches "${request}". Call widget_templates without \`for\` to see them all.`);
         return done(`Closest first:\n${found.slice(0, 6).map(lineOf).join("\n")}${next}`);
       }
-      const group = (g: WidgetTemplate["group"]) => found.filter((t) => t.group === g).map(lineOf).join("\n");
-      return done(`Support templates (Jun's own, for a support desk):\n${group("support")}\n\nChatKit Studio's gallery:\n${group("gallery")}${next}`);
+      return done(`${found.map(lineOf).join("\n")}${next}`);
     },
   }),
   tool({

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { findTemplates, WIDGET_TEMPLATES } from "./widget-templates.ts";
-import { checkExamples, parseWidgetFile, previewWidget, renderWidget } from "./widgets.ts";
+import { checkExamples, parseWidgetFile, previewWidget } from "./widgets.ts";
 
 // W-23: every template on the Widgets page's Templates tab is a working widget file.
 
@@ -22,29 +22,11 @@ test("widget templates: each parses, renders its sample and passes the widget ch
   }
 });
 
-// D-103: our support templates come first, each with states, a summary and words to find it by.
-test("support templates: listed first, with a summary, a schema and words to find them by", () => {
-  const support = WIDGET_TEMPLATES.filter((t) => t.group === "support");
-  assert.ok(support.length >= 9);
-  assert.deepEqual(WIDGET_TEMPLATES.slice(0, support.length), support, "support templates come first");
-  for (const t of support) {
-    const spec = parseWidgetFile(t.id, t.file);
-    assert.ok(spec.summary, `${t.id}: has a summary`);
-    assert.ok(t.tags.length >= 3, `${t.id}: has tags`);
-    for (const s of spec.states ?? []) assert.doesNotThrow(() => renderWidget(spec, s.data), `${t.id}: state ${s.name} renders`);
-    // Soft tiles and coloured text come in light / dark pairs, so cards read in both chat themes.
-    const template = JSON.parse(t.file).template as string;
-    assert.ok(!/"(?:background|color)":"[a-z]+-(?:50|100|200|800|900|950)"/.test(template), `${t.id}: pale or deep palette colours come in light / dark pairs`);
-  }
-});
-
+// D-103: widget_templates' `for`.
 test("findTemplates: the closest template first", () => {
-  assert.equal(findTemplates("show the customer's invoices")[0]?.id, "invoices");
-  assert.equal(findTemplates("where is my order")[0]?.id, "order_status");
-  assert.equal(findTemplates("upgrade plan")[0]?.id, "plan_picker");
-  assert.equal(findTemplates("refund form")[0]?.id, "refund_request");
-  assert.equal(findTemplates("api usage quota")[0]?.id, "usage_limits");
-  assert.equal(findTemplates("weather")[0]?.group, "gallery");
+  assert.equal(findTemplates("where is my flight")[0]?.id, "flight_tracker");
+  assert.equal(findTemplates("weather")[0]?.id.startsWith("weather"), true);
+  assert.equal(findTemplates("a calendar event")[0]?.id.includes("event"), true);
   assert.equal(findTemplates("").length, WIDGET_TEMPLATES.length);
   assert.deepEqual(findTemplates("xyzzy"), []);
 });

@@ -6,23 +6,15 @@
 // OpenAI's examples; the gallery states no licence: check before launch, like the agent guide (D-52).
 // The dashboard loads it only when the Templates tab opens (a lazy chunk); the MCP serves it too.
 
-// D-103: our own support templates (shared/support-widget-templates.ts) come first.
-
-import { SUPPORT_TEMPLATES } from "./support-widget-templates.ts";
-
 export interface WidgetTemplate {
   id: string;
   name: string;
   description: string;
-  /** support: ours, for a support desk's cards; gallery: ChatKit Studio's. */
-  group: "support" | "gallery";
-  /** Extra words `findTemplates` matches. */
-  tags: string[];
   /** The whole .widget file. */
   file: string;
 }
 
-const GALLERY: Omit<WidgetTemplate, "group" | "tags">[] = [
+export const WIDGET_TEMPLATES: WidgetTemplate[] = [
   {
     id: "flight_tracker",
     name: "Flight tracker",
@@ -139,18 +131,13 @@ const GALLERY: Omit<WidgetTemplate, "group" | "tags">[] = [
   },
 ];
 
-export const WIDGET_TEMPLATES: WidgetTemplate[] = [
-  ...SUPPORT_TEMPLATES.map((t) => ({ ...t, group: "support" as const })),
-  ...GALLERY.map((t) => ({ ...t, group: "gallery" as const, tags: [] })),
-];
-
 const words = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 const FILLER = new Set(["the", "and", "for", "with", "that", "this", "their", "them", "show", "shows", "card", "cards", "widget", "make", "want", "from", "into", "can", "our", "your"]);
 
 /**
- * The templates closest to what a card is for ("show the customer's invoices"): each word of the
- * request found in a template's tags counts 3, in its name 2, in its description 1; support
- * templates win ties. Best first, only those with a match; every template for an empty request.
+ * The templates closest to what a card is for (D-103, "a flight's status"): each word of the request
+ * found in a template's name counts 2, in its description 1. Best first, only those with a match;
+ * every template for an empty request.
  */
 export function findTemplates(request: string): WidgetTemplate[] {
   const asked = [...new Set(words(request))].filter((w) => (w.length > 2 || /\d/.test(w)) && !FILLER.has(w));
@@ -158,11 +145,10 @@ export function findTemplates(request: string): WidgetTemplate[] {
   const stem = (w: string) => w.replace(/(?:es|s)$/, "");
   const has = (pool: string[], w: string) => pool.some((p) => p === w || stem(p) === stem(w));
   return WIDGET_TEMPLATES.map((t, i) => {
-    const tags = t.tags.flatMap(words);
     const name = words(t.name);
     const description = words(t.description);
-    const score = asked.reduce((n, w) => n + (has(tags, w) ? 3 : 0) + (has(name, w) ? 2 : 0) + (has(description, w) ? 1 : 0), 0);
-    return { t, score: score + (score && t.group === "support" ? 0.5 : 0), i };
+    const score = asked.reduce((n, w) => n + (has(name, w) ? 2 : 0) + (has(description, w) ? 1 : 0), 0);
+    return { t, score, i };
   })
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || a.i - b.i)
