@@ -9,8 +9,9 @@ import { Button, buttonVariants } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
-import { ChatIcon, MailIcon, PaletteIcon, SlackIcon } from "@/components/icons";
+import { ChatIcon, CheckIcon, ExternalLinkIcon, MailIcon, PaletteIcon, SlackIcon, XIcon } from "@/components/icons";
 import type { EmailSettings } from "../../shared/email.ts";
+import { CLOUDFLARE_TOKEN_PERMISSIONS, type SetupResult, type SetupStep } from "../../shared/email-setup.ts";
 
 // The Channels group (sidebar): the ways customers reach the desk. The chat widget's pages keep their
 // /appearance* URLs; email (C-02) is /channels/email; /channels lists them all.
@@ -112,22 +113,51 @@ function ChannelCard({ Icon, title, text, status, href, links = [] }: {
   );
 }
 
-/** /channels/email (C-02): where replies come from, where answers go, on/off, a test, and the Cloudflare setup. */
+/** GET /workspaces/:id/email/cloudflare (owners and admins, D-111). */
+interface CloudflareStatus {
+  connected: boolean;
+  last4: string | null;
+  domains: string[];
+  workerName: string | null;
+  tokenUrl: string;
+  error: string | null;
+}
+
+/**
+ * /channels/email (C-02): where replies come from, where answers go, on/off and a test. D-111: an
+ * admin connects Cloudflare once (a pasted API token) and one button does the Cloudflare setup; the
+ * wrangler commands stay under "Do it by hand".
+ */
 export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
   const base = `/workspaces/${workspaceId}/email`;
   const [status, setStatus] = useState<EmailStatus | null>(null);
+  const [cloudflare, setCloudflare] = useState<CloudflareStatus | null>(null);
+  const [steps, setSteps] = useState<SetupStep[] | null>(null);
   const [tested, setTested] = useState<string | null>(null);
   const save = useAction();
   const test = useAction();
   useEffect(() => {
     api<EmailStatus>(base).then(setStatus, () => {});
-  }, [base]);
+    if (canEdit) api<CloudflareStatus>(`${base}/cloudflare`).then(setCloudflare, () => {});
+  }, [base, canEdit]);
 
+  const fields = (form: HTMLFormElement) => {
+    const data = new FormData(form);
+    return { from: data.get("from"), fromName: data.get("fromName"), replyDomain: data.get("replyDomain"), workerName: data.get("workerName") ?? undefined };
+  };
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    const body = fields(e.currentTarget);
+    const setUp = (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "setup";
     save.run(async () => {
-      setStatus(await api<EmailStatus>(base, { method: "PUT", body: { from: form.get("from"), fromName: form.get("fromName"), replyDomain: form.get("replyDomain") } }));
+      setSteps(null);
+      if (setUp) {
+        const r = await api<SetupResult & { status: EmailStatus }>(`${base}/cloudflare/setup`, { body });
+        setSteps(r.steps);
+        setStatus(r.status);
+      } else {
+        setStatus(await api<EmailStatus>(base, { method: "PUT", body: { from: body.from, fromName: body.fromName, replyDomain: body.replyDomain } }));
+      }
     });
   };
   const toggle = (enabled: boolean) => save.run(async () => setStatus(await api<EmailStatus>(base, { method: "PUT", body: { enabled } })));
@@ -140,11 +170,14 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
   const domain = s?.from ? s.from.slice(s.from.indexOf("@") + 1) : "acme.com";
   const replyDomain = s?.replyDomain || `reply.${domain}`;
   const off = !canEdit || !status;
+  const connected = Boolean(cloudflare?.connected && !cloudflare.error);
 
   return (
     <div className="page-tabs">
       <div className="page-tabs-head"><h1>Email</h1></div>
       <div className="page-settings settings-sections">
+        {canEdit && <CloudflareCard base={base} status={cloudflare} onChange={setCloudflare} />}
+
         <SettingsCard
           title="Replies by email"
           description={<>
@@ -156,7 +189,7 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
           action={status ? <Badge variant={status.on ? "default" : "secondary"}>{status.on ? "On" : s?.from ? "Off" : "Not set up"}</Badge> : <Skeleton className="h-5 w-16 rounded-full" />}
         >
           <form onSubmit={submit} key={status ? "loaded" : "loading"}>
-            <SettingRow label="Replies come from" description={<>An address on a domain onboarded to Cloudflare Email Sending.</>} htmlFor="email-from">
+            <SettingRow label="Replies come from" description={<>An address on a domain in your Cloudflare account, e.g. support@{domain}.</>} htmlFor="email-from">
               {status ? <Input id="email-from" name="from" type="email" placeholder="support@acme.com" defaultValue={s?.from} disabled={off} maxLength={320} /> : <Skeleton className="h-9 w-64" />}
             </SettingRow>
             <SettingRow label="Sender name" description={<>Empty: {workspaceName}.</>} htmlFor="email-name">
@@ -164,14 +197,20 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
             </SettingRow>
             <SettingRow
               label="Answers go to"
-              description={<>A domain whose mail Cloudflare Email Routing sends to this desk. Each conversation gets its own address there{status?.replyExample ? <>, like <code>{status.replyExample}</code></> : null}. Use a subdomain if your main domain's mail is elsewhere (Google, Microsoft).</>}
+              description={<>A domain (or subdomain) in the same account whose mail comes to this desk. Each conversation gets its own address there{status?.replyExample ? <>, like <code>{status.replyExample}</code></> : null}. Use a subdomain such as <code>reply.{domain}</code> if your mail is elsewhere (Google, Microsoft): nothing about it changes.</>}
               htmlFor="email-reply"
             >
-              {status ? <Input id="email-reply" name="replyDomain" placeholder="reply.acme.com" defaultValue={s?.replyDomain} disabled={off} maxLength={253} /> : <Skeleton className="h-9 w-64" />}
+              {status ? <Input id="email-reply" name="replyDomain" placeholder={`reply.${domain}`} defaultValue={s?.replyDomain} disabled={off} maxLength={253} /> : <Skeleton className="h-9 w-64" />}
             </SettingRow>
+            {connected && !cloudflare?.workerName && (
+              <SettingRow label="This desk's Worker" description="Couldn't tell from this address. Its name in Cloudflare → Workers & Pages (jun-desk unless you renamed it)." htmlFor="email-worker">
+                <Input id="email-worker" name="workerName" placeholder="jun-desk" defaultValue="jun-desk" maxLength={63} />
+              </SettingRow>
+            )}
             {canEdit && (
               <div className="flex flex-wrap items-center gap-2 pt-2">
-                <Button disabled={off || save.busy}>Save</Button>
+                {connected && <Button name="action" value="setup" disabled={off || save.busy}>{save.busy ? "Setting up…" : "Set up and turn on"}</Button>}
+                <Button variant={connected ? "outline" : "default"} name="action" value="save" disabled={off || save.busy}>Save</Button>
                 <Button type="button" variant="outline" disabled={off || test.busy || !s?.from} onClick={sendTest}>Send me a test</Button>
                 {tested && <span className="muted small">Sent to {tested}. Check that it arrived (and not in spam).</span>}
               </div>
@@ -179,32 +218,99 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
             {save.error && <p className="error small">{save.error}</p>}
             {test.error && <p className="error small">{test.error}</p>}
           </form>
-          <SettingRow label="Email replies to customers who've left" description="Needs the address and domain above, and the Cloudflare setup below.">
+          {steps && <SetupSteps steps={steps} />}
+          <SettingRow label="Email replies to customers who've left" description={connected ? "Set up and turn on does this for you." : "Needs the addresses above, set up in Cloudflare."}>
             {status ? <Switch checked={s?.enabled === true} disabled={off || save.busy} onCheckedChange={toggle} aria-label="Email replies" /> : <Skeleton className="h-5 w-9 rounded-full" />}
           </SettingRow>
           {status && s?.enabled && status.problems.length > 0 && <p className="error small">{status.problems.join(" ")}</p>}
         </SettingsCard>
 
-        <SettingsCard
-          title="Set it up in Cloudflare"
-          description={<>Once per domain, in the Cloudflare account this desk runs on. Sending to any address needs the Workers Paid plan; receiving is free.</>}
-        >
-          <ol className="list-decimal space-y-3 pl-5 small">
-            <li>
-              <strong>Sending.</strong> Onboard <code>{domain}</code> to Email Sending (Cloudflare adds the SPF and DKIM records):
-              <pre className="mt-1 overflow-x-auto rounded-md bg-muted p-2"><code>npx wrangler email sending enable {domain}</code></pre>
-            </li>
-            <li>
-              <strong>Receiving.</strong> Turn on Email Routing for <code>{replyDomain}</code>, then add a catch-all rule that sends its mail to this desk's Worker
-              (dashboard: Email Service → Email Routing → {replyDomain} → Routing rules → Catch-all → Send to a Worker):
-              <pre className="mt-1 overflow-x-auto rounded-md bg-muted p-2"><code>npx wrangler email routing enable {replyDomain}</code></pre>
-            </li>
-            <li><strong>Check.</strong> Save the addresses above, send yourself a test, then turn email replies on.</li>
-          </ol>
+        <SettingsCard title="Do it by hand" description="Instead of connecting Cloudflare: once per domain, in the Cloudflare account this desk runs on.">
+          <details>
+            <summary className="small cursor-pointer">Show the steps</summary>
+            <ol className="mt-3 list-decimal space-y-3 pl-5 small">
+              <li>
+                <strong>Sending.</strong> Onboard <code>{domain}</code> to Email Sending (Cloudflare adds the SPF and DKIM records):
+                <pre className="mt-1 overflow-x-auto rounded-md bg-muted p-2"><code>npx wrangler email sending enable {domain}</code></pre>
+              </li>
+              <li>
+                <strong>Receiving.</strong> Turn on Email Routing for <code>{replyDomain}</code>, turn on subaddressing (Email Routing → Settings), and add a rule sending <code>reply@{replyDomain}</code> to this desk's Worker:
+                <pre className="mt-1 overflow-x-auto rounded-md bg-muted p-2"><code>npx wrangler email routing enable {replyDomain}</code></pre>
+              </li>
+              <li><strong>Check.</strong> Save the addresses above, send yourself a test, then turn email replies on.</li>
+            </ol>
+          </details>
           {status && !status.canSend && <p className="error small mt-3">This desk was deployed without the <code>send_email</code> binding, so it can't send. Update Jun and deploy again.</p>}
-          {!status && <p className="small mt-3"><SkelText width={180} /></p>}
+          <p className="muted small mt-3">Sending to any address needs the Workers Paid plan; receiving is free.</p>
         </SettingsCard>
       </div>
     </div>
+  );
+}
+
+/** D-111: connect Cloudflare with an API token made from a link that ticks the permissions. */
+function CloudflareCard({ base, status, onChange }: { base: string; status: CloudflareStatus | null; onChange: (s: CloudflareStatus) => void }) {
+  const connect = useAction();
+  const [token, setToken] = useState("");
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    connect.run(async () => {
+      onChange(await api<CloudflareStatus>(`${base}/cloudflare`, { method: "PUT", body: { token } }));
+      setToken("");
+    });
+  };
+  const disconnect = () => connect.run(async () => onChange(await api<CloudflareStatus>(`${base}/cloudflare`, { method: "DELETE" })));
+  return (
+    <SettingsCard
+      title="Connect Cloudflare"
+      description="So the desk can set email up for you: it turns on sending for your domain, receiving for the reply domain, and the rule that brings answers here. Once, with an API token."
+      action={status ? <Badge variant={status.connected && !status.error ? "default" : "secondary"}>{status.connected ? (status.error ? "Needs attention" : "Connected") : "Not connected"}</Badge> : <Skeleton className="h-5 w-24 rounded-full" />}
+    >
+      {!status ? (
+        <p className="small"><SkelText width={260} /></p>
+      ) : status.connected ? (
+        <div className="space-y-2">
+          <p className="small">
+            Token <code>•••• {status.last4}</code>
+            {status.domains.length > 0 && <> · sees {status.domains.slice(0, 6).join(", ")}{status.domains.length > 6 ? ` and ${status.domains.length - 6} more` : ""}</>}
+            {status.workerName && <> · this desk is the Worker <code>{status.workerName}</code></>}
+          </p>
+          {status.error && <p className="error small">{status.error}</p>}
+          <Button type="button" variant="outline" size="sm" disabled={connect.busy} onClick={disconnect}>Disconnect</Button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="space-y-3">
+          <ol className="list-decimal space-y-2 pl-5 small">
+            <li>
+              <a href={status.tokenUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>Create a token in Cloudflare <ExternalLinkIcon /></a>
+              <p className="muted mt-1">It opens with these ticked: {CLOUDFLARE_TOKEN_PERMISSIONS.map((p) => p.label).join(", ")}. Leave "All zones", then Continue → Create.</p>
+            </li>
+            <li>
+              Paste it here:
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Input type="password" autoComplete="off" spellCheck={false} placeholder="Cloudflare API token" value={token} onChange={(e) => setToken(e.target.value)} className="max-w-sm" aria-label="Cloudflare API token" />
+                <Button disabled={connect.busy || token.trim().length < 20}>{connect.busy ? "Checking…" : "Connect"}</Button>
+              </div>
+            </li>
+          </ol>
+          <p className="muted small">The token stays on this desk (never shown again, not in the database) and is used only when you press Set up.</p>
+        </form>
+      )}
+      {connect.error && <p className="error small">{connect.error}</p>}
+    </SettingsCard>
+  );
+}
+
+/** What the setup did, step by step: ✓ with what changed, ✗ with what to do. */
+function SetupSteps({ steps }: { steps: SetupStep[] }) {
+  return (
+    <ul className="my-3 space-y-2 rounded-lg border p-3 small" aria-label="Setup steps">
+      {steps.map((step) => (
+        <li key={step.id} className="flex gap-2">
+          <span className={step.ok ? "text-primary" : "text-destructive"} aria-label={step.ok ? "Done" : "Failed"}>{step.ok ? <CheckIcon /> : <XIcon />}</span>
+          <span><strong>{step.label}.</strong> {step.detail}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

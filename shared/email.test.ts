@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   applyEmailPatch, DEFAULT_EMAIL_SETTINGS, emailOn, emailSettings, htmlToText, isAutomatic, newReplyToken, parseReplyAddress,
-  renderReplyEmail, replyAddress, replyText, sameMailbox, threadHeaders,
+  renderReplyEmail, replyAddress, replyRuleAddress, replyText, sameMailbox, threadHeaders,
 } from "./email.ts";
 
 test("settings: lenient read, strict change", () => {
@@ -26,7 +26,13 @@ test("reply addresses round-trip; others don't parse", () => {
   const address = replyAddress(token, "reply.acme.com");
   assert.deepEqual(parseReplyAddress(address), { token, domain: "reply.acme.com" });
   assert.deepEqual(parseReplyAddress(address.toUpperCase()), { token, domain: "reply.acme.com" }, "case-insensitive");
-  assert.deepEqual(parseReplyAddress(address.replace("@", "+x@")), { token, domain: "reply.acme.com" });
+  assert.equal(address, `reply+${token}@reply.acme.com`, "a subaddress of the routing rule's reply@");
+  assert.equal(replyRuleAddress("reply.acme.com"), "reply@reply.acme.com");
+  // The first addresses given out (c-<token>@, before D-111) still find their chat, +tag or not.
+  assert.deepEqual(parseReplyAddress(`c-${token}@reply.acme.com`), { token, domain: "reply.acme.com" });
+  assert.deepEqual(parseReplyAddress(`c-${token}+x@reply.acme.com`), { token, domain: "reply.acme.com" });
+  assert.equal(parseReplyAddress("reply@reply.acme.com"), null);
+  assert.equal(parseReplyAddress("reply+short@reply.acme.com"), null);
   assert.equal(parseReplyAddress("support@reply.acme.com"), null);
   assert.equal(parseReplyAddress("c-short@reply.acme.com"), null);
 });

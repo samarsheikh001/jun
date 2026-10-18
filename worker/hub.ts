@@ -187,6 +187,20 @@ export class WorkspaceHub extends DurableObject<Env> {
   }
 
   /**
+   * RPC (C-02, D-111): the Cloudflare API token an admin pasted in Channels → Email, for setting
+   * email up. Kept here like the tracker secrets: never D1, never returned by the API.
+   */
+  async cloudflareToken(): Promise<string | null> {
+    return (await this.ctx.storage.get<string>("cloudflare-token")) ?? null;
+  }
+
+  /** RPC (C-02): save or (null) remove the Cloudflare API token. */
+  async setCloudflareToken(value: string | null): Promise<void> {
+    if (value) await this.ctx.storage.put("cloudflare-token", value);
+    else await this.ctx.storage.delete("cloudflare-token");
+  }
+
+  /**
    * RPC (AI-24): the keys actions use ({secrets.NAME}) that an admin pasted on the Agent page, by
    * name. Kept here like the tracker secrets: never D1, never returned by the API.
    */

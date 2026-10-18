@@ -123,11 +123,13 @@ Each teammate turns them on in **Settings → Notifications** ("Turn on notifica
 
 ## Email replies (optional)
 
-When a customer has left the chat, the desk can email them the replies they haven't seen, and their answer to that email lands back in the same conversation. It's off until you set it up in **Channels → Email**:
+When a customer has left the chat, the desk can email them the replies they haven't seen, and their answer to that email lands back in the same conversation. It's off until you set it up in **Channels → Email**, all from the desk:
 
-1. **Sending** (needs the Workers Paid plan to send to anyone): onboard your domain to Cloudflare Email Sending, `npx wrangler email sending enable acme.com`, and enter a from address on it (`support@acme.com`).
-2. **Receiving** (free): turn on Email Routing for a reply domain (`npx wrangler email routing enable reply.acme.com`; a subdomain keeps your main domain's mail where it is) and add a catch-all rule that sends its mail to this desk's Worker. Enter that domain.
-3. Press **Send me a test**, then turn email replies on.
+1. **Connect Cloudflare:** press "Create a token in Cloudflare" (it opens with the right permissions ticked), create it and paste it back.
+2. Enter the address replies come from (`support@acme.com`) and a reply domain (`reply.acme.com`: a subdomain keeps your main domain's mail where it is), then press **Set up and turn on**. The desk turns on Email Sending and Email Routing for those domains and adds the rule that brings answers to this desk, and lists what it did.
+3. Press **Send me a test**.
+
+Sending to any address needs the Workers Paid plan; receiving is free. Rather not give the desk a token? "Do it by hand" on the same page has the `npx wrangler` steps.
 
 Each conversation gets its own reply address on that domain. Replies go out a couple of minutes after the last one, a few at once, never while the customer is still in the chat. Only the new part of an answer is kept (quotes and signatures are cut), attachments come along, out-of-office replies are ignored, and mail from any other address shows only to the team as a note. Without email set up, the widget still asks a waiting visitor for their address so your team can write back.
 

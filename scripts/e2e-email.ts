@@ -67,7 +67,7 @@ await step("settings: checked, admins only, and the widget promises email only o
   assert.equal(saved.status, 200, JSON.stringify(saved.json));
   assert.equal(saved.json.on, true);
   assert.equal(saved.json.settings.from, "support@acme.test");
-  assert.equal(saved.json.replyExample, `c-…@${replyDomain}`);
+  assert.equal(saved.json.replyExample, `reply+…@${replyDomain}`);
   assert.equal((await owner.call(`/widget/${widgetKey}/config`)).json.emailReplies, true);
   const test = await owner.call(`${base}/test`, { body: { to: `owner-${run}@acme.test` } });
   assert.equal(test.status, 200, JSON.stringify(test.json));
@@ -107,7 +107,7 @@ await step("replies to a customer who left go out as one email, and the team see
   assert.ok(!transcript.some((m) => /^Emailed /.test(m.body)), "the note stays with the team");
   const [row] = await sql<{ email_token: string }>(`SELECT email_token FROM conversations WHERE id = '${conversationId}'`);
   assert.match(row!.email_token, /^[a-z0-9]{24}$/);
-  replyTo = `c-${row!.email_token}@${replyDomain}`;
+  replyTo = `reply+${row!.email_token}@${replyDomain}`;
 });
 
 await step("the customer's email reply lands in the chat: new text only, files kept, conversation reopened", async () => {
@@ -145,7 +145,7 @@ await step("mail from another address is a note; automatic mail and unknown addr
   assert.equal((await deliver(customer, replyTo, mail(customer, replyTo, `a-${run}`, "I'm out of office.", "Auto-Submitted: auto-replied\n"))).status, 200);
   assert.equal((await agentMessages()).length, before, "an out-of-office is dropped quietly");
 
-  const unknown = await deliver(customer, `c-${"x".repeat(24)}@${replyDomain}`, mail(customer, "x", `u-${run}`, "hi"));
+  const unknown = await deliver(customer, `reply+${"x".repeat(24)}@${replyDomain}`, mail(customer, "x", `u-${run}`, "hi"));
   assert.notEqual(unknown.status, 200);
   assert.match(unknown.text, /No such address/);
   const wrongDomain = await deliver(customer, replyTo.replace(replyDomain, "other.test"), mail(customer, "x", `w-${run}`, "hi"));

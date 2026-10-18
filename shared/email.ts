@@ -91,7 +91,15 @@ export const emailOn = (settings: EmailSettings, canSend: boolean) => settings.e
 
 const TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const TOKEN_LENGTH = 24;
-const TOKEN_RE = new RegExp(`^c-([a-z0-9]{${TOKEN_LENGTH}})$`);
+/**
+ * The local part replies go to: `reply+<token>@domain`. Email Routing's subaddressing sends every
+ * `reply+…` address to one literal rule for `reply@`, which works on a subdomain too (a catch-all
+ * only covers a zone's apex, and would take over the owner's own catch-all).
+ */
+export const REPLY_LOCAL = "reply";
+const TOKEN_RE = new RegExp(`^${REPLY_LOCAL}\\+([a-z0-9]{${TOKEN_LENGTH}})$`);
+/** The first addresses given out (`c-<token>@`, before D-111): still accepted. */
+const OLD_TOKEN_RE = new RegExp(`^c-([a-z0-9]{${TOKEN_LENGTH}})$`);
 
 /** A conversation's reply token: 24 of [a-z0-9] (~124 bits), safe in an address's local part. */
 export function newReplyToken(): string {
@@ -105,14 +113,17 @@ export function newReplyToken(): string {
   return out;
 }
 
-export const replyAddress = (token: string, replyDomain: string) => `c-${token}@${replyDomain}`;
+export const replyAddress = (token: string, replyDomain: string) => `${REPLY_LOCAL}+${token}@${replyDomain}`;
 
-/** The token and domain in an address we gave out (`c-<token>@domain`, an optional `+tag` ignored), else null. */
+/** The address the routing rule matches (every reply address is a subaddress of it). */
+export const replyRuleAddress = (replyDomain: string) => `${REPLY_LOCAL}@${replyDomain}`;
+
+/** The token and domain in an address we gave out (`reply+<token>@domain`, or an old `c-<token>@domain` with an optional `+tag`), else null. */
 export function parseReplyAddress(address: string): { token: string; domain: string } | null {
   const at = address.lastIndexOf("@");
   if (at < 1) return null;
-  const local = address.slice(0, at).toLowerCase().replace(/\+.*$/, "");
-  const match = TOKEN_RE.exec(local);
+  const local = address.slice(0, at).toLowerCase();
+  const match = TOKEN_RE.exec(local) ?? OLD_TOKEN_RE.exec(local.replace(/\+.*$/, ""));
   return match ? { token: match[1]!, domain: domainOf(address) } : null;
 }
 
