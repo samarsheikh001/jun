@@ -22,10 +22,11 @@
  * Card actions with ChatKit's handler: "client" (D-51) come to the page, never to the server:
  *   JunDesk.onWidgetAction(function (a) { a.type; a.payload; a.values; a.widget; }) (returns a remover),
  *   or the "jundesk:widget-action" window event (same object as event.detail).
- *      / .reportError({ message, code? }). In island mode, "/" on the page opens it.
+ *      / .reportError({ message, code? }) / .track(name, props?). In island mode, "/" on the page opens it.
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
- * like everything else and kept in memory with the errors above.
+ * like everything else and kept with the errors above. track() records what the visitor did in your
+ * app ("export_started", { format: "csv" }) in the same trail, for the AI and your team.
  * Intents (AI-20): JunDesk.open({ intent: "cancel", onExit: function () { location.href = "/billing/cancel"; } })
  * opens a chat for a purpose. A task in your agent config defines the intent (tasks/<name>.md
  * frontmatter: intent, opening, replies, exit): the chat starts with its opening line and quick
@@ -469,6 +470,7 @@
   };
   var pendingOpener, onExit;
   function setOpen(next) {
+    reacted();
     open = next;
     if (open) hideNudge(), load(), openers = 0;
     frame.style.display = open ? "block" : "";
@@ -505,7 +507,8 @@
     if (type == "jun:proactive-shown") pendingOpener = null;
     if (type == "jun:open" || type == "jun:close") setOpen(type == "jun:open");
     // The card and island frames size and clip themselves (they know what they show); only our own frame gets here.
-    if (type == "jun:css") frame.style.cssText = e.data.css, frame.classList.add("sized");
+    // Our widget answering a click (opening, the island growing) is the page reacting: not a dead click.
+    if (type == "jun:css") frame.style.cssText = e.data.css, frame.classList.add("sized"), reacted();
     // AI-20: the intent's exit button ("Cancel anyway"): close, then hand back to the host app, once.
     // After a reload the page's onExit is gone: the chat still closes (the exit itself was recorded by the frame).
     if (type == "jun:exit") {
@@ -569,6 +572,21 @@
         var e = { kind: "app_error", message: redact(m, 300) };
         var c = typeof err.code == "string" && redact(err.code, 60).replace(/[^\w.-]/g, "");
         if (c) e.code = c;
+        push(e);
+      } catch (x) { /* never break the host page */ }
+    },
+    // What the visitor did in your app ("export_started", { format: "csv" }): joins the trail, so
+    // the AI and your team see it beside errors. Up to 10 properties: strings (masked, ≤ 100), numbers, booleans.
+    track: function (name, props) {
+      try {
+        name = typeof name == "string" && name.trim().slice(0, 60).replace(/[^\w.:\/ -]/g, "");
+        if (!name || !capture || !consented) return;
+        var e = { kind: "app_event", name: redact(name, 60) }, p = {}, n = 0;
+        for (var k in props) {
+          var v = props[k], t = typeof v;
+          if (n < 10 && /^[\w.-]{1,40}$/.test(k) && (t == "string" || t == "boolean" || t == "number" && isFinite(v))) p[k] = t == "string" ? redact(v, 100) : v, n++;
+        }
+        if (n) e.props = p;
         push(e);
       } catch (x) { /* never break the host page */ }
     },

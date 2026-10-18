@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { describeBrowser, describeIssueKind, describeTarget, formatDuration, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
+import { describeBrowser, describeIssueKind, describeProps, describeTarget, formatDuration, formatEventTime, isIssue, type DebugContext, type DebugEvent } from "../../shared/debug.ts";
 import type { AiAction, ConversationSummary } from "../../shared/protocol.ts";
 import { api } from "../api.ts";
 import { deskHref, navigate } from "../lib/router.ts";
@@ -69,6 +69,18 @@ function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) 
         <span>
           <strong>Stuck</strong> for {formatDuration(event.seconds ?? 0)} on <code>{event.url}</code>
           <div className="muted small">After {describeIssueKind(event.issue)}; no successful form submit since</div>
+        </span>
+      </li>
+    );
+  }
+  if (event.kind === "app_event") {
+    // V-15: something the visitor did in the app (JunDesk.track).
+    return (
+      <li className="ev">
+        <span className="ev-time">{time}</span>
+        <span>
+          <code>{event.name}</code>
+          {event.props && <div className="muted small">{describeProps(event.props)}</div>}
         </span>
       </li>
     );

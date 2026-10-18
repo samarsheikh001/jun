@@ -196,3 +196,19 @@ test("bots: crawlers, previews and headless browsers, not people", () => {
   for (const ua of ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"])
     assert.ok(!BOT_UA.test(ua), ua);
 });
+
+test("V-15 app events: a clean name and up to 10 simple properties, masked; not an issue", () => {
+  const ctx = sanitizeContext({
+    page: { url: "https://a.dev/reports", title: "Reports" },
+    events: [
+      { t: 1, kind: "app_event", name: "export_started<script>", props: { format: "csv", rows: 3, big: true, email: "pat@x.dev", nested: { a: 1 }, "bad key": 1, nan: Number.NaN } },
+      { t: 2, kind: "app_event", name: "  " },
+      { t: 3, kind: "app_event", name: "plan:upgraded", props: Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`k${i}`, i])) },
+    ],
+  })!;
+  assert.equal(ctx.events.length, 2);
+  assert.deepEqual(ctx.events[0], { t: 1, kind: "app_event", name: "export_startedscript", props: { format: "csv", rows: 3, big: true, email: "[email]" } });
+  assert.equal(Object.keys(ctx.events[1]!.props!).length, 10);
+  assert.equal(isIssue(ctx.events[0]!), false);
+  assert.match(describeEvents({ ...ctx, timezone: "UTC" })[0]!, /In the app: export_startedscript \(format: csv, rows: 3, big: true, email: \[email\]\)/);
+});

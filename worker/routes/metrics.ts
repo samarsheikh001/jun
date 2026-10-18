@@ -4,12 +4,14 @@ import {
   AI_OFF_HANDOFF_REASON,
   computeMetrics,
   MAX_METRIC_CONVERSATIONS,
+  MAX_STRUGGLE_SNAPSHOTS,
   parsePeriod,
   periodDays,
   previousPeriod,
   type ConversationFacts,
   type RatingRow,
   type ReplyRow,
+  type SnapshotEvents,
 } from "../../shared/metrics.ts";
 import { loadAiSettings } from "../ai/providers.ts";
 import { kickTopicLabelling } from "../ai/topics.ts";
@@ -68,7 +70,7 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
   const { since, until } = periodDays(now, days, timezone);
   const previous = previousPeriod(now, days, timezone);
   const db = c.env.DB;
-  const [[conversations, ratings, replies, members, before], ai] = await Promise.all([db.batch([
+  const [[conversations, ratings, replies, members, before, snapshots], ai] = await Promise.all([db.batch([
     db.prepare(CONVERSATION_FACTS).bind(workspaceId, since, until, MAX_METRIC_CONVERSATIONS + 1, AI_OFF_HANDOFF_REASON),
     db.prepare(
       `SELECT conversation_id AS conversationId, rating, CASE WHEN rating = 'bad' THEN comment END AS comment, created_at AS createdAt
@@ -83,6 +85,14 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
     db.prepare("SELECT u.id AS userId, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ?").bind(workspaceId),
     // The change against the period before: one count, no per-conversation facts.
     db.prepare("SELECT COUNT(*) AS n FROM conversations WHERE workspace_id = ? AND created_at >= ? AND created_at < ?").bind(workspaceId, previous.since, previous.until),
+    // A-08: the trails the loader sent with the period's chats (events only, not the whole context).
+    db.prepare(
+      `SELECT d.conversation_id AS conversationId, json_extract(d.context, '$.page.url') AS pageUrl, json_extract(d.context, '$.events') AS events
+       FROM debug_snapshots d JOIN conversations c ON c.id = d.conversation_id
+       WHERE d.workspace_id = ? AND c.workspace_id = d.workspace_id AND c.created_at >= ? AND c.created_at < ?
+         AND (d.context LIKE '%"rage_click"%' OR d.context LIKE '%"dead_click"%' OR d.context LIKE '%"stuck"%')
+       ORDER BY d.created_at DESC LIMIT ?`,
+    ).bind(workspaceId, since, until, MAX_STRUGGLE_SNAPSHOTS),
   ]), loadAiSettings(c.env, workspaceId)]);
 
   type Row = Omit<ConversationFacts, "resolved" | "aiOffHandoff"> & { resolved: number; aiOffHandoff: number };
@@ -100,6 +110,7 @@ metrics.get("/workspaces/:id/metrics", async (c) => {
       members: members!.results as unknown as { userId: string; name: string }[],
       truncated,
       previousTotal: (before!.results[0] as { n: number } | undefined)?.n ?? null,
+      snapshots: snapshots!.results as unknown as SnapshotEvents[],
     }),
   });
 });

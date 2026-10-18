@@ -7,6 +7,7 @@ import {
   isAiOffHandoff,
   MAX_START_PAGES,
   startPage,
+  struggleSpots,
   dayKey,
   durationStat,
   formatDuration,
@@ -376,4 +377,26 @@ test("topics (A-02): counts, share of labelled chats, AI resolution per topic", 
   // Ties sort by name; a topic with no AI conversations has no rate.
   const tie = computeMetrics(input({ conversations: [conv(NOW, login), conv(NOW, billing)] }));
   assert.deepEqual(tie.topics.list.map((t) => [t.name, t.aiResolutionRate]), [["Billing", null], ["Login", null]]);
+});
+
+// A-08: where visitors who chatted struggled.
+test("struggleSpots: by page and element, once per conversation, overlapping snapshots merged", () => {
+  const ev = (events: object[]) => JSON.stringify(events);
+  const exportRage = { t: 3, kind: "rage_click", count: 4, target: { tag: "button", id: "export", text: "Export CSV" } };
+  const out = struggleSpots([
+    // One chat, two messages: the second snapshot repeats the first trail.
+    { conversationId: "a", pageUrl: "https://app.acme.dev/home", events: ev([{ t: 1, kind: "navigation", url: "/reports/123" }, exportRage]) },
+    { conversationId: "a", pageUrl: "https://app.acme.dev/reports/123", events: ev([{ t: 1, kind: "navigation", url: "/reports/123" }, exportRage, { t: 9, kind: "dead_click", target: { tag: "a", text: "Help" } }]) },
+    // Another chat, same button on another report: grouped as /reports/:id.
+    { conversationId: "b", pageUrl: "https://app.acme.dev/reports/77", events: ev([{ ...exportRage, t: 5 }, { t: 6, kind: "stuck", url: "/import", seconds: 180, issue: "error" }]) },
+    { conversationId: "c", pageUrl: "https://app.acme.dev/", events: ev([{ t: 1, kind: "error", message: "x" }]) },
+    { conversationId: "d", pageUrl: null, events: "not json" },
+  ]);
+  assert.equal(out.conversations, 2);
+  assert.deepEqual(out.list, [
+    { kind: "rage_click", page: "https://app.acme.dev/reports/:id", target: 'button#export "Export CSV"', conversations: 2 },
+    { kind: "stuck", page: "https://app.acme.dev/import", target: null, conversations: 1 },
+    { kind: "dead_click", page: "https://app.acme.dev/reports/:id", target: 'a "Help"', conversations: 1 },
+  ]);
+  assert.deepEqual(struggleSpots([]), { list: [], conversations: 0 });
 });

@@ -47,7 +47,7 @@
           <button id="cancel">Cancel subscription</button>
           <span id="status" class="note"></span>
         </p>
-        <p class="note">Try it: click a button (one request fails, one throws a JavaScript error, and Export does nothing however often you click it), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
+        <p class="note">Try it: click a button (one request fails, one throws a JavaScript error, and Export does nothing however often you click it, though it tells the widget with <code>JunDesk.track("export_clicked", { format: "csv" })</code>), then ask in the chat "why can't I pay my invoice?". The widget shares what went wrong, masked, so the AI and your team can see it.</p>
         <p class="note">Cancel subscription opens the chat with the <code>cancel</code> intent (AI-20; needs a <code>tasks/….md</code> with <code>intent: cancel</code>, like the <code>jun init</code> starter). "Cancel anyway" closes it and runs this page's own cancel step.</p>
       </div>
       <div class="card" id="plans">
@@ -75,6 +75,10 @@
     </main>
     <script>
       // P1 demo: a payment request that fails with a 500, and a chart that throws.
+      // V-15: the app records what the visitor did; it joins the trail the AI and the team see.
+      document.getElementById("export").onclick = function () {
+        if (window.JunDesk && JunDesk.track) JunDesk.track("export_clicked", { format: "csv" });
+      };
       document.getElementById("pay").onclick = function () {
         document.getElementById("status").textContent = "Paying…";
         fetch("/api/demo/billing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ invoice: "inv_2041", email: "pat@customer.test" }) })

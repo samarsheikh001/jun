@@ -2,6 +2,8 @@
 // the CSAT ratings and per-teammate reply counts for the period, and this turns them into the
 // report the dashboard shows. Days are calendar days in the viewer's time zone (DST-safe).
 
+import { describeTarget, type DebugEvent } from "./debug.ts";
+
 export const METRIC_PERIODS = [7, 30, 90] as const;
 export type MetricPeriod = (typeof METRIC_PERIODS)[number];
 /** Most conversations a report reads; beyond this it covers the newest ones and says so. */
@@ -58,6 +60,84 @@ export interface MetricsInput {
   truncated: boolean;
   /** Conversations started in the period before this one (same length), for the change; optional for older callers. */
   previousTotal?: number | null;
+  /** A-08: the debug snapshots of the period's conversations (their events as stored JSON). */
+  snapshots?: SnapshotEvents[];
+}
+
+/** A-08: one debug snapshot's events (JSON text, as stored) and the page it was taken on. */
+export interface SnapshotEvents {
+  conversationId: string;
+  pageUrl: string | null;
+  events: string | null;
+}
+
+export type StruggleKind = "rage_click" | "dead_click" | "stuck";
+/** A-08: a page (grouped like startPage) and, for clicks, what was clicked; counted once per conversation. */
+export interface StruggleSpot {
+  kind: StruggleKind;
+  page: string;
+  target: string | null;
+  conversations: number;
+}
+/** Most spots "Where visitors struggle" lists. */
+export const MAX_STRUGGLES = 8;
+/** Most snapshots a report reads for A-08 (each message's snapshot repeats the trail; one conversation has a few). */
+export const MAX_STRUGGLE_SNAPSHOTS = 5_000;
+
+/**
+ * A-08: where visitors who chatted got frustrated: rage clicks, dead clicks and "stuck" pages
+ * from their trails, by page and element, each counted once per conversation. A click's page
+ * is the last page the trail visited before it (else the snapshot's page). Snapshots of one
+ * conversation overlap, so events are merged by time and kind first.
+ */
+export function struggleSpots(snapshots: SnapshotEvents[]): { list: StruggleSpot[]; conversations: number } {
+  const chats = new Map<string, { pageUrl: string | null; events: Map<string, DebugEvent> }>();
+  for (const snap of snapshots) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(snap.events ?? "[]");
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed)) continue;
+    let chat = chats.get(snap.conversationId);
+    if (!chat) chats.set(snap.conversationId, (chat = { pageUrl: snap.pageUrl, events: new Map() }));
+    for (const e of parsed as DebugEvent[]) if (e && typeof e.t === "number" && typeof e.kind === "string") chat.events.set(`${e.t}|${e.kind}`, e);
+  }
+  const spots = new Map<string, StruggleSpot>();
+  let affected = 0;
+  for (const chat of chats.values()) {
+    const base = chat.pageUrl ?? undefined;
+    const pageOf = (url: string | undefined) => {
+      try {
+        return url ? startPage(new URL(url, base).href) : null;
+      } catch {
+        return null;
+      }
+    };
+    let page = pageOf(base);
+    const seen = new Set<string>();
+    for (const e of [...chat.events.values()].sort((a, b) => a.t - b.t)) {
+      if (e.kind === "navigation") page = pageOf(e.url) ?? page;
+      if (e.kind !== "rage_click" && e.kind !== "dead_click" && e.kind !== "stuck") continue;
+      const at = e.kind === "stuck" ? pageOf(e.url) ?? page : page;
+      if (!at) continue;
+      const target = e.kind === "stuck" ? null : describeTarget(e.target);
+      const key = `${e.kind}|${at}|${target}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const spot = spots.get(key) ?? { kind: e.kind, page: at, target, conversations: 0 };
+      spot.conversations++;
+      spots.set(key, spot);
+    }
+    if (seen.size) affected++;
+  }
+  // Rage clicks first on a tie: they're the strongest sign.
+  const weight: Record<StruggleKind, number> = { rage_click: 0, stuck: 1, dead_click: 2 };
+  return {
+    list: [...spots.values()].sort((a, b) => b.conversations - a.conversations || weight[a.kind] - weight[b.kind] || a.page.localeCompare(b.page)).slice(0, MAX_STRUGGLES),
+    conversations: affected,
+  };
 }
 
 export interface DurationStat {
@@ -134,6 +214,8 @@ export interface MetricsReport {
   pages: { top: PageCount[]; withPage: number; withoutPage: number };
   /** A-02: every topic with conversations in the period, most first; `unlabeled`: chats with a visitor message and no topic yet. */
   topics: { list: TopicCount[]; labeled: number; unlabeled: number };
+  /** A-08: where visitors who chatted struggled; `conversations`: chats with any such spot. */
+  struggles: { list: StruggleSpot[]; conversations: number };
 }
 
 /** Most pages "Pages where chats start" lists. */
@@ -429,5 +511,6 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
         unlabeled,
       };
     })(),
+    struggles: struggleSpots(input.snapshots ?? []),
   };
 }

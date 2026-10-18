@@ -5,11 +5,12 @@
 
 /**
  * app_error: the host app's own words, from JunDesk.reportError({ message, code? }) (S-12).
+ * app_event: something the visitor did in the host app, from JunDesk.track(name, props?) (V-15).
  * rage_click: the same element clicked 3+ times within a second, with no DOM change (S-02).
  * dead_click: one click on a button or link and nothing on the page changed for 2.5 s (PostHog's rule).
  * stuck: same page for 3+ visible minutes after an issue, with no successful submit (S-13).
  */
-export type DebugEventKind = "error" | "network" | "navigation" | "app_error" | "rage_click" | "dead_click" | "stuck";
+export type DebugEventKind = "error" | "network" | "navigation" | "app_error" | "app_event" | "rage_click" | "dead_click" | "stuck";
 
 /**
  * rage_click / dead_click: what was clicked, never its value. `text` is the visible label of a button or
@@ -33,6 +34,10 @@ export interface DebugEvent {
   message?: string;
   /** app_error: the app's optional error code (`[\w.-]`, at most 60 chars). */
   code?: string;
+  /** app_event: its name (`[\w.:/ -]`, at most 60 chars). */
+  name?: string;
+  /** app_event: up to 10 properties; strings masked, at most 100 chars. */
+  props?: Record<string, string | number | boolean>;
   /** error: "file:line"; */
   source?: string;
   /** error: first lines of the stack. */
@@ -110,7 +115,7 @@ export function cleanUrl(input: unknown, pageOrigin?: string): string {
   }
 }
 
-const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error", "rage_click", "dead_click", "stuck"]);
+const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error", "app_event", "rage_click", "dead_click", "stuck"]);
 /** What can come before a `stuck` event (S-13). */
 const STUCK_AFTER = new Set<DebugEventKind>(["error", "network", "app_error", "rage_click"]);
 export const MAX_APP_ERROR = 300;
@@ -148,6 +153,30 @@ export function describeTarget(t: DebugTarget | undefined): string {
   return s;
 }
 
+export const MAX_EVENT_NAME = 60;
+const MAX_EVENT_PROPS = 10;
+
+/** V-15: up to 10 properties with `[\w.-]` keys; strings masked (≤ 100), finite numbers, booleans. */
+export function cleanProps(input: unknown): Record<string, string | number | boolean> | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const out: Record<string, string | number | boolean> = {};
+  let n = 0;
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (n >= MAX_EVENT_PROPS) break;
+    if (!/^[\w.-]{1,40}$/.test(k)) continue;
+    if (typeof v === "string") out[k] = redact(v, 100);
+    else if (typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v))) out[k] = v;
+    else continue;
+    n++;
+  }
+  return n ? out : null;
+}
+
+/** "format: csv, rows: 3". */
+export function describeProps(props: DebugEvent["props"]): string {
+  return Object.entries(props ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+}
+
 /** An app error code: masked, then only `[\w.-]`, at most 60 chars; "" when nothing's left. */
 export function cleanCode(input: unknown): string {
   return typeof input === "string" ? redact(input, 60).replace(/[^\w.-]/g, "") : "";
@@ -183,6 +212,16 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
       out.message = message;
       const code = cleanCode(ev.code);
       if (code) out.code = code;
+      events.push(out);
+      continue;
+    }
+    if (out.kind === "app_event") {
+      // V-15: only a name and a few simple properties, masked again.
+      const name = typeof ev.name === "string" ? redact(ev.name.trim().replace(/[^\w.:/ -]/g, ""), MAX_EVENT_NAME).trim() : "";
+      if (!name) continue;
+      out.name = name;
+      const props = cleanProps(ev.props);
+      if (props) out.props = props;
       events.push(out);
       continue;
     }
@@ -273,6 +312,7 @@ export function describeEvents(context: DebugContext, options: { codes?: boolean
       const outcome = e.status ? `HTTP ${e.status}` : `failed${e.message ? ` (${e.message})` : ""}`;
       return `[${at}] ${e.method ?? "GET"} ${e.url} → ${outcome}${e.durationMs != null ? ` in ${e.durationMs} ms` : ""}`;
     }
+    if (e.kind === "app_event") return `[${at}] In the app: ${e.name}${e.props ? ` (${describeProps(e.props)})` : ""}`;
     if (e.kind === "app_error") return `[${at}] The app reported an error: ${e.message}${options.codes && e.code ? ` (code ${e.code})` : ""}`;
     if (e.kind === "rage_click") return `[${at}] Clicked ${describeTarget(e.target)} ${e.count ?? 3} times in quick succession; the page didn't change`;
     if (e.kind === "dead_click") return `[${at}] Clicked ${describeTarget(e.target)}; nothing on the page changed for 2.5 s`;

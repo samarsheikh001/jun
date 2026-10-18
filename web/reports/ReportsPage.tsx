@@ -156,6 +156,45 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
   );
 }
 
+const STRUGGLE_WORDS = { rage_click: "Rage clicks", dead_click: "Clicks that did nothing", stuck: "Stuck after a problem" } as const;
+
+/** A-08: where visitors who chatted got frustrated (rage clicks, dead clicks, stuck), by page and element. */
+function Struggles({ struggles }: { struggles: MetricsReport["struggles"] }) {
+  const path = (page: string) => {
+    try {
+      return decodeURI(new URL(page).pathname);
+    } catch {
+      return page;
+    }
+  };
+  return (
+    <section className="dash-card">
+      <div className="dash-card-head"><h2>Where visitors struggle</h2></div>
+      {struggles.list.length === 0 ? (
+        <p className="muted small">No rage clicks, dead clicks or stuck pages in this period's chats. The widget records them on your site and shares them when a visitor writes in.</p>
+      ) : (
+        <>
+          <ul className="dash-rows bars">
+            {struggles.list.map((s) => (
+              <li key={`${s.kind}|${s.page}|${s.target}`} title={s.page} style={{ "--share": s.conversations / struggles.list[0]!.conversations } as CSSProperties}>
+                <span className="dash-row-label">
+                  {STRUGGLE_WORDS[s.kind]}
+                  {s.target && <> on <code>{s.target}</code></>}
+                  <div className="muted small struggle-page">{path(s.page)}</div>
+                </span>
+                <span className="dash-row-value">{s.conversations.toLocaleString()}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="dash-foot">
+            Chats whose visitor hit this before or while writing in ({struggles.conversations.toLocaleString()} chats had at least one). Only visitors who chatted are counted: the widget sends what happened with their messages.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Most topics "Top topics" lists. */
 const MAX_TOPICS_SHOWN = 8;
 
@@ -375,6 +414,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
           <div className="dash-grid">
             <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
             <StartPages pages={r.pages} />
+            {r.struggles && <Struggles struggles={r.struggles} />}
             {!r.ai.off && (
               <section className="dash-card">
                 <div className="dash-card-head"><h2>Top handoff reasons</h2></div>
