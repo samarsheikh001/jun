@@ -133,7 +133,7 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
   const [status, setStatus] = useState<EmailStatus | null>(null);
   const [cloudflare, setCloudflare] = useState<CloudflareStatus | null>(null);
   const [steps, setSteps] = useState<SetupStep[] | null>(null);
-  const [tested, setTested] = useState<string | null>(null);
+  const [tested, setTested] = useState<{ to: string; local: boolean } | null>(null);
   const save = useAction();
   const test = useAction();
   useEffect(() => {
@@ -163,7 +163,7 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
   const toggle = (enabled: boolean) => save.run(async () => setStatus(await api<EmailStatus>(base, { method: "PUT", body: { enabled } })));
   const sendTest = () => test.run(async () => {
     setTested(null);
-    setTested((await api<{ to: string }>(`${base}/test`, { body: {} })).to);
+    setTested(await api<{ to: string; local: boolean }>(`${base}/test`, { body: {} }));
   });
 
   const s = status?.settings;
@@ -212,7 +212,7 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
                 {connected && <Button name="action" value="setup" disabled={off || save.busy}>{save.busy ? "Setting up…" : "Set up and turn on"}</Button>}
                 <Button variant={connected ? "outline" : "default"} name="action" value="save" disabled={off || save.busy}>Save</Button>
                 <Button type="button" variant="outline" disabled={off || test.busy || !s?.from} onClick={sendTest}>Send me a test</Button>
-                {tested && <span className="muted small">Sent to {tested}. Check that it arrived (and not in spam).</span>}
+                {tested && <span className="muted small">{tested.local ? <>This is a local dev server: Cloudflare writes the email to a file here instead of sending it. Send the test from your deployed desk.</> : <>Sent to {tested.to}. Check that it arrived (and not in spam).</>}</span>}
               </div>
             )}
             {save.error && <p className="error small">{save.error}</p>}

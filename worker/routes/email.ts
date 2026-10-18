@@ -116,7 +116,9 @@ email.post("/workspaces/:id/email/test", async (c) => {
     if (error instanceof EmailSendError) throw new HttpError(400, "send_failed", `It didn't send: ${error.message}.`);
     throw error;
   }
-  return c.json({ ok: true, to });
+  // A local dev server's send_email binding writes the message to a file instead of sending it.
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(new URL(c.req.url).hostname);
+  return c.json({ ok: true, to, local });
 });
 
 // D-111: set email up from the desk. The admin pastes a Cloudflare API token (made from the link the
