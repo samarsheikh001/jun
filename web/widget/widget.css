@@ -312,7 +312,7 @@ html.island.island-dark {
   --focus: #b9a3d0;
 }
 .island-dark .i-shell { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 28px rgba(0, 0, 0, 0.32); }
-/* A hairline highlight on the edge (under the neon ring when that's on). */
+/* A hairline highlight on the edge. */
 .island-dark .i-shell::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); pointer-events: none; }
 .island-dark .i-rest:hover { background: #161618; }
 .island-dark .i-body::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.14); }
@@ -321,8 +321,8 @@ html.island.island-dark {
 .i-root { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px; overflow: visible; }
 @media (max-width: 639px) { .i-root { padding-bottom: 12px; } }
 /* The box springs to the measured size (the proposal's stiffness 380 / damping 30, about 0.65s with a
-   slight overshoot). The shell fills it; the neon ring and its glow sit on the box, outside the shell's
-   clip, and stay inside the 32px the frame keeps visible around the island. */
+   slight overshoot). The shell fills it; the highlight's glow sits on the box, outside the shell's
+   clip, and stays inside the 32px the frame keeps visible around the island. */
 .i-box { position: relative; border-radius: 28px; transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), transform 0.35s cubic-bezier(0.34, 1.6, 0.5, 1); }
 /* Pressing the resting pill squishes it a little; it springs back on release. */
 .i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s; }
@@ -331,13 +331,7 @@ html.island.island-dark {
 .i-s-intro, .i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
 .i-shell { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.1); transition: background-color 0.3s; }
 /* D-99: the shell fades (0.3s) when an auto island changes palette as the page behind it turns dark or light. */
-/* Neon border: a conic gradient turning slowly, drawn as a 1.5px ring on the box's own edge (masked, so its corners match the shell's) with a blurred copy behind for the glow. */
-@property --i-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-.i-ring, .i-glow { --i-neon: conic-gradient(from var(--i-angle), #ff5ec8, #8b5cff, #35c8ff, #3dffa8, #ffd54a, #ff7a5c, #ff5ec8); position: absolute; border-radius: inherit; background: var(--i-neon); animation: i-turn 6s linear infinite; pointer-events: none; }
-.i-ring { inset: 0; padding: 1.5px; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; z-index: 1; }
-.i-glow { inset: -2px; filter: blur(14px); opacity: 0.55; }
-@keyframes i-turn { to { --i-angle: 360deg; } }
-/* W-34: JunDesk.highlight(): the folded island lifts a little and the neon colours glow behind it once
+/* W-34: JunDesk.highlight(): the folded island lifts a little and multi-colour light glows behind it once
    (1.4s, FLASH_MS); under reduced motion only the glow. Stays inside the frame's 32px of clip room. */
 .i-box.i-flash { animation: i-lift 1.4s cubic-bezier(0.34, 1.25, 0.5, 1); }
 @keyframes i-lift { 0%, 100% { transform: none; } 30% { transform: translateY(-4px) scale(1.03); } }
@@ -536,7 +530,7 @@ html.island.island-dark {
   .i-box:has(.i-rest:active) { transform: none; }
   .i-view { animation: i-fade 0.15s both; }
   .i-ctl, .i-row .composer.pill .composer-plus, .i-row .composer.pill .composer-send { transition: none; }
-  .i-chip, .i-mark.pulse, .i-ring, .i-glow, .i-hint-text { animation: none; }
+  .i-chip, .i-mark.pulse, .i-hint-text { animation: none; }
   .i-status-text { animation: none; background: none; color: var(--muted); }
 }
 @keyframes i-fade { from { opacity: 0; } to { opacity: 1; } }

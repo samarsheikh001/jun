@@ -144,7 +144,6 @@ interface Draft {
   mode?: WidgetMode;
   greetingCard?: boolean;
   buttonStyle?: ButtonStyle;
-  neon?: boolean;
   islandSurface?: IslandSurface;
   sound?: boolean;
   csat?: boolean;
@@ -152,7 +151,7 @@ interface Draft {
   logoDarkKey?: string;
 }
 
-const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "mode", "greetingCard", "buttonStyle", "neon", "islandSurface", "sound", "csat"] as const;
+const FIELDS = ["displayName", "greeting", "replyTime", "placeholder", "suggestions", "color", "position", "theme", "radius", "mode", "greetingCard", "buttonStyle", "islandSurface", "sound", "csat"] as const;
 const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !== undefined).map((f) => [f, s[f]])) as Draft;
 /** Stored settings with the mode and greeting card spelled out (a desk saved before D-89 has `launcher`). */
 const withMode = (s: Draft): Draft => ({ ...s, ...modeOf(s as Record<string, unknown>) });
@@ -195,7 +194,6 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
         placeholder: draft.placeholder ?? "",
         suggestions: draft.suggestions ?? [],
         csat: draft.csat !== false,
-        neon: draft.neon !== false,
         sound: draft.sound !== false,
       };
       const r = await api<{ settings: Draft }>(`/workspaces/${workspaceId}/inbox`, { method: "PATCH", body });
@@ -282,7 +280,6 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
                 <Row label="Island colour" hint={look.islandSurface === "auto" ? "Stands out from the page behind it: near-black on light pages, light on dark ones." : look.islandSurface === "dark" ? "Near-black on every page, whatever the theme." : "Follows the theme below."}>
                   <Segmented value={look.islandSurface} disabled={off} label="Island colour" options={[["auto", "Auto"], ["dark", "Dark"], ["page", "Match theme"]]} onChange={(value) => edit({ islandSurface: value as IslandSurface })} />
                 </Row>
-                <SwitchRow title="Neon border" hint="A slowly turning multi-colour glow around the island." checked={draft.neon !== false} disabled={off} onChange={(checked) => edit({ neon: checked })} />
               </>
             )}
           </section>
@@ -371,7 +368,7 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
             {dirty && <Button variant="ghost" disabled={busy} onClick={() => { setDraft(pick(saved)); setStatus(null); }}>Discard</Button>}
-            <Button variant="ghost" className="appear-reset" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, mode: APPEARANCE_DEFAULTS.mode, greetingCard: APPEARANCE_DEFAULTS.greetingCard, buttonStyle: "logo", neon: true, islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
+            <Button variant="ghost" className="appear-reset" disabled={busy} onClick={() => edit({ displayName: "", greeting: "", replyTime: "", placeholder: "", suggestions: [], color: APPEARANCE_DEFAULTS.color, position: "right", theme: "auto", radius: APPEARANCE_DEFAULTS.radius, mode: APPEARANCE_DEFAULTS.mode, greetingCard: APPEARANCE_DEFAULTS.greetingCard, buttonStyle: "logo", islandSurface: APPEARANCE_DEFAULTS.islandSurface, sound: APPEARANCE_DEFAULTS.sound, csat: true })}>Reset to defaults</Button>
             <span className={error ? "error small appear-status" : "muted small appear-status"} role="status">{error ?? status ?? (dirty ? "Unsaved changes" : "")}</span>
           </div>
         )}

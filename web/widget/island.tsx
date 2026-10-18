@@ -178,7 +178,7 @@ function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) |
  * and glows once (just the glow under reduced motion), with cuelume's `attention` when the call asked
  * for `sound` (and the desk's sound switch is on). Open, it's already in view: nothing happens.
  */
-export function Island({ state, live, neon, onOpen, autoFold = null, hug = false, highlight = null, children }: { state: IslandState; live: boolean; neon: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: Highlight | null; children: ReactNode }) {
+export function Island({ state, live, onOpen, autoFold = null, hug = false, highlight = null, children }: { state: IslandState; live: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: Highlight | null; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
   const folded = state === "rest" || state === "intro" || state === "nudge";
   const [flash, setFlash] = useState(0);
@@ -257,11 +257,9 @@ export function Island({ state, live, neon, onOpen, autoFold = null, hug = false
   }, [state]);
   return (
     <div className="i-root">
-      {/* The box carries the size and its spring; the neon ring and glow sit on it, outside the clipped shell. */}
+      {/* The box carries the size and its spring; the highlight's glow sits on it, outside the clipped shell. */}
       <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}${flash ? " i-flash" : ""}`} style={{ width: w, height: h }}>
         {flash > 0 && <div key={flash} className="i-flash-glow" aria-hidden="true" />}
-        {neon && <div className="i-glow" aria-hidden="true" />}
-        {neon && <div className="i-ring" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">
           <div key={state} className="i-view" ref={content} style={{ ...(hug ? { width: "max-content", minWidth: HUG_MIN, maxWidth: hugMax } : { width: w }), ...(state === "panel" ? { height: panelHeight } : state === "answer" ? { maxHeight: answerMax } : {}) }}>
             {children}

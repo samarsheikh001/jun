@@ -1501,7 +1501,7 @@ const DESK: Tool[] = [
   tool({
     name: "update_desk_settings",
     title: "Update the desk settings",
-    description: "Changes desk settings by section; only the keys you pass change (comments stay), and they apply to the desk at once. Sections: ai { enabled, model, models, monthlyReplyCap }, chat { name, color, mode (island|window), greetingCard, button, position, island { surface, glow }, theme, greeting, replyTime, placeholder, suggestedQuestions, askForRating, allowedWebsites, offerHelpOnErrors, openers, … }, hours { enabled, timeZone, days: { monday: \"09:00-17:30\" }, awayMessage }, inbox { assignment: { mode: manual|round_robin, capacity } }. ai.models and hours.days are replaced whole. get_desk_settings shows every key.",
+    description: "Changes desk settings by section; only the keys you pass change (comments stay), and they apply to the desk at once. Sections: ai { enabled, model, models, monthlyReplyCap }, chat { name, color, mode (island|window), greetingCard, button, position, island { surface }, theme, greeting, replyTime, placeholder, suggestedQuestions, askForRating, allowedWebsites, offerHelpOnErrors, openers, … }, hours { enabled, timeZone, days: { monday: \"09:00-17:30\" }, awayMessage }, inbox { assignment: { mode: manual|round_robin, capacity } }. ai.models and hours.days are replaced whole. get_desk_settings shows every key.",
     inputSchema: schema({
       ai: S.object("AI switches: { enabled, model, models, monthlyReplyCap }."),
       chat: S.object("The chat widget: look, texts, allowed websites, openers."),

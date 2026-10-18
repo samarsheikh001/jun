@@ -731,7 +731,6 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           logoUrl: logoFor(config, cardTheme === "dark"),
           suggestions: config.suggestions,
           placeholder: config.placeholder,
-          neon: config.neon,
           cardTheme,
           highlight,
           unread: Boolean(summary && unread(summary)),
@@ -932,7 +931,6 @@ function WidgetThread({
     logoUrl: string | null;
     suggestions: string[];
     placeholder: string;
-    neon: boolean;
     /** The cards' palette: dark on the near-black surface, else the frame's theme. */
     cardTheme: "light" | "dark";
     /** W-34: the latest JunDesk.highlight() call. */
@@ -1577,7 +1575,7 @@ function WidgetThread({
     const folded = restSummary(thread.messages) ?? (serverLine && !serverLine.waiting ? serverLine.text : null);
     const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || waitingLine || (conversationId && folded)));
     return (
-      <Island state={shown} live={live} neon={island.neon} highlight={island.highlight} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
+      <Island state={shown} live={live} highlight={island.highlight} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
         {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} waiting={waitingLine} onOpen={() => island.setOpen(true)} />}
         {shown === "intro" && (
           <div className="i-open">

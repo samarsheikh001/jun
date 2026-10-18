@@ -77,8 +77,6 @@ export interface WidgetLook {
   launcher: LauncherStyle;
   placeholder: string;
   suggestions: string[];
-  /** Island launcher (D-39): the turning multi-colour border. On unless turned off. */
-  neon: boolean;
   /** Island launcher: against the page behind it (`auto`, the default), near-black (`dark`) or following `theme` (`page`). */
   islandSurface: IslandSurface;
   /** Chat window: the round button shows the logo or "Chat with us". */
@@ -152,7 +150,6 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
     suggestions: Array.isArray(s.suggestions)
       ? s.suggestions.filter((q): q is string => typeof q === "string" && q.trim() !== "").map((q) => clean(q).slice(0, SUGGESTION_LIMIT)).slice(0, SUGGESTIONS_MAX)
       : [],
-    neon: s.neon !== false,
     islandSurface: ISLAND_SURFACES.includes(s.islandSurface as IslandSurface) ? (s.islandSurface as IslandSurface) : APPEARANCE_DEFAULTS.islandSurface,
     buttonStyle: s.buttonStyle === "text" ? "text" : "logo",
     sound: s.sound !== false,
@@ -213,10 +210,6 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
   if (body.buttonStyle !== undefined) {
     if (body.buttonStyle !== "logo" && body.buttonStyle !== "text") throw new Error("The button shows the logo or text.");
     settings.buttonStyle = body.buttonStyle;
-  }
-  if (body.neon !== undefined) {
-    if (typeof body.neon !== "boolean") throw new Error("Neon border must be on or off.");
-    settings.neon = body.neon;
   }
   if (body.sound !== undefined) {
     if (typeof body.sound !== "boolean") throw new Error("Sound must be true or false.");

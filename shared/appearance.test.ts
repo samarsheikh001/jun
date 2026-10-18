@@ -18,14 +18,10 @@ test("appearance: an untouched desk gets the original look", () => {
     launcher: "card",
     placeholder: "Write a message…",
     suggestions: [],
-    neon: true,
     islandSurface: "auto",
     buttonStyle: "logo",
     sound: true,
   });
-  // The island's neon border is on unless turned off; anything but false keeps it.
-  assert.equal(widgetLook({ neon: false }, "Acme", null).neon, false);
-  assert.equal(widgetLook({ neon: "off" }, "Acme", null).neon, true);
   assert.deepEqual(radiusVars(APPEARANCE_DEFAULTS.radius), { "--r-md": "14px", "--r-sm": "8px" });
 });
 

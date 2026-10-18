@@ -12,7 +12,6 @@ const SETTINGS: Record<string, unknown> = {
   mode: "island",
   greetingCard: false,
   islandSurface: "page",
-  neon: false,
   buttonStyle: "text",
   theme: "dark",
   radius: 10,
@@ -252,3 +251,10 @@ test("D-89: an older file's launcher reads as mode + greetingCard, and gives way
   assert.match(parse("chat:\n  greetingCard: yes please\n").issues[0]!.message, /^chat\.greetingCard: The greeting card must be on or off/);
 });
 
+
+test("D-104: an older file's island glow (the removed neon border) is no problem and changes nothing", () => {
+  const { desk, issues } = parse("chat:\n  island:\n    surface: dark\n    glow: true\n");
+  assert.deepEqual(issues, []);
+  assert.deepEqual(desk.chat?.island, { surface: "dark" });
+  assert.ok(!renderDeskFile(deskFromSettings(SETTINGS, AI)).includes("glow"), "never written");
+});

@@ -56,7 +56,7 @@ export interface DeskFile {
     /** Window only. */
     position?: "left" | "right";
     /** Island only. */
-    island?: { surface?: IslandSurface; glow?: boolean };
+    island?: { surface?: IslandSurface };
     theme?: WidgetTheme;
     rounding?: number;
     sound?: boolean;
@@ -199,17 +199,14 @@ function parseChat(raw: Record<string, unknown>, issues: DeskIssue[]): NonNullab
     }
   }
   if (raw.island !== undefined && raw.island !== null) {
-    if (!isRecord(raw.island)) problem("island", "use surface: auto, dark or page, and glow: true or false.");
+    if (!isRecord(raw.island)) problem("island", "use surface: auto, dark or page.");
     else {
+      // `glow` (the neon border, removed by D-104) is still in older files: allowed, ignored.
       unknownKeys(raw.island, ["surface", "glow"], "chat.island.", issues);
       const island: NonNullable<NonNullable<DeskFile["chat"]>["island"]> = {};
       if (raw.island.surface !== undefined) {
         if (raw.island.surface === "auto" || raw.island.surface === "dark" || raw.island.surface === "page") island.surface = raw.island.surface;
         else problem("island.surface", "use auto (stands out from the page behind it), dark (near-black on every page) or page (follows the theme).");
-      }
-      if (raw.island.glow !== undefined) {
-        if (bool(raw.island.glow)) island.glow = raw.island.glow as boolean;
-        else problem("island.glow", "use true or false.");
       }
       out.island = island;
     }
@@ -437,7 +434,7 @@ export function deskFromSettings(settings: Record<string, unknown>, ai: DeskAi):
       greetingCard: look.greetingCard,
       button: look.buttonStyle,
       position: look.position,
-      island: { surface: look.islandSurface, glow: look.neon },
+      island: { surface: look.islandSurface },
       theme: look.theme,
       rounding: look.radius,
       sound: look.sound,
@@ -503,7 +500,6 @@ export function renderDeskFile(desk: DeskFile): string {
     if (chat.island !== undefined) {
       out.push("  island:  # island only");
       if (chat.island.surface !== undefined) out.push(line(4, "surface", chat.island.surface, "auto | dark | page"));
-      if (chat.island.glow !== undefined) out.push(line(4, "glow", chat.island.glow, "the turning multi-colour border"));
     }
     if (chat.theme !== undefined) out.push(line(2, "theme", chat.theme, "auto | light | dark"));
     if (chat.rounding !== undefined) out.push(line(2, "rounding", chat.rounding, "corner rounding, 0 to 24"));
@@ -598,7 +594,6 @@ export function applyDesk(desk: DeskFile, settings: Record<string, unknown>, ai:
     if (value !== undefined) body[field] = value;
   }
   if (chat.island?.surface !== undefined) body.islandSurface = chat.island.surface;
-  if (chat.island?.glow !== undefined) body.neon = chat.island.glow;
   if (chat.sound !== undefined) body.sound = chat.sound;
   if (chat.askForRating !== undefined) body.csat = chat.askForRating;
   if (chat.offerHelpOnErrors !== undefined) body.proactive = chat.offerHelpOnErrors;

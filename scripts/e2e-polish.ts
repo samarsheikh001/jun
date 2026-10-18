@@ -116,10 +116,7 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   const islandCfg = await cfg();
   assert.equal(islandCfg.mode, "island");
   assert.equal(islandCfg.launcher, "island");
-  assert.equal(islandCfg.neon, true, "the neon border is on unless turned off");
-  assert.equal((await agent.call(inbox, { method: "PATCH", body: { neon: false } })).status, 200);
-  assert.equal(((await (await fetch(`${BASE}/api/widget/${widgetKey}/config`)).json()) as Record<string, unknown>).neon, false);
-  assert.equal((await agent.call(inbox, { method: "PATCH", body: { neon: "yes" } })).status, 400);
+  assert.equal(islandCfg.neon, undefined, "the neon border is gone (D-104)");
   // W-20: the reply sound, on unless turned off.
   assert.equal(islandCfg.sound, true, "the reply sound is on unless turned off");
   assert.equal((await agent.call(inbox, { method: "PATCH", body: { sound: false } })).status, 200);
@@ -165,7 +162,7 @@ await step("W-04: appearance is validated, served cross-origin to the loader, an
   assert.equal((await fetch(`${BASE}${both.logoUrl}`)).status, 200);
   assert.equal((await agent.call(`${inbox}/logo`, { method: "DELETE" })).status, 200);
   // Back to defaults for the other suites.
-  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, mode: "window", greetingCard: true, neon: true, sound: true, placeholder: "", suggestions: [] } });
+  await agent.call(inbox, { method: "PATCH", body: { color: "#2f5bea", position: "right", greeting: "", replyTime: "", displayName: "", theme: "auto", radius: 16, mode: "window", greetingCard: true, sound: true, placeholder: "", suggestions: [] } });
 });
 
 await step("I-10: outside business hours a chat with the team gets one away reply; the widget says when you're back", async () => {
