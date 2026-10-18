@@ -32,8 +32,9 @@ test("support templates: listed first, with a summary, a schema and words to fin
     assert.ok(spec.summary, `${t.id}: has a summary`);
     assert.ok(t.tags.length >= 3, `${t.id}: has tags`);
     for (const s of spec.states ?? []) assert.doesNotThrow(() => renderWidget(spec, s.data), `${t.id}: state ${s.name} renders`);
-    // The look comes from the chat's palette: no hex colours or gradients.
-    assert.ok(!/#[0-9a-f]{3,8}\b|gradient/i.test(JSON.parse(t.file).template), `${t.id}: no fixed colours`);
+    // Soft tiles and coloured text come in light / dark pairs, so cards read in both chat themes.
+    const template = JSON.parse(t.file).template as string;
+    assert.ok(!/"(?:background|color)":"[a-z]+-(?:50|100|200|800|900|950)"/.test(template), `${t.id}: pale or deep palette colours come in light / dark pairs`);
   }
 });
 

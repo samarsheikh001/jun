@@ -418,35 +418,60 @@ Write a template from scratch only when no template is close, and still follow t
 
 ## Rules
 
+Look at ChatKit Studio's gallery (\`widget_templates\`) for what good looks like: every card there
+has one thing the eye lands on first, and so should yours.
+
+**One visual anchor**, the first thing on the card. Pick the one that fits:
+- a hero value: \`Title "size":"2xl"\` for what matters most ("$49.00" due, "1 min", "Arriving Thu,
+  Oct 22"), with a small secondary line above or below it;
+- a coloured band: a \`Box\` with \`"padding":4\`, \`"radius":"xl"\` and a gradient
+  (\`"background":"linear-gradient(135deg, #378CD1 0%, #2B67AC 100%)"\`), white text on it, for a
+  status that matters (an order on its way, a flight). Colour it by the status;
+- a picture: \`Image\` with \`"size":64\`–\`80\`, \`"radius":"lg"\`, \`"frame":true\` when the data has a
+  real https URL for the product or person (avatars: \`"radius":"full"\`);
+- an icon on a coloured tile: a \`Box\` with \`"size":40\`, \`"radius":"lg"\` (or \`"full"\`), a soft
+  background and the icon in the same hue (see Colour), \`"align":"center","justify":"center"\`;
+- a status line: \`Row [Icon "check-circle-filled" color success, Text "Purchase complete" size sm
+  color success]\` at the top, like a receipt.
+
 **Layout**
 - Root: \`Card\` with \`"size":"sm"\` for nearly everything. \`ListView\` for a list where each row does
   something when picked (orders, tickets). Never a Card inside a Card.
-- Top line: what it is and its state. A \`Caption\` over a \`Title "size":"sm"\` on the left (e.g. "Order
-  #10482" over "Arriving Thu, Oct 22"), a \`Spacer\`, and a \`Badge\` for the status on the right.
-- Details as label / value rows: \`Row [Caption label, Spacer, Text value "size":"sm"]\`, in a
-  \`Col "gap":2\`. Four or five rows at most; leave out what the customer didn't ask about.
-- A \`Divider "flush":true\` between the header and the body, or the body and a list. Not between every row.
-- Totals and amounts: \`"weight":"semibold"\` on the value. Long names: \`"maxLines":1\` or \`2\`.
+- Labels are \`Text "size":"sm","color":"secondary"\`, values \`Text "size":"sm"\`; a row is
+  \`Row [label, Spacer, value]\`. Three or four such rows at most: more belongs on a page, not a card.
+- Group related rows on a soft surface instead of drawing lines: a \`Box\` or \`Row\` with
+  \`"padding":3\` (or \`{"x":3,"y":2}\`), \`"radius":"xl"\`, \`"background":"surface-secondary"\`. Use
+  \`Divider "flush":true,"color":"subtle"\` once at most.
+- List rows: picture or icon tile, then \`Col [Text semibold, Text sm secondary]\`, then the value or
+  status on the right in a \`Col "align":"end"\`.
 - Progress: a \`Box\` track (\`"height":4\`–\`6\`, \`"radius":"full"\`, \`"background":"alpha-10"\`) holding a
-  \`Box\` with \`"width":"<n>%"\`. Colour it \`primary\`, \`warning\` from 80 %, \`danger\` when full.
-- A highlighted note (a promise, a cost, the latest update): a \`Box\` with \`"padding":3\`,
-  \`"radius":"lg"\`, \`"background":"alpha-5"\`.
+  \`Box\` with \`"width":"<n>%"\`. Colour it with the hue; \`amber-500\` from 80 %, \`red-500\` when full.
+- Long text: \`"maxLines":1\` or \`2\`. A card stays under about 25 lines.
 
 **Colour**
-- Badges carry state: \`success\` done or fine, \`info\` in progress, \`warning\` waiting or due, \`danger\`
-  failed or overdue, \`secondary\` neutral. Map each status explicitly; write the label in words
-  (\`status | replace("_", " ") | capitalize\`).
-- Otherwise leave colours alone: the card takes the chat's own palette and the desk's brand colour, in
-  light and dark. No hex colours, no gradients, no \`theme\` on the Card.
+- Colour carries meaning: green done or fine, blue in progress, amber waiting or due, red failed or
+  overdue, gray neutral; violet / indigo for your brand's extras. Pick the hue from the status with
+  \`{% set hue = {"shipped": "blue", "delivered": "green"}[status] | default("gray") %}\`.
+- Soft tiles and text in a hue need a pair so they work on light and dark chats:
+  \`"background":{"light":"blue-100","dark":"blue-900"}\` and \`"color":{"light":"blue-600","dark":"blue-300"}\`.
+  The full Tailwind palette is there (\`indigo-500\`, \`amber-100\`, …).
+- Status as coloured text (\`"color":{"light":"green-600","dark":"green-300"}\`) or a \`Badge\` with
+  \`"pill":true\` (\`success\`, \`info\`, \`warning\`, \`danger\`, \`secondary\`, \`discovery\`). Write it in
+  words: \`status | replace("_", " ") | capitalize\`.
+- A gradient or a strong colour once per card at most, and white text on it. Never a \`theme\` on the
+  Card: it follows the chat.
 
 **Buttons**
 - At most one main button (\`"style":"primary"\`: solid, in the desk's brand colour) and one secondary
-  one (the default, an outline), each \`"block":true\` at the bottom, or \`"size":"sm"\` on a row. A link out is \`open_url\` with
-  \`"iconEnd":"external-link"\`.
+  one (the default, an outline). \`"pill":true\` on both. \`"block":true\` at the bottom, or
+  \`"size":"sm"\` on a row; never squeeze a labelled button into a crowded row (it gets cut off), put
+  it on its own line. A link out is \`open_url\` with \`"iconEnd":"external-link"\`; a row's link can be
+  an icon-only \`Button "iconStart":"external-link","variant":"ghost"\`.
 - Words say what happens: "Switch to Pro", "Pay now", "Request refund". Not "Submit" or "OK".
 - A button that changes something runs \`tool:<action>\`; the action's \`widget_done\` line tells the
   customer it worked. For a change that needs a yes, use the Card's own \`confirm\` and \`cancel\`
-  (cancel \`{"type":"dismiss"}\`), like confirm_change, and say exactly what changes and what it costs.
+  (cancel \`{"type":"dismiss"}\`), like confirm_change: an icon in a coloured circle, the question,
+  and what changes (from with \`"lineThrough":true\` → to) on a soft panel, plus what it costs.
 - Forms: \`"asForm":true\` on the Card with \`confirm\`, a \`Label\` over each field (\`fieldName\`), and
   \`"required":true\` on what the action needs. A \`Select\` for a known set of answers.
 
@@ -460,9 +485,9 @@ Write a template from scratch only when no template is close, and still follow t
 - A \`summary\` line for the folded chat: "Order {{ number }} · {{ status }}".
 
 **Don'ts**
-- No images unless the data has a real https URL for one (product photos, logos).
-- No more than about 25 lines of content; split it or show a list that opens the detail.
+- No made-up image URLs: only what the data or the person gives.
 - No Markdown tables or headings inside a card: use rows.
+- No wall of label / value rows with nothing to look at first.
 `;
 
 export const MCP_INSTRUCTIONS = `You are connected to a Jun desk: an AI support desk. These tools change its **support agent**, the AI
