@@ -12,6 +12,11 @@
       button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #c9c9c3; background: #fff; cursor: pointer; }
       .note { color: #6b6b66; font-size: 14px; }
       code { background: #f0f0ec; padding: 1px 6px; border-radius: 4px; }
+      /* "Dark page": the island's auto colour (D-99) should turn light against it. */
+      html.dark-page body { background: #0b0f1a; color: #e8e8ee; }
+      html.dark-page header, html.dark-page .card, html.dark-page button { background: #151a28; border-color: #2a3042; color: #e8e8ee; }
+      html.dark-page .note { color: #9a9aa6; }
+      html.dark-page code { background: #222838; }
     </style>
   </head>
   <body>
@@ -21,6 +26,15 @@
         <h1>Demo customer site</h1>
         <p>This page pretends to be one of your customer-facing pages. The chat button in the bottom-right corner is the Jun widget.</p>
         <p class="note">Open your desk's inbox in another window, then send a message from here to see it arrive live. Replies, typing indicators and read receipts flow both ways.</p>
+      </div>
+      <div class="card" id="island">
+        <h2>Island</h2>
+        <p>
+          <button id="highlight">Highlight the island</button>
+          <button id="dark-page">Dark page</button>
+          <button id="intro">Show first-visit questions again</button>
+        </p>
+        <p class="note">For the island mode (desk: Appearance). Highlight is <code>JunDesk.highlight()</code> (W-34): the folded island glows once. With Island colour on Auto (D-99) the island turns light on a dark page and near-black again on a light one. The first-visit questions show once per browser when the desk has suggested questions: this forgets that they were shown and reloads (a chat on this browser stops them too).</p>
       </div>
       <div class="card">
         <h2>Billing</h2>
@@ -77,6 +91,16 @@
           intent: "cancel",
           onExit: function () { document.getElementById("status").textContent = "Subscription cancelled (demo: your app's own cancel step runs here)."; },
         });
+      };
+      // The island card: JunDesk.highlight(), a dark page for the auto colour, and the first-visit questions again.
+      document.getElementById("highlight").onclick = function () { if (window.JunDesk && window.JunDesk.highlight) window.JunDesk.highlight(); };
+      document.getElementById("dark-page").onclick = function () {
+        var dark = document.documentElement.classList.toggle("dark-page");
+        this.textContent = dark ? "Light page" : "Dark page";
+      };
+      document.getElementById("intro").onclick = function () {
+        try { localStorage.removeItem("jun:intro:" + new URLSearchParams(location.search).get("key")); } catch (e) {}
+        location.reload();
       };
       // AI-21 page actions: a WebMCP tool plus Jun's extras (pages, element, context, undo), and a plain WebMCP registration.
       var plan = "team";
