@@ -9,6 +9,19 @@ export interface VisitorContact {
   externalId: string | null;
 }
 
+/** V-03: the workspace's identity secret, or null while identity verification is off. */
+export async function loadIdentitySecret(db: D1Database, workspaceId: string): Promise<string | null> {
+  const row = await db.prepare("SELECT identity_secret FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ identity_secret: string | null }>();
+  return row?.identity_secret ?? null;
+}
+
+/** A new identity secret (on, or rotating: tokens signed with the old one stop working), or null for off. */
+export async function setIdentitySecret(db: D1Database, workspaceId: string, on: boolean): Promise<string | null> {
+  const secret = on ? `jis_${randomToken(32)}` : null;
+  await db.prepare("UPDATE inboxes SET identity_secret = ? WHERE workspace_id = ?").bind(secret, workspaceId).run();
+  return secret;
+}
+
 export async function findVisitor(db: D1Database, workspaceId: string, token: string): Promise<VisitorContact | null> {
   const row = await db
     .prepare(

@@ -268,6 +268,122 @@ export const GUIDE_FILES: Record<string, string> = {
 };
 
 /**
+ * V-03 for a person's own AI (the MCP's jun://guide/identity, with get_identity / set_identity /
+ * check_identity_token): what to add to the company's app so the desk knows who's signed in. Keep the
+ * claims in step with verifyIdentityToken in worker/lib/identity.ts.
+ */
+export const IDENTITY_GUIDE = `# Identify signed-in customers
+
+Until the website says who is signed in, every visitor in the chat is anonymous: \`{user.id}\`,
+\`{user.email}\`, \`{user.name}\`, \`{user.<attribute>}\` and \`{user.secrets.NAME}\` are empty, so an
+action that uses them doesn't run, and a card button that runs an action (\`tool:<name>\`) is refused.
+That's on purpose: the page's JavaScript can't claim to be someone, or anyone could type another
+customer's id and act on their account.
+
+The app proves it instead. Its **server** signs a short-lived token (a JWT, HS256) with the desk's
+identity secret, and the page hands the token to the chat. The desk checks the signature and only then
+fills \`{user.*}\`. Agents see a verified name and email, and the customer's chats follow them across devices.
+
+## 1. Turn it on and keep the secret on the server
+
+- set_identity with turn: "on" creates the secret (get_identity with reveal: true shows it again).
+- Put it in the app server's environment, like \`JUN_IDENTITY_SECRET\` in its \`.env\` or secret store.
+  Never commit it, never send it to the browser, never put it in an agent file.
+- Rotating it (turn: "rotate") stops every token signed with the old one at once; turn: "off" makes
+  everyone anonymous again.
+
+## 2. Sign a token for the signed-in user, on the server
+
+Claims:
+
+| Claim | Required | What |
+|---|---|---|
+| \`sub\` | yes | Your app's own, stable user id: actions get it as \`{user.id}\`. |
+| \`exp\` | yes | Expiry, seconds since 1970. Keep it short (an hour) and sign a new one per page load. |
+| \`email\`, \`name\` | no | Shown to agents; \`{user.email}\`, \`{user.name}\`. |
+| \`attributes\` | no | Up to 50 strings, numbers or booleans (\`plan\`, \`company\`…): \`{user.plan}\`. Names: letters, digits, _. |
+| \`secrets\` | no | Up to 10 of the user's own keys for your API, \`{ "API_TOKEN": "…" }\`: \`{user.secrets.API_TOKEN}\` in an action's headers. Never stored or shown to agents or the AI. |
+
+Node (\`npm i jsonwebtoken\`):
+
+\`\`\`js
+import jwt from "jsonwebtoken";
+
+export function junToken(user) {
+  return jwt.sign(
+    { sub: String(user.id), email: user.email, name: user.name, attributes: { plan: user.plan } },
+    process.env.JUN_IDENTITY_SECRET,
+    { algorithm: "HS256", expiresIn: "1h" },
+  );
+}
+\`\`\`
+
+Python (\`pip install pyjwt\`):
+
+\`\`\`python
+import os, time, jwt
+
+def jun_token(user):
+    claims = {"sub": str(user.id), "email": user.email, "name": user.name,
+              "attributes": {"plan": user.plan}, "exp": int(time.time()) + 3600}
+    return jwt.encode(claims, os.environ["JUN_IDENTITY_SECRET"], algorithm="HS256")
+\`\`\`
+
+Ruby (\`gem "jwt"\`):
+
+\`\`\`ruby
+def jun_token(user)
+  claims = { sub: user.id.to_s, email: user.email, name: user.name,
+             attributes: { plan: user.plan }, exp: Time.now.to_i + 3600 }
+  JWT.encode(claims, ENV.fetch("JUN_IDENTITY_SECRET"), "HS256")
+end
+\`\`\`
+
+PHP (\`composer require firebase/php-jwt\`):
+
+\`\`\`php
+use Firebase\\JWT\\JWT;
+
+function jun_token($user) {
+    $claims = ["sub" => (string) $user->id, "email" => $user->email, "name" => $user->name,
+               "attributes" => ["plan" => $user->plan], "exp" => time() + 3600];
+    return JWT::encode($claims, getenv("JUN_IDENTITY_SECRET"), "HS256");
+}
+\`\`\`
+
+Any language's JWT library works the same way: HS256, the secret as the key.
+
+## 3. Hand it to the chat, in the page
+
+Rendered on the server: put it on the snippet's script tag.
+
+\`\`\`html
+<script src="https://<desk>/widget.js" data-key="…" data-user-token="<the token>" defer></script>
+\`\`\`
+
+A single-page app: fetch it from your server after sign-in (an endpoint like \`GET /api/jun-token\` for
+the session's user) and call \`JunDesk.identify\`; call \`JunDesk.logout()\` when they sign out.
+
+\`\`\`js
+function junIdentify(token) {
+  if (window.JunDesk) window.JunDesk.identify(token);
+  else window.addEventListener("jundesk:ready", () => window.JunDesk.identify(token), { once: true });
+}
+// On sign-in and on each page load while signed in:
+fetch("/api/jun-token").then((r) => r.json()).then(({ token }) => junIdentify(token));
+// On sign-out:
+window.JunDesk?.logout();
+\`\`\`
+
+## 4. Check it
+
+- check_identity_token with a token your server made says whether the desk accepts it and what it read
+  (or exactly what's wrong: wrong secret, expired, no sub…).
+- test_chat with a \`customer\` ({ id, email, name, attributes }) chats as a signed-in customer, so you can
+  try actions that use \`{user.*}\` before the website sends tokens.
+`;
+
+/**
  * The MCP server's `instructions` (sent on initialize): what the agent is, how changes go live, and the
  * hard rules. The whole file format is the resource jun://guide/files (FILE_FORMAT), so this stays short.
  */
@@ -296,6 +412,10 @@ Knowledge (the websites and documents the AI answers from) is separate from thes
 - Knowledge isn't versioned: no history or restore. remove_source can't be undone, so ask the person first.
 - Before writing a task to answer a question, run search_knowledge with it: if the AI already finds the
   answer in the knowledge, it doesn't need a task.
+
+Signed-in customers: actions that use {user.id} or other {user.*} fields run only for customers the
+website has identified with a token signed by the desk's identity secret. get_identity says whether that's
+set up, set_identity turns it on, and jun://guide/identity has the code the company's server and pages need.
 
 Hard rules:
 - Never put keys, tokens or passwords in any file: use \`{secrets.NAME}\` in an action's headers and store

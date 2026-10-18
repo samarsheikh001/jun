@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { requireUser } from "../auth/session.ts";
 import { newId, randomToken } from "../lib/crypto.ts";
+import { loadIdentitySecret, setIdentitySecret } from "../lib/contacts.ts";
 import { notifyConversationChanged } from "../lib/realtime.ts";
 import { readJson, text } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
@@ -74,23 +75,19 @@ for (const [path, { setting, prefix }] of Object.entries(LOGOS)) {
 visitors.get("/workspaces/:id/identity", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  const row = await c.env.DB.prepare("SELECT identity_secret FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ identity_secret: string | null }>();
-  return c.json({ secret: row?.identity_secret ?? null });
+  return c.json({ secret: await loadIdentitySecret(c.env.DB, workspaceId) });
 });
 
 visitors.post("/workspaces/:id/identity", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  const secret = `jis_${randomToken(32)}`;
-  await c.env.DB.prepare("UPDATE inboxes SET identity_secret = ? WHERE workspace_id = ?").bind(secret, workspaceId).run();
-  return c.json({ secret });
+  return c.json({ secret: await setIdentitySecret(c.env.DB, workspaceId, true) });
 });
 
 visitors.delete("/workspaces/:id/identity", async (c) => {
   const workspaceId = c.req.param("id");
   await requireAdmin(c, workspaceId);
-  await c.env.DB.prepare("UPDATE inboxes SET identity_secret = NULL WHERE workspace_id = ?").bind(workspaceId).run();
-  return c.json({ secret: null });
+  return c.json({ secret: await setIdentitySecret(c.env.DB, workspaceId, false) });
 });
 
 // V-07: an agent's opening message to a live visitor. Shown on their page; if they reply,

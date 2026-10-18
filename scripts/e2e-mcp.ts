@@ -8,6 +8,7 @@
 // website accepted); search embeds through Workers AI, so this needs Cloudflare access.
 
 import assert from "node:assert/strict";
+import { signIdentityToken } from "../worker/lib/identity.ts";
 import { AI_PROVIDER, BASE, Client, SETUP_TOKEN, SoftAuthenticator, step, summary } from "./e2e-lib.ts";
 
 const run = Date.now().toString(36);
@@ -74,12 +75,6 @@ await step("owner signs in, turns the AI on and creates an API token", async () 
     assert.equal((await owner.call(`/workspaces/${workspaceId}/agent`, { method: "PUT", body: { files, base: live.version, message: "e2e-mcp: clean up" } })).status, 200);
   }
   await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
-  await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
-  await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
-  await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
-  await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
-  await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
-  await tool("set_key", { name: "E2E_ORDERS_KEY", remove: true });
   await tool("set_website_action", { name: "add_to_cart", run: null, status: null });
 });
 
@@ -105,7 +100,7 @@ await step("initialize, notifications/initialized, tools/list with every group, 
   assert.equal(note.status, 202);
   const tools = (await rpc("tools/list")).json!.result.tools as { name: string; inputSchema: { type: string } }[];
   const names = tools.map((t) => t.name);
-  for (const name of ["get_agent", "read_file", "write_file", "check", "history", "diff_versions", "restore", "connections", "update_instructions", "create_task", "task_uses", "create_action", "action_from_curl", "try_action", "action_status", "set_key", "create_widget", "widget_templates", "preview_widget", "preview_chat", "widget_from_data", "add_test_case", "run_tests", "test_chat", "website_actions", "set_website_action", "get_desk_settings", "update_desk_settings", "list_knowledge", "get_source", "update_document", "add_website", "add_document", "resync_source", "remove_source", "search_knowledge"]) {
+  for (const name of ["get_agent", "read_file", "write_file", "check", "history", "diff_versions", "restore", "connections", "update_instructions", "create_task", "task_uses", "create_action", "action_from_curl", "try_action", "action_status", "set_key", "create_widget", "widget_templates", "preview_widget", "preview_chat", "widget_from_data", "add_test_case", "run_tests", "test_chat", "website_actions", "set_website_action", "get_desk_settings", "update_desk_settings", "get_identity", "set_identity", "check_identity_token", "list_knowledge", "get_source", "update_document", "add_website", "add_document", "resync_source", "remove_source", "search_knowledge"]) {
     assert.ok(names.includes(name), name);
   }
   assert.ok(tools.every((t) => t.inputSchema.type === "object" && /^[a-z_]+$/.test(t.name)));
@@ -115,6 +110,7 @@ await step("initialize, notifications/initialized, tools/list with every group, 
   const guide = (await rpc("resources/read", { uri: "jun://guide/files" })).json!.result.contents[0];
   assert.match(guide.text, /actions\/<name>\.yaml/);
   assert.match((await rpc("resources/read", { uri: "jun://guide/jinja" })).json!.result.contents[0].text, /tojson/);
+  assert.match((await rpc("resources/read", { uri: "jun://guide/identity" })).json!.result.contents[0].text, /JunDesk\.identify/);
   assert.equal((await rpc("resources/read", { uri: "jun://file/nope.md" })).json!.error.code, -32002);
   assert.equal((await rpc("tools/call", { name: "no_such_tool", arguments: {} })).json!.error.code, -32602);
 });
@@ -252,6 +248,44 @@ await step("set_key stores a key that no tool ever returns; the action is ready 
   assert.equal((await tool("set_key", { name: "bad-name", value: "x" })).isError, true);
 });
 
+await step("identity: set_identity turns it on, get_identity hides the secret unless asked, check_identity_token reads a token, rotate and off need confirm", async () => {
+  const wasOn = !(await ok("get_identity")).includes("is off");
+  if (wasOn) await ok("set_identity", { turn: "off", confirm: true });
+  assert.match(await ok("get_identity"), /is off/);
+  assert.match((await tool("check_identity_token", { token: "a.b.c" })).text, /is off/);
+  const on = await ok("set_identity", { turn: "on" });
+  const secret = /Secret: (jis_[\w-]+)/.exec(on)?.[1] ?? "";
+  assert.ok(secret, on);
+  assert.match(await ok("set_identity", { turn: "on" }), /already on/);
+  // An action using {user.id} is listed as needing it.
+  await ok("update_action", { name: "mcp_order_lookup", query: { status: "shipped", eta: "Friday", customer: "{user.id}" } });
+  const status = await ok("get_identity");
+  assert.ok(!status.includes(secret), "get_identity showed the secret without reveal");
+  assert.match(status, /mcp_order_lookup: \{user\.id\}/);
+  assert.match(await ok("get_identity", { reveal: true }), new RegExp(secret));
+  await ok("update_action", { name: "mcp_order_lookup", query: { status: "shipped", eta: "Friday" } });
+
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  const good = await signIdentityToken({ sub: `u-${run}`, email: `u-${run}@acme.test`, attributes: { plan: "pro" }, secrets: { API_TOKEN: "user-key-123" }, exp }, secret);
+  const read = await ok("check_identity_token", { token: good });
+  assert.match(read, /Accepted/);
+  assert.match(read, new RegExp(`\\{user\\.id\\}: u-${run}`));
+  assert.match(read, /\{user\.plan\}: "pro"/);
+  assert.match(read, /\{user\.secrets\.API_TOKEN\}: set \(never shown\)/);
+  assert.ok(!read.includes("user-key-123"));
+  assert.match((await tool("check_identity_token", { token: await signIdentityToken({ sub: "x", exp }, "jis_wrong") })).text, /signature doesn't match/);
+  assert.match((await tool("check_identity_token", { token: await signIdentityToken({ sub: "x", exp: 1000 }, secret) })).text, /expired/);
+
+  const unconfirmed = await tool("set_identity", { turn: "rotate" });
+  assert.equal(unconfirmed.isError, true);
+  assert.match(unconfirmed.text, /confirm: true/);
+  const rotated = /New secret: (jis_[\w-]+)/.exec(await ok("set_identity", { turn: "rotate", confirm: true }))?.[1];
+  assert.ok(rotated && rotated !== secret);
+  assert.match((await tool("check_identity_token", { token: good })).text, /signature doesn't match/);
+  assert.equal((await tool("set_identity", { turn: "off" })).isError, true);
+  if (!wasOn) assert.match(await ok("set_identity", { turn: "off", confirm: true }), /is off/);
+});
+
 await step("website-actions.yaml through set_website_action; widget_from_data makes a card from a result", async () => {
   const set = await ok("set_website_action", { name: "add_to_cart", run: "auto", status: "Adding it to your cart" });
   assert.match(set, /add_to_cart:\n {2}run: auto\n {2}status: Adding it to your cart/);
@@ -332,7 +366,7 @@ await step("knowledge: a member's token searches and lists, but can't add, re-sy
   assert.match(memberToken, /^jun_/);
   assert.match((await tool("search_knowledge", { query: "Which animal is allowed in the Glimmer office?" }, memberToken)).text, /Glimmer office/);
   assert.equal((await tool("list_knowledge", {}, memberToken)).isError, false);
-  for (const [name, args] of [["add_document", { name: "nope", text: "nope" }], ["add_website", { url: "https://example.com" }], ["resync_source", { id: docId }], ["remove_source", { id: docId, confirm: true }]] as const) {
+  for (const [name, args] of [["add_document", { name: "nope", text: "nope" }], ["add_website", { url: "https://example.com" }], ["resync_source", { id: docId }], ["remove_source", { id: docId, confirm: true }], ["get_identity", {}], ["set_identity", { turn: "on" }]] as const) {
     const refused = await tool(name, args, memberToken);
     assert.equal(refused.isError, true, name);
     assert.match(refused.text, /Only owners and admins/);

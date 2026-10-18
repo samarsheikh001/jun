@@ -14,13 +14,15 @@ import { recordUsage } from "../ai/topics.ts";
 import { CHATKIT_AUTHORING_GUIDE } from "../ai/chatkit-authoring.ts";
 import { applySavedDesk, generatedDeskFile, loadDeskState } from "../lib/desk.ts";
 import { newId } from "../lib/crypto.ts";
+import { loadIdentitySecret, setIdentitySecret } from "../lib/contacts.ts";
+import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
 import { readTestTurns, testCustomer } from "../lib/agent-input.ts";
 import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
 import { editFrontmatter, editYaml, readFrontmatter, readYaml, setBody, withJsonKey, type Edit } from "../../shared/agent-files.ts";
-import { FILE_FORMAT, MCP_INSTRUCTIONS } from "../../shared/agent-guide.ts";
+import { FILE_FORMAT, IDENTITY_GUIDE, MCP_INSTRUCTIONS } from "../../shared/agent-guide.ts";
 import { agentLinks } from "../../shared/agent-links.ts";
 import { actionSetupProblems, MAX_DESK_SECRETS, MAX_SECRET_VALUE, SECRET_NAME, secretRefs } from "../../shared/action-setup.ts";
-import { cardFromResult } from "../../shared/action-try.ts";
+import { cardFromResult, customerRefs } from "../../shared/action-try.ts";
 import type { SeenPageAction } from "../../shared/actions.ts";
 import { curlActionFile, curlActionName, parseCurl } from "../../shared/curl.ts";
 import { jinjaNames } from "../../shared/jinja.ts";
@@ -1553,6 +1555,106 @@ const DESK: Tool[] = [
   }),
 ];
 
+// ---------- signed-in customers (V-03) ----------
+
+const IDENTITY_GUIDE_URI = "jun://guide/identity";
+const secretHint = (secret: string) => `${secret.slice(0, 8)}… (ends in ${secret.slice(-4)})`;
+
+/** Each action that uses {user.*}, with the fields: they run only for identified customers. */
+function customerActions(files: ConfigFiles): string[] {
+  return Object.entries(files)
+    .flatMap(([path, text]) => {
+      const name = ACTION_FILE.exec(path)?.[1];
+      const refs = name ? customerRefs([text]) : [];
+      return refs.length ? [`- ${name}: ${refs.map((r) => `{user.${r}}`).join(", ")}`] : [];
+    })
+    .sort();
+}
+
+const IDENTITY: Tool[] = [
+  tool({
+    name: "get_identity",
+    title: "Get identity verification",
+    description: `Whether the website can identify signed-in customers (identity verification), and which actions need it because they use {user.*}. The secret is shown only with reveal: true, to put in the app server's environment. ${IDENTITY_GUIDE_URI} has the code the app needs.`,
+    inputSchema: schema({ reveal: S.bool("true: show the whole secret (to put in the app server's environment, never in a file you commit or in page code).") }),
+    annotations: READ,
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const [secret, { files }] = await Promise.all([loadIdentitySecret(ctx.env.DB, ctx.workspaceId), latest(ctx)]);
+      const uses = customerActions(files);
+      const usesText = uses.length ? `Actions that use the signed-in customer (they run only for identified customers):\n${uses.join("\n")}` : "No action uses {user.*} yet.";
+      if (!secret) return done(`Identity verification is off: every visitor is anonymous, so {user.*} is empty.\n${usesText}\nset_identity with turn: "on" creates the secret; ${IDENTITY_GUIDE_URI} has the code the app's server and pages need.`);
+      const shown = args.reveal === true ? `${secret}\nKeep it on the app's server only (like JUN_IDENTITY_SECRET in its environment).` : `${secretHint(secret)}; reveal: true shows it.`;
+      return done(`Identity verification is on. Secret: ${shown}\n${usesText}\nThe app's server signs a token per signed-in user and the page passes it with data-user-token or JunDesk.identify: ${IDENTITY_GUIDE_URI}. check_identity_token checks one.`);
+    },
+  }),
+  tool({
+    name: "set_identity",
+    title: "Set identity verification",
+    description: `Turns identity verification on (creates the secret the app's server signs tokens with, and shows it once), rotates the secret or turns it off. Rotating stops every token signed with the old secret and off makes everyone anonymous, both at once on the live website: ask the person first, then pass confirm: true. ${IDENTITY_GUIDE_URI} has the code the app needs.`,
+    inputSchema: schema({
+      turn: S.string("on: create the secret (an existing one stays); rotate: a new secret; off: no verification.", { enum: ["on", "rotate", "off"] }),
+      confirm: S.bool("rotate or off: true when the person agreed."),
+    }, ["turn"]),
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const turn = args.turn;
+      if (turn !== "on" && turn !== "rotate" && turn !== "off") fail('turn is "on", "rotate" or "off".');
+      const current = await loadIdentitySecret(ctx.env.DB, ctx.workspaceId);
+      const keep = "Put it in the app server's environment (like JUN_IDENTITY_SECRET), never in a committed file or page code.";
+      if (turn === "on") {
+        if (current) return done(`Identity verification is already on (secret ${secretHint(current)}); get_identity with reveal: true shows it, turn: "rotate" makes a new one.`);
+        const secret = (await setIdentitySecret(ctx.env.DB, ctx.workspaceId, true))!;
+        return done(`Identity verification is on. Secret: ${secret}\n${keep}\nNext: the app's server signs a token per signed-in user and the page passes it to the chat (${IDENTITY_GUIDE_URI}); check_identity_token checks one.`);
+      }
+      if (!current) return done(turn === "off" ? "Identity verification is already off." : 'Identity verification is off: turn: "on" creates a secret.');
+      if (args.confirm !== true) {
+        fail(turn === "rotate"
+          ? "Not rotated. A new secret stops every token signed with the old one at once, so identified customers on the website become anonymous until the app's server signs with the new one. Ask the person, then call set_identity again with confirm: true."
+          : "Not turned off. Every customer becomes anonymous at once, and actions that use {user.*} stop running for them. Ask the person, then call set_identity again with confirm: true.");
+      }
+      if (turn === "off") {
+        await setIdentitySecret(ctx.env.DB, ctx.workspaceId, false);
+        return done("Identity verification is off: every visitor is anonymous now. The app can stop sending tokens.");
+      }
+      const secret = (await setIdentitySecret(ctx.env.DB, ctx.workspaceId, true))!;
+      return done(`New secret: ${secret}\nTokens signed with the old one no longer work. Replace it in the app server's environment now. ${keep}`);
+    },
+  }),
+  tool({
+    name: "check_identity_token",
+    title: "Check an identity token",
+    description: "Checks a token the app's server signed, the way the chat will: whether the desk accepts it, and what it read (user id, email, name, attributes, the names of any secrets), or exactly what's wrong. Nothing is stored.",
+    inputSchema: schema({ token: S.string("The JWT the app's server made for a user.") }, ["token"]),
+    annotations: READ,
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const token = need(args, "token");
+      const secret = await loadIdentitySecret(ctx.env.DB, ctx.workspaceId);
+      if (!secret) fail('Identity verification is off, so the desk accepts no token. set_identity with turn: "on" creates the secret.');
+      let identity;
+      try {
+        identity = await verifyIdentityToken(token, secret!);
+      } catch (error) {
+        if (error instanceof IdentityError) fail(`The desk refuses this token: ${error.message}`);
+        throw error;
+      }
+      const minutes = Math.round((identity!.expiresAt - Date.now()) / 60_000);
+      const lines = [
+        `Accepted. The chat would know this customer as:`,
+        `- {user.id}: ${identity!.id}`,
+        `- {user.email}: ${identity!.email ?? "(none)"}`,
+        `- {user.name}: ${identity!.name ?? "(none)"}`,
+        ...Object.entries(identity!.attributes).map(([k, v]) => `- {user.${k}}: ${JSON.stringify(v)}`),
+        ...Object.keys(identity!.secrets).map((k) => `- {user.secrets.${k}}: set (never shown)`),
+        `Expires ${minutes > 0 ? `in ${plural(minutes, "minute")}` : "within a minute"}${minutes > 24 * 60 ? ": that's long; an hour, signed fresh per page load, is safer" : ""}.`,
+      ];
+      return done(lines.join("\n"));
+    },
+  }),
+];
+
 // ---------- knowledge (D-87) ----------
 
 /** Runs a Knowledge page function; its expected failures (HttpError) come back as messages the AI can act on. */
@@ -1762,13 +1864,14 @@ const KNOWLEDGE: Tool[] = [
   }),
 ];
 
-export const MCP_TOOLS: Tool[] = [...GENERAL, ...INSTRUCTIONS, ...TASKS, ...ACTIONS, ...WIDGETS, ...TESTS, ...WEBSITE, ...DESK, ...KNOWLEDGE];
+export const MCP_TOOLS: Tool[] = [...GENERAL, ...INSTRUCTIONS, ...TASKS, ...ACTIONS, ...WIDGETS, ...TESTS, ...WEBSITE, ...DESK, ...IDENTITY, ...KNOWLEDGE];
 
 // ---------- resources ----------
 
 const GUIDES: (McpResource & { text: () => string })[] = [
   { uri: "jun://guide/files", name: "file-format", title: "The agent's file format", description: "Every file and key of the support agent's config, with examples.", mimeType: "text/markdown", text: () => FILE_FORMAT },
   { uri: "jun://guide/chatkit-widgets", name: "chatkit-widgets", title: "ChatKit widget authoring guide", description: "OpenAI ChatKit Studio's guide for AIs that write widgets (components, props, layout).", mimeType: "text/markdown", text: () => CHATKIT_AUTHORING_GUIDE },
+  { uri: IDENTITY_GUIDE_URI, name: "identity", title: "Identify signed-in customers", description: "What the company's server and pages need so the chat knows who's signed in ({user.*} in actions): the token, code for Node, Python, Ruby and PHP, and checking it.", mimeType: "text/markdown", text: () => IDENTITY_GUIDE },
   {
     uri: "jun://guide/jinja",
     name: "jinja",
