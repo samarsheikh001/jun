@@ -150,7 +150,10 @@ export function inferSteps(facts: Pick<IssueFacts, "environment" | "events">): s
   const events = lastIssue === -1 ? facts.events : facts.events.slice(0, lastIssue + 1);
   let lastPage = "";
   for (const e of events) {
-    if (e.kind === "navigation" && e.url && e.url !== lastPage) {
+    if (e.kind === "navigation" && e.url && e.how === "reload") {
+      steps.push(e.url === lastPage ? "Reload the page" : `Reload ${code(e.url)}`);
+      lastPage = e.url;
+    } else if (e.kind === "navigation" && e.url && e.url !== lastPage) {
       steps.push(`Open ${code(e.url)}`);
       lastPage = e.url;
     } else if (e.kind === "network" && isIssue(e)) {
@@ -161,6 +164,8 @@ export function inferSteps(facts: Pick<IssueFacts, "environment" | "events">): s
       steps.push(`The app reports an error: ${appError(e)}`);
     } else if (e.kind === "rage_click") {
       steps.push(`Click ${code(describeTarget(e.target))}: nothing happens (clicked ${e.count ?? 3} times in a second, the page didn't change)`);
+    } else if (e.kind === "dead_click") {
+      steps.push(`Click ${code(describeTarget(e.target))}: nothing happens (the page didn't change for 2.5 s)`);
     }
   }
   if (!steps.some((s) => s.startsWith("Open ")) && facts.environment?.page.url) steps.unshift(`Open ${code(facts.environment.page.url)}`);

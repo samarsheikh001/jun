@@ -11,7 +11,7 @@ import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
 import { connectConversation, connectVisitorLive, notifyConversationChanged, offeredProtocols, sendMessage } from "../lib/realtime.ts";
 import { readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
-import { sanitizeContext, type DebugEvent } from "../../shared/debug.ts";
+import { BOT_UA, sanitizeContext, type DebugEvent } from "../../shared/debug.ts";
 import { cleanNudge, cleanOpener, GENERIC_NUDGE, GENERIC_OPENER, nudgeCacheKey, nudgeFacts, nudgePrompt, openerFacts, openerPrompt } from "../ai/nudge.ts";
 import { forLoader, matchesPath, storedOpeners } from "../../shared/openers.ts";
 import { completeText, createModel, loadAiSettings } from "../ai/providers.ts";
@@ -297,6 +297,8 @@ widget.post("/widget/:key/logout", async (c) => {
 widget.get("/widget/:key/live", async (c) => {
   const inbox = await widgetInbox(c);
   if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Chat widget → Behaviour → Allowed websites).");
+  // Crawlers and headless browsers never join the visitor list (the loader skips them too).
+  if (BOT_UA.test(c.req.header("user-agent") ?? "")) throw new HttpError(403, "bot", "Automated browsers aren't listed as visitors.");
   const sessionId = c.req.query("s") ?? "";
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new HttpError(400, "invalid_field", "Bad session id.");
   // T-11: the first time the widget runs on a real site (not the desk's demo page), note it

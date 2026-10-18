@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cleanUrl, describeEvents, describeTarget, isIssue, redact, sanitizeContext } from "./debug.ts";
+import { BOT_UA, cleanUrl, describeEvents, describeTarget, isIssue, redact, sanitizeContext } from "./debug.ts";
 
 // Built at runtime: a key-shaped literal trips GitHub push protection, which blocked the Deploy button's repo copy.
 const FAKE_KEY = ["sk", "live", "4eC39HqLyjWDarjtT1zdp7dc"].join("_");
@@ -157,4 +157,42 @@ test("S-13 stuck: page path only, seconds, issue kind; not an issue itself", () 
   assert.equal(ctx.events.find((e) => e.t === 3)!.seconds, 86_400);
   assert.ok(!ctx.events.some(isIssue));
   assert.equal(describeEvents(ctx).at(-1), "[09:03:00] Still on /import/[email] after 3 min since a failed request, with no successful form submit");
+});
+
+test("cleanUrl keeps campaign tags' values and hash routes, nothing else", () => {
+  assert.equal(
+    cleanUrl("https://app.acme.dev/pricing?utm_source=google&utm_campaign=spring sale&ref=pat@x.dev#top", "https://app.acme.dev"),
+    "/pricing?utm_source=google&utm_campaign=spring-sale&ref=…",
+  );
+  assert.equal(cleanUrl("https://app.acme.dev/?utm_source=pat@x.dev", "https://app.acme.dev"), "/?utm_source=[email]");
+  assert.equal(cleanUrl("https://app.acme.dev/app#/settings/billing?token=abc", "https://app.acme.dev"), "/app#/settings/billing");
+  assert.equal(cleanUrl("https://app.acme.dev/app#!/users/pat@x.dev", "https://app.acme.dev"), "/app#!/users/[email]");
+});
+
+test("dead clicks keep only the safe target; navigation keeps how the page was reached", () => {
+  const ctx = sanitizeContext({
+    page: { url: "https://a.dev/billing", title: "Billing" },
+    events: [
+      { t: 1, kind: "navigation", url: "https://a.dev/billing", how: "reload" },
+      { t: 2, kind: "navigation", url: "https://a.dev/billing", how: "teleport" },
+      { t: 3, kind: "dead_click", target: { tag: "button", id: "export", text: "Export CSV", value: "secret" }, count: 5 },
+      { t: 4, kind: "dead_click" },
+    ],
+  })!;
+  assert.deepEqual(ctx.events, [
+    { t: 1, kind: "navigation", url: "/billing", how: "reload" },
+    { t: 2, kind: "navigation", url: "/billing" },
+    { t: 3, kind: "dead_click", target: { tag: "button", id: "export", text: "Export CSV" } },
+  ]);
+  assert.equal(isIssue(ctx.events[2]!), false);
+  const lines = describeEvents({ ...ctx, timezone: "UTC" });
+  assert.match(lines[0]!, /Reloaded \/billing/);
+  assert.match(lines[2]!, /Clicked button#export "Export CSV"; nothing on the page changed for 2\.5 s/);
+});
+
+test("bots: crawlers, previews and headless browsers, not people", () => {
+  for (const ua of ["Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0 Safari/537.36", "facebookexternalhit/1.1", "Slackbot-LinkExpanding 1.0", "Mozilla/5.0 Chrome-Lighthouse"])
+    assert.ok(BOT_UA.test(ua), ua);
+  for (const ua of ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"])
+    assert.ok(!BOT_UA.test(ua), ua);
 });

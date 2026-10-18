@@ -6,12 +6,13 @@
 /**
  * app_error: the host app's own words, from JunDesk.reportError({ message, code? }) (S-12).
  * rage_click: the same element clicked 3+ times within a second, with no DOM change (S-02).
+ * dead_click: one click on a button or link and nothing on the page changed for 2.5 s (PostHog's rule).
  * stuck: same page for 3+ visible minutes after an issue, with no successful submit (S-13).
  */
-export type DebugEventKind = "error" | "network" | "navigation" | "app_error" | "rage_click" | "stuck";
+export type DebugEventKind = "error" | "network" | "navigation" | "app_error" | "rage_click" | "dead_click" | "stuck";
 
 /**
- * rage_click: what was clicked, never its value. `text` is the visible label of a button or
+ * rage_click / dead_click: what was clicked, never its value. `text` is the visible label of a button or
  * link only (tag a/button or role=button), at most 40 chars; other elements' text is never kept.
  */
 export interface DebugTarget {
@@ -43,7 +44,9 @@ export interface DebugEvent {
   /** network: HTTP status, or 0 for a network failure / blocked resource. */
   status?: number;
   durationMs?: number;
-  /** rage_click */
+  /** navigation: how the page was reached, for the first page of a page load (absent for in-app navigation). */
+  how?: NavigationHow;
+  /** rage_click / dead_click */
   target?: DebugTarget;
   /** rage_click: clicks in the burst. */
   count?: number;
@@ -52,6 +55,9 @@ export interface DebugEvent {
   /** stuck: the kind of the earlier issue. */
   issue?: DebugEventKind;
 }
+
+export type NavigationHow = "open" | "reload" | "back";
+const HOW = new Set<NavigationHow>(["open", "reload", "back"]);
 
 export interface DebugContext {
   page: { url: string; title: string };
@@ -80,24 +86,31 @@ export function redact(input: unknown, max = MAX_TEXT): string {
     .slice(0, max);
 }
 
-/** Keeps a URL's path but never query values (they often hold tokens, emails, ids). */
+/** Campaign tags keep their values (`utm_source=google`): they name an ad, never a person. */
+const UTM = /^utm_(source|medium|campaign|term|content)$/;
+export const utmValue = (v: string) => redact(v, 80).replace(/[\s&#=?]+/g, "-");
+
+/**
+ * Keeps a URL's path but never query values (they often hold tokens, emails, ids), except
+ * campaign tags; a hash route (`#/settings`) stays without its own query, a plain #anchor goes.
+ */
 export function cleanUrl(input: unknown, pageOrigin?: string): string {
   const raw = String(input ?? "").slice(0, 2000);
   try {
     const absolute = /^[a-z][a-z0-9+.-]*:/i.test(raw);
     const url = new URL(raw, pageOrigin ?? "https://relative.invalid");
     const keys = [...new Set(url.searchParams.keys())].slice(0, 10);
-    const query = keys.length ? `?${keys.map((k) => `${redact(k, 40)}=…`).join("&")}` : "";
-    const path = redact(url.pathname, 300);
+    const query = keys.length ? `?${keys.map((k) => `${redact(k, 40)}=${UTM.test(k) ? utmValue(url.searchParams.get(k) ?? "") : "…"}`).join("&")}` : "";
+    const path = redact(url.pathname, 300) + query + (/^#!?\//.test(url.hash) ? redact(url.hash.split("?")[0], 200) : "");
     // Same-site (or relative) URLs become paths; other sites keep their origin.
     const sameSite = !absolute || (pageOrigin !== undefined && url.origin === new URL(pageOrigin).origin);
-    return sameSite ? `${path}${query}` : `${url.origin}${path}${query}`;
+    return sameSite ? path : `${url.origin}${path}`;
   } catch {
     return redact(raw.split(/[?#]/)[0], 300);
   }
 }
 
-const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error", "rage_click", "stuck"]);
+const KINDS = new Set<DebugEventKind>(["error", "network", "navigation", "app_error", "rage_click", "dead_click", "stuck"]);
 /** What can come before a `stuck` event (S-13). */
 const STUCK_AFTER = new Set<DebugEventKind>(["error", "network", "app_error", "rage_click"]);
 export const MAX_APP_ERROR = 300;
@@ -173,12 +186,12 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
       events.push(out);
       continue;
     }
-    if (out.kind === "rage_click") {
-      // S-02: only what was clicked (safe description) and how often.
+    if (out.kind === "rage_click" || out.kind === "dead_click") {
+      // S-02: only what was clicked (safe description) and, for a rage click, how often.
       const target = cleanTarget(ev.target);
       if (!target) continue;
       out.target = target;
-      out.count = Math.max(1, Math.min(100, Math.trunc(num(ev.count, 3))));
+      if (out.kind === "rage_click") out.count = Math.max(1, Math.min(100, Math.trunc(num(ev.count, 3))));
       events.push(out);
       continue;
     }
@@ -195,6 +208,7 @@ export function sanitizeContext(raw: unknown): DebugContext | null {
     if (ev.stack != null) out.stack = redact(ev.stack, 800).split("\n").slice(0, 5).join("\n");
     if (ev.method != null) out.method = String(ev.method).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 10);
     if (ev.url != null) out.url = cleanUrl(ev.url, origin);
+    if (out.kind === "navigation" && HOW.has(ev.how as NavigationHow)) out.how = ev.how as NavigationHow;
     if (ev.status != null) out.status = Math.max(0, Math.min(999, Math.trunc(num(ev.status))));
     if (ev.durationMs != null) out.durationMs = Math.max(0, Math.trunc(num(ev.durationMs)));
     events.push(out);
@@ -254,17 +268,24 @@ export function formatEventTime(t: number, timezone?: string): string {
 export function describeEvents(context: DebugContext, options: { codes?: boolean } = {}): string[] {
   return context.events.map((e) => {
     const at = formatEventTime(e.t, context.timezone);
-    if (e.kind === "navigation") return `[${at}] Visited ${e.url}`;
+    if (e.kind === "navigation") return `[${at}] ${e.how === "reload" ? "Reloaded" : e.how === "back" ? "Went back to" : "Visited"} ${e.url}`;
     if (e.kind === "network") {
       const outcome = e.status ? `HTTP ${e.status}` : `failed${e.message ? ` (${e.message})` : ""}`;
       return `[${at}] ${e.method ?? "GET"} ${e.url} → ${outcome}${e.durationMs != null ? ` in ${e.durationMs} ms` : ""}`;
     }
     if (e.kind === "app_error") return `[${at}] The app reported an error: ${e.message}${options.codes && e.code ? ` (code ${e.code})` : ""}`;
     if (e.kind === "rage_click") return `[${at}] Clicked ${describeTarget(e.target)} ${e.count ?? 3} times in quick succession; the page didn't change`;
+    if (e.kind === "dead_click") return `[${at}] Clicked ${describeTarget(e.target)}; nothing on the page changed for 2.5 s`;
     if (e.kind === "stuck") return `[${at}] Still on ${e.url ?? "the same page"} after ${formatDuration(e.seconds ?? 0)} since ${describeIssueKind(e.issue)}, with no successful form submit`;
     return `[${at}] JavaScript error: ${e.message}${e.source ? ` at ${e.source}` : ""}`;
   });
 }
+
+/**
+ * Crawlers, link previews, uptime checks and headless browsers: never on the visitor list.
+ * The loader has the same pattern (plus navigator.webdriver); keep them in sync.
+ */
+export const BOT_UA = /bot\b|crawl|spider|slurp|headless|lighthouse|pingdom|uptime|monitor|preview|facebookexternalhit|phantom/i;
 
 /** "Chrome 141" from a user agent string (good enough for a support panel or an issue). */
 export function browserName(ua: string): string {

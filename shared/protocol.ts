@@ -184,8 +184,11 @@ export interface LiveVisitor {
   /** Known once they identify (verified) or start a chat. */
   contact: { id: string; name: string | null; email: string | null; verified: boolean } | null;
   page: { url: string; title: string };
+  /** Where the session came from: another site's address (never this site's), or null. */
   referrer: string | null;
-  /** Pages viewed this session. */
+  /** The landing page's campaign tags (utm_source, utm_medium, utm_campaign), or null. */
+  utm: Utm | null;
+  /** Pages viewed this session, across reloads and tabs. */
   pages: number;
   /** When the session started (first page), per the visitor's browser. */
   startedAt: number;
@@ -197,6 +200,12 @@ export interface LiveVisitor {
   language: string | null;
   timezone: string | null;
   inChat: boolean;
+}
+
+export interface Utm {
+  source?: string;
+  medium?: string;
+  campaign?: string;
 }
 
 export interface PresenceEntry {
@@ -227,7 +236,7 @@ export type HubClientEvent = { type: "focus"; focused: boolean };
 
 /** Loader → hub on the live connection. Short keys: this travels from every page view. */
 export type LiveClientEvent =
-  | { t: "page"; url: string; title?: string; ref?: string; start?: number; lang?: string; tz?: string }
+  | { t: "page"; url: string; title?: string; ref?: string; utm?: Utm | null; pages?: number; start?: number; lang?: string; tz?: string }
   | { t: "id"; token: string };
 
 /** Hub → loader. */

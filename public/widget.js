@@ -4,11 +4,12 @@
  *   document.modelContext (below) exists before page code that checks for it once on load.
  * Put it in <head> so it can see errors from the start of the page.
  * Shows a chat button; the chat itself (an iframe from the desk) loads on first open.
- * Captures recent JS errors, failed requests, page navigation, rage clicks (S-02) and "stuck on
- * a page after an error" (S-13) in memory only, masked, and shares them with support only when
- * the visitor sends a message. data-capture="off" disables capture. Shows the visitor on the
- * desk's live visitor list (data-consent="required"
- * waits for JunDesk.consent(true) and stores nothing before it).
+ * Captures recent JS errors, failed requests, page navigation, rage and dead clicks (S-02, S-17)
+ * and "stuck on a page after an error" (S-13), masked, kept in this tab (sessionStorage, so a
+ * reload keeps them), and shares them with support only when the visitor sends a message.
+ * data-capture="off" disables capture. Shows the visitor on the desk's live visitor list, one
+ * session per browser across tabs (localStorage; bots aren't listed). data-consent="required"
+ * waits for JunDesk.consent(true) and stores nothing before it.
  * Page control (AI-32): with "Let the AI use your website" on (desk: Chat widget → Behaviour) the AI may read
  * this page and click, type and choose on it, with the
  * visitor's Confirm for changes; never inside [data-jun-private] or password/card fields (widget-page-control.js).
@@ -45,7 +46,7 @@
   var themes = /^(light|dark|auto)$/, theme = themes.test(script.getAttribute("data-theme")) ? script.getAttribute("data-theme") : null, deskTheme, pageControl;
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
-  var events = [];
+  var events = [], reacted = function () {}; // reacted: the page answered pending clicks (set below)
   var capture = script.getAttribute("data-capture") != "off";
   // S-13 state for the current page (path). Tests on localhost can shorten the 3 minutes with ?jun_stuck_ms=.
   var pagePath = location.pathname, pageIssue, seen = 0, stuckSent, stuckMs = 180000;
@@ -64,11 +65,16 @@
       .slice(0, max);
   }
   function parse(u) { try { return new URL(String(u), location.href); } catch (e) {} }
+  // Campaign tags keep their values (utm_source=google): they name an ad, never a person.
+  var UTM = /^utm_(source|medium|campaign|term|content)$/;
+  function utmValue(v) { return redact(v, 80).replace(/[\s&#=?]+/g, "-"); }
   function cleanUrl(u) {
     var x = parse(u), q = [];
     if (!x) return redact(String(u).split(/[?#]/)[0], 300);
-    x.searchParams.forEach(function (_, k) { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
-    var path = redact(x.pathname, 300) + (q.length ? "?" + q.map(function (k) { return redact(k, 40) + "=…"; }).join("&") : "");
+    x.searchParams.forEach(function (v, k) { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
+    var path = redact(x.pathname, 300) + (q.length ? "?" + q.map(function (k) { return redact(k, 40) + "=" + (UTM.test(k) ? utmValue(x.searchParams.get(k)) : "…"); }).join("&") : "") +
+      // Hash routers (#/settings) keep the route, without its own query; plain anchors are dropped.
+      (/^#!?\//.test(x.hash) ? redact(x.hash.split("?")[0], 200) : "");
     return x.origin == location.origin ? path : x.origin + path;
   }
   // Registrable domain, roughly: the last two labels, or three for "co.uk"-style suffixes.
@@ -77,6 +83,7 @@
     e.t = Date.now();
     events.push(e);
     if (events.length > 40) events.shift();
+    store("jun:e", JSON.stringify(events)); // survives a reload in this tab (not before consent)
     // S-13: remember this page's latest problem (a successful submit clears it). Any failed
     // request counts (a GET 404 doesn't nudge by itself), but not asset loads, and a request that
     // got no response (status 0) only when it went to the page's own site: ad blockers and privacy
@@ -141,41 +148,64 @@
       // checked 2026-10-05): a dead click is a click on a button/input/link with no DOM change or
       // scroll within 7 s; 3+ such clicks in that time are a rage click. Ours is stricter on time:
       // 3+ clicks on the same element within 1 s and 30 px, and nothing in the DOM changes or
-      // scrolls from the first click until 1 s after the last. Single dead clicks aren't recorded.
+      // scrolls from the first click until 1 s after the last.
+      // Dead clicks (PostHog's rule, posthog-js dead-clicks-autocapture, checked 2026-10-18): one
+      // click on a button or link and nothing changes, scrolls, submits or navigates for 2.5 s.
+      // Kept in the trail only (one dead click is no reason to offer help). Not for links that
+      // open elsewhere (new tab, download, mail, phone) or the clicks of a rage burst.
       // Recorded: a safe description of the element (never values or arbitrary text) and the count.
-      var burst, changed, mo = new MutationObserver(function () { changed = 1; mo.disconnect(); });
-      window.addEventListener("scroll", function () { changed = 1; }, true);
+      // Only changes a visitor could see count: browser extensions (Matter, password managers)
+      // rewrite attributes on their own hidden iframes, often outside <body>, on every click.
+      // Hiding something counts.
+      var burst, waiting = [], mo = new MutationObserver(function (ms) {
+        if (ms.some(function (m) {
+          var n = m.target.nodeType == 1 ? m.target : m.target.parentElement;
+          return n && document.body.contains(n) && (n.getClientRects().length || /^(class|style|hidden|open)$/.test(m.attributeName) && m.oldValue != n.getAttribute(m.attributeName));
+        })) reacted();
+      });
+      // The page answered every click still waiting.
+      reacted = function () { waiting.forEach(function (c) { c.changed = 1; }); waiting = []; mo.disconnect(); };
+      var settled = function (c) { var i = waiting.indexOf(c); if (i > -1) waiting.splice(i, 1); if (!waiting.length) mo.disconnect(); };
+      var targetOf = function (el, button) {
+        var t = { tag: el.tagName.toLowerCase() }, role = el.getAttribute("role"), text = button && String(el.innerText || "").replace(/\s+/g, " ").trim();
+        if (el.id) t.id = redact(el.id, 60);
+        if (el.getAttribute("aria-label")) t.label = redact(el.getAttribute("aria-label"), 60);
+        if (el.getAttribute("name")) t.name = redact(el.getAttribute("name"), 60);
+        if (role) t.role = role.slice(0, 20);
+        if (text && text.length <= 40) t.text = redact(text, 40);
+        return t;
+      };
+      window.addEventListener("scroll", function () { reacted(); }, true);
       window.addEventListener("click", function (ev) {
-        var el = ev.target, now = Date.now(), b = burst;
+        var el = ev.target, now = Date.now(), b = burst, c = {};
         el = el && el.closest && (el.closest("button,a,[role=button],input") || el);
         // Not typing, media, our own widget, or scripted clicks.
         if (!el || !ev.isTrusted || el.closest("[data-jun-desk],[contenteditable],textarea,select,canvas,video,audio,input:not([type=submit],[type=button])")) return;
+        var tag = el.tagName.toLowerCase(), button = /^(a|button|input)$/.test(tag) || el.getAttribute("role") == "button";
+        if (!waiting.length) mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeOldValue: true, characterData: true });
+        waiting.push(c);
         if (!b || b.el != el || now - b.t > 1000 || Math.abs(ev.clientX - b.x) > 30 || Math.abs(ev.clientY - b.y) > 30) {
-          b = burst = { el: el, x: ev.clientX, y: ev.clientY, ts: [] };
-          changed = 0;
-          mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
-        }
+          b = burst = { el: el, x: ev.clientX, y: ev.clientY, ts: [], first: c };
+          setTimeout(function () {
+            settled(c);
+            if (!c.changed && b.ts.length < 3 && button && consented && document.body.contains(el) && !el.closest("[target=_blank],[download],[href^='mailto:'],[href^='tel:']")) push({ kind: "dead_click", target: targetOf(el, button) });
+          }, 2500);
+        } else setTimeout(function () { settled(c); }, 2500);
         b.t = now;
+        b.last = c;
         var n = b.ts.push(now);
         if (n < 3 || now - b.ts[n - 3] > 1000) return;
         clearTimeout(b.timer);
         b.timer = setTimeout(function () {
-          var tag = el.tagName.toLowerCase(), role = el.getAttribute("role"), button = /^(a|button)$/.test(tag) || role == "button";
           // A triple click that selected text isn't frustration.
-          if (burst != b || changed || !consented || !button && String(getSelection())) return;
-          var t = { tag: tag }, text = button && String(el.innerText || "").replace(/\s+/g, " ").trim();
-          if (el.id) t.id = redact(el.id, 60);
-          if (el.getAttribute("aria-label")) t.label = redact(el.getAttribute("aria-label"), 60);
-          if (el.getAttribute("name")) t.name = redact(el.getAttribute("name"), 60);
-          if (role) t.role = role.slice(0, 20);
-          if (text && text.length <= 40) t.text = redact(text, 40);
-          push({ kind: "rage_click", target: t, count: b.ts.length });
+          if (burst != b || b.first.changed || b.last.changed || !consented || !button && String(getSelection())) return;
+          push({ kind: "rage_click", target: targetOf(el, button), count: b.ts.length });
         }, 1000);
       }, true);
 
       // S-13 stuck on a form: on this page for 3+ visible minutes (hidden tab time doesn't count)
       // after a real problem, with no successful submit since. A plain timer would be the cut timed pop-up (N-02).
-      window.addEventListener("submit", function () { pageIssue = 0; }, true);
+      window.addEventListener("submit", function () { pageIssue = 0; reacted(); }, true);
     } catch (e) { /* never break the host page */ }
   }
 
@@ -195,10 +225,17 @@
   }, 1000);
 
   // Page changes feed both the debug trail and the live visitor list.
+  // Only real changes: popstate and hashchange both fire for one hash route, and a replaceState
+  // that changes a query value or a plain #anchor cleans to the same URL.
+  var lastUrl;
   function nav() {
+    var u = cleanUrl(location.href);
+    reacted();
+    if (u == lastUrl) return;
+    lastUrl = u;
     if (location.pathname != pagePath) { pagePath = location.pathname; pageIssue = seen = stuckSent = 0; }
-    if (capture) push({ kind: "navigation", url: cleanUrl(location.href) });
-    sendPage();
+    if (capture) push({ kind: "navigation", url: u });
+    viewed();
   }
   try {
     ["pushState", "replaceState"].forEach(function (name) {
@@ -206,26 +243,64 @@
       history[name] = function () { var r = orig.apply(this, arguments); nav(); return r; };
     });
     window.addEventListener("popstate", nav);
+    window.addEventListener("hashchange", nav);
   } catch (e) {}
 
   // ---------- live visitor (V-01), identity (V-03), consent (V-06) ----------
   // data-consent="required": store nothing and stay off the visitor list until JunDesk.consent(true).
   var consented = script.getAttribute("data-consent") != "required";
   var userToken = script.getAttribute("data-user-token") || null;
-  var sid, started, live, liveTries = 0;
-  function store(k, v) { try { if (!consented) return null; if (v != null) sessionStorage.setItem(k, v); return sessionStorage.getItem(k); } catch (e) { return null; } }
+  var sid, sess, counted, live, liveTries = 0;
+  // sessionStorage, or localStorage with `local`; nothing before consent.
+  function store(k, v, local) { try { if (!consented) return null; var s = local ? localStorage : sessionStorage; if (v === 0) s.removeItem(k); else if (v != null) s.setItem(k, v); return s.getItem(k); } catch (e) { return null; } }
   // 96 random bits as "12-255-0-…" (the desk accepts [A-Za-z0-9_-]{8,64}).
   function rid() { return crypto.getRandomValues(new Uint8Array(12)).join("-"); }
   function liveSend(m) { if (live && live.readyState == 1) live.send(JSON.stringify(m)); }
   function tz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } }
+  // Crawlers, uptime checks and automated browsers never join the visitor list (PostHog drops them too).
+  var bot = navigator.webdriver || /bot\b|crawl|spider|slurp|headless|lighthouse|pingdom|uptime|monitor|preview|facebookexternalhit|phantom/i.test(navigator.userAgent);
+
+  // The trail survives a reload in this tab (it broke, they refreshed, then asked): the last 30 minutes.
+  if (capture) {
+    try { events = JSON.parse(store("jun:e")).filter(function (e) { return e.t > Date.now() - 18e5; }).concat(events).slice(-40); } catch (e) {}
+    // How this page was reached: a reload is worth knowing about.
+    var how = ((performance.getEntriesByType && performance.getEntriesByType("navigation")[0]) || {}).type;
+    push({ kind: "navigation", url: lastUrl = cleanUrl(location.href), how: how == "reload" ? "reload" : how == "back_forward" ? "back" : "open" });
+  }
+
+  // One session for the whole browser, shared by its tabs (PostHog's rule): a new one after 30
+  // minutes without a page view or a visible tab, or after 24 hours. It keeps where the visit
+  // came from (referrer, campaign tags) and the pages viewed, so a reload or a second tab adds to it.
+  function session(fresh) {
+    var now = Date.now(), s, x = parse(document.referrer), q = {}, n = 0;
+    try { s = JSON.parse(store("jun:session", null, 1)); } catch (e) {}
+    s = s || sess; // storage off: this tab's own
+    if (fresh || !s || !s.id || now - s.last > 18e5 || now - s.start > 864e5) {
+      try { new URLSearchParams(location.search).forEach(function (v, k) { var m = /^utm_(source|medium|campaign)$/.exec(k); if (m && v) q[m[1]] = utmValue(v), n++; }); } catch (e) {}
+      // Another page of this same site isn't where they came from.
+      s = { id: rid(), start: now, pages: 0, ref: x && site(x.hostname) != site(location.hostname) ? cleanUrl(document.referrer) : "", utm: n ? q : null };
+    }
+    s.last = now;
+    store("jun:session", JSON.stringify(s), 1);
+    return sess = s;
+  }
+  // A page view (load or in-app navigation) counts for the session; its id changes after 30 idle minutes.
+  function viewed() {
+    if (!live) return;
+    if (session().id != sid) return disconnect(), connect();
+    count();
+    sendPage();
+  }
+  function count() { sess.pages++; store("jun:session", JSON.stringify(sess), 1); }
   function sendPage() {
-    liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 200), ref: document.referrer ? cleanUrl(document.referrer) : "", start: started, lang: navigator.language, tz: tz() });
+    liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 200), ref: sess.ref, utm: sess.utm, pages: sess.pages, start: sess.start, lang: navigator.language, tz: tz() });
   }
   function connect() {
     if (!consented || live) return;
     if (pageControl) chunk("page-control");
-    sid = sid || store("jun:s") || store("jun:s", rid()) || rid();
-    started = started || Number(store("jun:t") || store("jun:t", Date.now())) || Date.now();
+    if (bot) return;
+    sid = session().id;
+    if (counted != sid) counted = sid, count(); // this page, once per session (not on reconnects)
     var ws = live = new WebSocket(origin.replace(/^http/, "ws") + "/api/widget/" + encodeURIComponent(key) + "/live?s=" + sid);
     ws.onopen = function () { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); };
     ws.onmessage = function (e) {
@@ -237,7 +312,8 @@
     ws.onclose = function () { if (live != ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
   }
   function disconnect() { var ws = live; live = null; if (ws) ws.close(); }
-  setInterval(function () { if (live && live.readyState == 1) live.send("ping"); }, 30000);
+  // A visible tab keeps the session going (a hidden one doesn't, so 30 idle minutes end it).
+  setInterval(function () { if (live && live.readyState == 1) { live.send("ping"); if (!document.hidden && session().id != sid) disconnect(), connect(); } }, 30000);
 
   function snapshot() {
     return {
@@ -481,8 +557,8 @@
       userToken = null;
       post({ type: "jun:identify", userToken: null });
       disconnect();
-      sid = null; started = null;
-      store("jun:s", rid()); store("jun:t", Date.now());
+      sid = null;
+      session(1);
       connect();
     },
     // S-12: the app says what failed, in its own words. Same masking as shared/debug.ts.
@@ -497,7 +573,10 @@
       } catch (x) { /* never break the host page */ }
     },
     consent: function (yes) {
+      // Withdrawn: forget the trail and the session this page stored.
+      if (!yes) store("jun:e", 0), store("jun:session", 0, 1);
       consented = Boolean(yes);
+      if (consented) store("jun:e", JSON.stringify(events));
       post({ type: "jun:consent", persist: consented });
       if (consented) connect();
       else disconnect();

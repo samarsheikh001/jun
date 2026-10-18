@@ -3,7 +3,7 @@ import { MAX_SEEN_PAGE_ACTIONS, type SeenPageAction } from "../shared/actions.ts
 import { ChatGPTAuth, type ChatGPTCredentials, type CredentialStore } from "@jun/llm";
 import { pickAssignee } from "../shared/inbox.ts";
 import { notificationPayload, notificationRecipients, readNotificationPrefs, type NotificationEvent, type NotificationPayload } from "../shared/notifications.ts";
-import { SOCKET_PROTOCOL, type HubClientEvent, type HubEvent, type LiveClientEvent, type LiveServerEvent, type LiveVisitor, type PresenceEntry } from "../shared/protocol.ts";
+import { SOCKET_PROTOCOL, type HubClientEvent, type HubEvent, type LiveClientEvent, type LiveServerEvent, type LiveVisitor, type PresenceEntry, type Utm } from "../shared/protocol.ts";
 import { upsertIdentified } from "./lib/contacts.ts";
 import { newId } from "./lib/crypto.ts";
 import { IdentityError, verifyIdentityToken } from "./lib/identity.ts";
@@ -62,6 +62,14 @@ const STALE_MS = 75_000;
 const SWEEP_MS = 120_000;
 
 const clip = (value: unknown, max: number): string => (typeof value === "string" ? value.slice(0, max) : "");
+/** Campaign tags from the loader: only source, medium and campaign, short strings. */
+function cleanUtm(value: unknown): Utm | null {
+  if (!value || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+  const out: Utm = {};
+  for (const k of ["source", "medium", "campaign"] as const) if (clip(r[k], 80)) out[k] = clip(r[k], 80);
+  return Object.keys(out).length ? out : null;
+}
 
 /**
  * One instance per workspace. Agents' dashboards keep a socket open here to get inbox
@@ -101,6 +109,7 @@ export class WorkspaceHub extends DurableObject<Env> {
           contact: null,
           page: { url: "", title: "" },
           referrer: null,
+          utm: null,
           pages: 0,
           startedAt: now,
           country: info.country,
@@ -428,9 +437,12 @@ export class WorkspaceHub extends DurableObject<Env> {
     const v = a.visitor;
     if (event.t === "page") {
       v.page = { url: clip(event.url, 300), title: clip(event.title, 120) };
-      v.pages++;
-      if (v.pages === 1) {
+      const first = !v.pages;
+      // The loader counts the session's pages across reloads and tabs; older loaders don't.
+      v.pages = typeof event.pages === "number" && event.pages >= 1 ? Math.min(Math.trunc(event.pages), 100_000) : v.pages + 1;
+      if (first) {
         v.referrer = clip(event.ref, 200) || null;
+        v.utm = cleanUtm(event.utm);
         if (typeof event.start === "number" && event.start <= Date.now() && event.start > Date.now() - 86_400_000) v.startedAt = event.start;
         v.language = clip(event.lang, 20) || null;
         v.timezone = clip(event.tz, 60) || null;

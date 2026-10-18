@@ -20,7 +20,7 @@ function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) 
     return (
       <li className="ev nav">
         <span className="ev-time">{time}</span>
-        <span>Visited <code>{event.url}</code></span>
+        <span>{event.how === "reload" ? "Reloaded" : event.how === "back" ? "Went back to" : "Visited"} <code>{event.url}</code></span>
       </li>
     );
   }
@@ -45,6 +45,18 @@ function EventRow({ event, timezone }: { event: DebugEvent; timezone: string }) 
         <span>
           <strong>Rage click</strong> ×{event.count} on <code>{describeTarget(event.target)}</code>
           <div className="muted small">Clicked repeatedly within a second; nothing on the page changed</div>
+        </span>
+      </li>
+    );
+  }
+  if (event.kind === "dead_click") {
+    // One click the page never answered (PostHog's dead click: nothing changed for 2.5 s).
+    return (
+      <li className="ev warn">
+        <span className="ev-time">{time}</span>
+        <span>
+          <strong>Dead click</strong> on <code>{describeTarget(event.target)}</code>
+          <div className="muted small">Nothing on the page changed for 2.5 s</div>
         </span>
       </li>
     );

@@ -50,13 +50,14 @@ function pathOf(url: string): string {
   }
 }
 
-/** Where they came from: the referrer's host, or null for a direct visit. */
-function sourceOf(referrer: string | null): string | null {
-  if (!referrer) return null;
+/** Where they came from: the campaign's utm_source, else the referrer's host, or null for a direct visit. */
+function sourceOf(v: LiveVisitor): string | null {
+  if (v.utm?.source) return v.utm.source;
+  if (!v.referrer) return null;
   try {
-    return new URL(referrer).host.replace(/^www\./, "");
+    return new URL(v.referrer).host.replace(/^www\./, "");
   } catch {
-    return referrer;
+    return v.referrer;
   }
 }
 
@@ -171,7 +172,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
   const spots = useMemo(() => globeSpots(visitors, (v) => (v.contact ? visitorName(v) : v.city ?? (v.country ? countryName(v.country) : sessionLabel(v.sessionId)))), [visitors]);
   const countries = useMemo(() => tally(visitors, (v) => v.country), [visitors]);
   const pages = useMemo(() => tally(visitors, (v) => pathOf(v.page.url)), [visitors]);
-  const sources = useMemo(() => tally(visitors, (v) => sourceOf(v.referrer) ?? "Direct"), [visitors]);
+  const sources = useMemo(() => tally(visitors, (v) => sourceOf(v) ?? "Direct"), [visitors]);
   const known = visitors.filter((v) => v.contact).length;
   const chatting = visitors.filter((v) => v.inChat).length;
   const times = visitors.map((v) => now - v.startedAt).sort((a, b) => a - b);
@@ -267,7 +268,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
                 <div className="visitor-page">
                   <div className="visitor-page-title">{v.page.title || "Untitled page"}</div>
                   <code>{pathOf(v.page.url)}</code>
-                  <div className="muted small">{v.referrer ? <>from <code>{sourceOf(v.referrer)}</code></> : "Direct visit"}</div>
+                  <div className="muted small">{sourceOf(v) ? <>from <code>{sourceOf(v)}</code>{v.utm?.campaign && <> · {v.utm.campaign}</>}</> : "Direct visit"}</div>
                 </div>
                 <div className="visitor-time">
                   <span className="visitor-time-n">{duration(now - v.startedAt)}</span>
