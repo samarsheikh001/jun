@@ -1,19 +1,12 @@
-import { lazy, Suspense, useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import { ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight, ArrowUpIcon as ArrowUp } from "@/components/icons";
+import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight, ArrowUpIcon as ArrowUp, ThumbsDownIcon, ThumbsUpIcon } from "@/components/icons";
 import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
 import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
-import { sliceColor } from "./topic-colors.ts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
-
-const DayChart = lazy(() => import("./DayChart.tsx"));
-const KpiSpark = lazy(() => import("./charts.tsx").then((m) => ({ default: m.KpiSpark })));
-const ShareDonut = lazy(() => import("./charts.tsx").then((m) => ({ default: m.ShareDonut })));
-const PageBars = lazy(() => import("./charts.tsx").then((m) => ({ default: m.PageBars })));
-const TopicRadar = lazy(() => import("./charts.tsx").then((m) => ({ default: m.TopicRadar })));
-const TeamBars = lazy(() => import("./charts.tsx").then((m) => ({ default: m.TeamBars })));
+import DayChart from "./DayChart.tsx";
 
 // A-01: core metrics. Days are calendar days in the browser's time zone; the Worker
 // aggregates and shared/metrics.ts defines every number (see docs/features.md A-01, A-06).
@@ -31,25 +24,21 @@ const duration = (ms: number | null) => (ms === null ? "–" : formatDuration(ms
 const dayLabel = (key: string, weekday = false) =>
   new Date(`${key}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: "UTC", day: "numeric", month: "short", ...(weekday ? { weekday: "short" } : {}) });
 
-/** A headline number: label, the value in mono, a change or detail under it. */
-function Kpi({ label, value, change, detail, off, viz }: { label: string; value: string; change?: ReactNode; detail: ReactNode; off?: boolean; viz?: ReactNode }) {
+/**
+ * A headline number: label (its definition on hover), the value in mono, a change or detail under it.
+ * No value yet is a quiet dash, never a word set as big as a number.
+ */
+function Kpi({ label, hint, value, change, detail }: { label: string; hint: string; value: string | null; change?: ReactNode; detail: ReactNode }) {
   return (
     <div className="kpi">
-      <div className="kpi-label">{label}</div>
-      <div className={`kpi-value${off ? " off" : ""}`}>{value}</div>
-      <div className="kpi-viz">{viz}</div>
+      <div className="kpi-label" title={hint}>{label}</div>
+      <div className={`kpi-value${value === null ? " none" : ""}`}>{value ?? "–"}</div>
       <div className="kpi-detail">{change}<span>{detail}</span></div>
     </div>
   );
 }
 
-/** A dithered meter: 0–1 in one colour, or a split of two (`split` is the first colour's part). */
-function Meter({ value, tone, split, title }: { value?: number | null; tone?: string; split?: number | null; title: string }) {
-  const style = { [split !== undefined ? "--split" : "--value"]: (split !== undefined ? split : value) ?? 0 } as CSSProperties;
-  return <div className={`meter-dither ${tone ?? ""}${split !== undefined ? " split" : ""}${(split ?? value) == null ? " empty" : ""}`} style={style} role="img" aria-label={title} title={title} />;
-}
-
-/** CSAT in full: the 👍/👎 split and the latest 👎 comments, as quotes that open their chat. */
+/** CSAT in full: the good/bad split and the latest bad ratings' comments, as quotes that open their chat. */
 function Ratings({ csat }: { csat: MetricsReport["csat"] }) {
   const total = csat.good + csat.bad;
   return (
@@ -59,24 +48,19 @@ function Ratings({ csat }: { csat: MetricsReport["csat"] }) {
         {total > 0 && <span className="dash-caption nums">{total.toLocaleString()} rating{total === 1 ? "" : "s"}</span>}
       </div>
       {total === 0 ? (
-        <div className="ratings-empty">
-          <div className="ratings-empty-art" aria-hidden="true"><span>👍</span><span>👎</span></div>
-          <p>
-            <span className="strong">No ratings in this period yet.</span>
-            <br />
-            <span className="muted">When a chat ends, visitors can rate it 👍 or 👎 and add a comment. Comments on 👎 show up here.</span>
-          </p>
-        </div>
+        <p className="muted small">
+          No ratings in this period. When a chat ends, visitors can rate it good or bad and add a comment; comments on bad ratings show up here.
+        </p>
       ) : (
         <>
           <div className="ratings-split">
-            <div className="ratings-side good"><span className="ratings-n">{csat.good.toLocaleString()}</span> 👍 {percent(csat.good / total)}</div>
-            <div className="ratings-side bad">{percent(csat.bad / total)} 👎 <span className="ratings-n">{csat.bad.toLocaleString()}</span></div>
+            <div className="ratings-side good"><ThumbsUpIcon /><span className="ratings-n">{csat.good.toLocaleString()}</span> {percent(csat.good / total)}</div>
+            <div className="ratings-side bad">{percent(csat.bad / total)} <span className="ratings-n">{csat.bad.toLocaleString()}</span><ThumbsDownIcon /></div>
           </div>
-          <Meter split={csat.good / total} title={`${csat.good} good, ${csat.bad} bad`} />
-          <h3 className="ratings-sub">Recent 👎 comments</h3>
+          <div className="ratings-bar" style={{ "--split": csat.good / total } as CSSProperties} role="img" aria-label={`${csat.good} good, ${csat.bad} bad`} />
+          <h3 className="ratings-sub">Comments on bad ratings</h3>
           {csat.badComments.length === 0 ? (
-            <p className="muted small">{csat.bad === 0 ? "No 👎 ratings in this period." : "None of the 👎 ratings came with a comment."}</p>
+            <p className="muted small">{csat.bad === 0 ? "No bad ratings in this period." : "None of the bad ratings came with a comment."}</p>
           ) : (
             <ul className="quotes">
               {csat.badComments.map((x) => (
@@ -141,12 +125,6 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
     );
   };
   const rest = pages.withPage - pages.top.reduce((s, p) => s + p.count, 0);
-  // The bar chart's axis: path (with the host when there are several sites), shortened in the middle.
-  const short = (page: string) => {
-    const u = new URL(page);
-    const text = (site ? "" : u.host) + u.pathname;
-    return text.length > 16 ? `${text.slice(0, 7)}…${text.slice(-8)}` : text;
-  };
   return (
     <section className="dash-card">
       <div className="dash-card-head">
@@ -159,14 +137,9 @@ function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
         </p>
       ) : (
         <>
-          {pages.top.length >= 2 && (
-            <Suspense fallback={<div className="dither dither-bars short" />}>
-              <PageBars pages={pages.top.map((p) => ({ label: short(p.page), page: p.page, chats: p.count }))} />
-            </Suspense>
-          )}
           <ul className="dash-rows bars">
             {pages.top.map((p) => (
-              <li key={p.page} title={p.page} style={{ "--share": p.share } as CSSProperties}>
+              <li key={p.page} title={p.page} style={{ "--share": p.count / pages.top[0]!.count } as CSSProperties}>
                 <span className="dash-row-label page-path">{label(p.page)}</span>
                 <span className="dash-row-share">{percent(p.share)}</span>
                 <span className="dash-row-value">{p.count.toLocaleString()}</span>
@@ -190,6 +163,10 @@ const MAX_TOPICS_SHOWN = 8;
 function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topics"]; showAi: boolean; aiEnabled: boolean }) {
   const top = topics.list.slice(0, MAX_TOPICS_SHOWN);
   const rest = topics.list.length - top.length;
+  // The AI's rate per topic is a column only when it differs between topics; one rate for all is a line.
+  const rates = new Set(top.flatMap((t) => (t.aiResolutionRate === null ? [] : [percent(t.aiResolutionRate)])));
+  const rateColumn = showAi && rates.size > 1;
+  const oneRate = showAi && rates.size === 1 ? [...rates][0] : null;
   return (
     <section className="dash-card">
       <div className="dash-card-head">
@@ -209,15 +186,14 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
         </p>
       ) : (
         <>
-          <Suspense fallback={<div className="dither dither-donut" />}>
-            <ShareDonut items={topics.list} total={topics.labeled} otherLabel="Other topics" />
-          </Suspense>
           <ul className="dash-rows links bars">
-            {top.map((t, i) => (
-              <li key={t.id} style={{ "--share": t.share, "--swatch": sliceColor(i) ?? "var(--muted-foreground)" } as CSSProperties}>
+            {top.map((t) => (
+              <li key={t.id} style={{ "--share": t.share / top[0]!.share } as CSSProperties}>
                 <a href={deskHref(`/inbox?topic=${t.id}`)} onClick={goTo(`/inbox?topic=${encodeURIComponent(t.id)}`)} title={`Open the ${t.name} conversations in the inbox`}>
-                  <span className="dash-row-label"><i className="dash-swatch" aria-hidden="true" />{t.name}</span>
-                  {showAi && t.aiResolutionRate !== null && <span className="dash-row-tag" title="Resolved by the AI alone, of this topic's AI chats">AI {percent(t.aiResolutionRate)}</span>}
+                  <span className="dash-row-label">{t.name}</span>
+                  {rateColumn && (
+                    <span className="dash-row-share" title="Resolved by the AI alone, of this topic's AI chats">{t.aiResolutionRate === null ? "" : `AI ${percent(t.aiResolutionRate)}`}</span>
+                  )}
                   <span className="dash-row-share">{percent(t.share)}</span>
                   <span className="dash-row-value">{t.count.toLocaleString()}</span>
                 </a>
@@ -226,7 +202,8 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
           </ul>
           <p className="dash-foot">
             Share of the {topics.labeled.toLocaleString()} labelled chats{rest > 0 ? ` (${rest} more topic${rest === 1 ? "" : "s"} not listed)` : ""}.
-            {showAi && top.some((t) => t.aiResolutionRate !== null) && " AI % is how many of the topic's AI chats the AI resolved alone."}
+            {rateColumn && " AI % is how many of the topic's AI chats the AI resolved alone."}
+            {oneRate && ` The AI resolved ${oneRate} of each topic's AI chats alone.`}
             {!aiEnabled && " New chats aren't labelled while AI replies are off."}
             {aiEnabled && topics.unlabeled > 0 && ` ${topics.unlabeled} chat${topics.unlabeled === 1 ? " isn't" : "s aren't"} labelled yet (still going, or quiet for less than a few minutes).`}
           </p>
@@ -240,87 +217,72 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
 function Overview({ r }: { r: MetricsReport }) {
   const [day, setDay] = useState<DayPoint | null>(null);
   const showAi = !r.ai.off;
+  const value = (n: number | null, format: (n: number) => string) => (n === null ? null : format(n));
+  const prev = r.conversations.previousTotal;
+  const aiFirst = r.ai.firstResponse.median === null ? "" : ` The AI's first answer takes ${duration(r.ai.firstResponse.median)} (median).`;
+  // Only what changes how to read the numbers; the definitions are on the labels.
+  const notes = [
+    !r.ai.off && !r.ai.enabled && "AI replies are off now; the AI numbers are from earlier in the period.",
+    !r.ai.off && r.ai.passedWhileOff > 0 &&
+      `${r.ai.passedWhileOff} chat${r.ai.passedWhileOff === 1 ? "" : "s"} reached the AI while it was off and went to the team; ${r.ai.passedWhileOff === 1 ? "it isn't" : "they aren't"} counted as handoffs.`,
+  ].filter(Boolean);
   return (
     <section className="dash-card dash-hero">
       <div className="dash-card-head">
         <h2>Conversations</h2>
-        <span className="dash-caption" aria-live="polite">
-          {day ? (
-            <>
-              <span className="strong">{dayLabel(day.day, true)}</span> · {day.conversations} conversation{day.conversations === 1 ? "" : "s"}
-              {showAi && ` · ${day.aiResolved} resolved by the AI`}
-            </>
-          ) : (
-            `Last ${r.days} days`
-          )}
-        </span>
+        {day && (
+          <span className="dash-caption" aria-live="polite">
+            <span className="strong">{dayLabel(day.day, true)}</span> · {day.conversations} conversation{day.conversations === 1 ? "" : "s"}
+            {showAi && ` · ${day.aiResolved} resolved by the AI`}
+          </span>
+        )}
       </div>
-      <Suspense fallback={<div className="dither dither-day" />}>
-        <DayChart key={r.days} series={r.conversations.series} showAi={showAi} onHover={setDay} />
-      </Suspense>
+      <DayChart key={r.days} series={r.conversations.series} showAi={showAi} onHover={setDay} />
       <div className="kpis">
         <Kpi
           label="Conversations"
+          hint={`Conversations started in the last ${r.days} days.${prev === null ? "" : ` The ${r.days} days before had ${prev.toLocaleString()}.`}`}
           value={r.conversations.total.toLocaleString()}
           change={<Change change={r.conversations.change} days={r.days} />}
-          detail={`${r.conversations.resolved.toLocaleString()} resolved`}
-          viz={
-            <Suspense fallback={null}>
-              <KpiSpark data={r.conversations.series.map((d) => d.conversations)} />
-            </Suspense>
-          }
+          detail={prev === 0 ? `None the ${r.days} days before` : `${r.conversations.resolved.toLocaleString()} marked resolved`}
         />
         {r.ai.off ? (
           <Kpi
             label="AI assistant"
-            value="Off"
-            off
-            detail={<>Your team answers every chat. <a href={deskHref("/settings/ai")} onClick={goTo("/settings/ai")}>Turn it on</a></>}
+            hint="AI replies are off, and none of this period's chats were the AI's."
+            value={null}
+            detail={<>Off. <a href={deskHref("/settings/ai")} onClick={goTo("/settings/ai")}>Turn it on</a></>}
           />
         ) : (
           <>
             <Kpi
               label="AI resolved"
-              value={percent(r.ai.resolutionRate)}
+              hint="Of the chats the AI answered, the ones it finished alone: no handoff and no reply from the team."
+              value={value(r.ai.resolutionRate, percent)}
               detail={`${r.ai.resolved} of ${r.ai.conversations} AI chats`}
-              viz={<Meter value={r.ai.resolutionRate} tone="green" title={`AI resolved ${percent(r.ai.resolutionRate)}`} />}
             />
             <Kpi
               label="Handed off"
-              value={percent(r.ai.handoffRate)}
+              hint="Of the chats the AI answered, the ones it passed to the team."
+              value={value(r.ai.handoffRate, percent)}
               detail={`${r.ai.handedOff} of ${r.ai.conversations} AI chats`}
-              viz={<Meter value={r.ai.handoffRate} tone="purple" title={`Handed off ${percent(r.ai.handoffRate)}`} />}
             />
           </>
         )}
         <Kpi
           label="First response"
-          value={duration(r.team.firstResponse.median)}
+          hint={`The median time from a visitor's first message to the team's first reply.${aiFirst}`}
+          value={value(r.team.firstResponse.median, duration)}
           detail={r.team.firstResponse.p90 === null ? "No team replies yet" : `90% within ${duration(r.team.firstResponse.p90)}`}
-          viz={
-            <Meter
-              value={r.team.firstResponse.p90 ? (r.team.firstResponse.median ?? 0) / r.team.firstResponse.p90 : null}
-              tone="orange"
-              title="The median first response against the time 90% of first responses come within"
-            />
-          }
         />
         <Kpi
           label="CSAT"
-          value={r.csat.score === null ? "No ratings" : percent(r.csat.score)}
-          off={r.csat.score === null}
-          detail={`👍 ${r.csat.good} · 👎 ${r.csat.bad}`}
-          viz={<Meter split={r.csat.score} title={`${r.csat.good} good, ${r.csat.bad} bad`} />}
+          hint="Good ratings out of all ratings given in this period."
+          value={value(r.csat.score, percent)}
+          detail={r.csat.good + r.csat.bad === 0 ? "No ratings yet" : `${r.csat.good} good · ${r.csat.bad} bad`}
         />
       </div>
-      <p className="dash-foot">
-        {r.conversations.previousTotal !== null && `The change is against the ${r.days} days before (${r.conversations.previousTotal.toLocaleString()} conversations). `}
-        First response is the median time from a visitor's first message to the team's first reply.
-        {r.ai.firstResponse.median !== null && ` The AI's first answer takes ${duration(r.ai.firstResponse.median)} (median).`}
-        {!r.ai.off && !r.ai.enabled && " AI replies are off now; the AI numbers are from earlier in the period."}
-        {!r.ai.off && r.ai.passedWhileOff > 0 &&
-          ` ${r.ai.passedWhileOff} chat${r.ai.passedWhileOff === 1 ? "" : "s"} reached the AI while it was off and went to the team; ${r.ai.passedWhileOff === 1 ? "it isn't" : "they aren't"} counted as handoffs.`}
-      </p>
+      {notes.length > 0 && <p className="dash-foot">{notes.join(" ")}</p>}
     </section>
   );
 }
@@ -337,27 +299,23 @@ function DashboardSkeleton({ aiOff }: { aiOff: boolean }) {
       <section className="dash-card dash-hero" aria-busy="true" aria-label="Loading the dashboard">
         <div className="dash-card-head">
           <h2>Conversations</h2>
-          <span className="dash-caption"><SkelText width={84} /></span>
         </div>
-        <Skeleton className="dither-day" />
+        <Skeleton className="day-skel" />
         <div className="kpis">
           {kpis.map((label) => (
             <div key={label} className="kpi" aria-hidden="true">
               <div className="kpi-label">{label}</div>
               <div className="kpi-value"><SkelText width="3ch" /></div>
-              <div className="kpi-viz"><Skeleton className="kpi-skel-viz" /></div>
               <div className="kpi-detail"><SkelText width={110} /></div>
             </div>
           ))}
         </div>
-        {/* The real note runs to about two lines. */}
-        <p className="dash-foot"><SkelText width="100%" /><br /><SkelText width="40%" /></p>
       </section>
       <div className="dash-grid" aria-hidden="true">
         {[0, 1].map((i) => (
           <section key={i} className="dash-card">
             <div className="dash-card-head"><h2><SkelText width={140} /></h2></div>
-            <Skeleton className="dither-donut" />
+            <Skeleton className="dash-rows-skel" />
           </section>
         ))}
       </div>
@@ -394,7 +352,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="content wide reports">
       <div className="row reports-head">
-        <h2>Dashboard</h2>
+        <h1>Dashboard</h1>
         <span className="spacer" />
         <div className="segmented" role="group" aria-label="Period">
           {METRIC_PERIODS.map((p) => (
@@ -416,18 +374,6 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
 
           <div className="dash-grid">
             <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
-            {r.topics.list.length >= 3 && (
-              <section className="dash-card">
-                <div className="dash-card-head"><h2>Topics at a glance</h2></div>
-                <Suspense fallback={<div className="dither dither-radar" />}>
-                  <TopicRadar topics={r.topics.list} showAi={!r.ai.off} />
-                </Suspense>
-                <p className="dash-foot">
-                  Each axis is one of your top {Math.min(6, r.topics.list.length)} topics: how many chats it brought
-                  {!r.ai.off && ", and how many of those the AI resolved alone"}.
-                </p>
-              </section>
-            )}
             <StartPages pages={r.pages} />
             {!r.ai.off && (
               <section className="dash-card">
@@ -435,19 +381,15 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
                 {r.ai.reasons.length === 0 ? (
                   <p className="muted small">No handoffs in this period.</p>
                 ) : (
-                  <>
-                    <Suspense fallback={<div className="dither dither-donut" />}>
-                      <ShareDonut items={r.ai.reasons.map((x) => ({ name: x.reason, count: x.count }))} total={r.ai.handedOff} otherLabel="Other reasons" />
-                    </Suspense>
-                    <ul className="dash-rows bars">
-                      {r.ai.reasons.map((x, i) => (
-                        <li key={x.reason} style={{ "--share": x.count / r.ai.reasons[0]!.count, "--swatch": sliceColor(i) ?? "var(--muted-foreground)" } as CSSProperties}>
-                          <span className="dash-row-label"><i className="dash-swatch" aria-hidden="true" />{x.reason}</span>
-                          <span className="dash-row-value">{x.count.toLocaleString()}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
+                  <ul className="dash-rows bars">
+                    {r.ai.reasons.map((x) => (
+                      <li key={x.reason} style={{ "--share": x.count / r.ai.reasons[0]!.count } as CSSProperties}>
+                        <span className="dash-row-label">{x.reason}</span>
+                        <span className="dash-row-share">{percent(x.count / r.ai.handedOff)}</span>
+                        <span className="dash-row-value">{x.count.toLocaleString()}</span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </section>
             )}
@@ -456,11 +398,6 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
 
           <section className="dash-card">
             <div className="dash-card-head"><h2>Team</h2></div>
-            {r.teammates.filter((t) => t.replies > 0).length >= 2 && (
-              <Suspense fallback={<div className="dither dither-bars" />}>
-                <TeamBars teammates={r.teammates} />
-              </Suspense>
-            )}
             <Table className="team-table">
               <TableHeader>
                 <TableRow>

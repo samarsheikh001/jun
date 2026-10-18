@@ -46,6 +46,8 @@ import {
   SparklesIcon,
   Sun03Icon,
   TextIcon as HugeTextIcon,
+  ThumbsDownIcon as HugeThumbsDownIcon,
+  ThumbsUpIcon as HugeThumbsUpIcon,
   Tick02Icon,
   Upload04Icon,
   UserMultipleIcon,
@@ -109,3 +111,5 @@ export const TrashIcon = make(Delete02Icon);
 export const UploadIcon = make(Upload04Icon);
 export const UsersIcon = make(UserMultipleIcon);
 export const XIcon = make(Cancel01Icon);
+export const ThumbsUpIcon = make(HugeThumbsUpIcon);
+export const ThumbsDownIcon = make(HugeThumbsDownIcon);

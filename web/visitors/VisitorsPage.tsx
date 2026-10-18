@@ -6,14 +6,13 @@ import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { globeSpots } from "../lib/globe-spots.ts";
-import { DONUT_SLICES, sliceColor } from "../reports/topic-colors.ts";
 
 // MapLibre is big (~220 KB gzipped): only this page loads it.
 const VisitorGlobe = lazy(() => import("./VisitorGlobe.tsx"));
 
 // V-01 live visitors and V-07 agent-started chats. The list itself comes from the workspace
 // hub socket (Shell keeps it), so it updates as people browse. Laid out like the Dashboard:
-// flat sections, numbers in Geist Mono, dithered share rows.
+// flat sections, numbers in Geist Mono, share rows.
 
 const duration = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -69,11 +68,14 @@ function initials(v: LiveVisitor): string {
   return ((parts[0]?.[0] ?? "") + (v.contact?.name ? (parts[1]?.[0] ?? "") : "")).toUpperCase() || "#";
 }
 
-/** A steady colour per session, from the Dashboard's slice colours (any id: a hash, never negative). */
+/** Avatar colours: a steady one per session. */
+const TINTS = ["rgb(53 143 243)", "rgb(150 110 255)", "rgb(240 90 190)", "rgb(255 150 50)", "rgb(40 210 110)"];
+
+/** A steady colour per session (any id: a hash, never negative). */
 function tint(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return sliceColor(hash % DONUT_SLICES) ?? "var(--stream-2)";
+  return TINTS[hash % TINTS.length]!;
 }
 
 /** Counts by key, most first. */
@@ -86,13 +88,13 @@ function tally(visitors: LiveVisitor[], key: (v: LiveVisitor) => string | null):
   return [...counts].sort((a, b) => b[1] - a[1]);
 }
 
-/** The Dashboard's dithered share rows, up to five, each bar against the biggest. */
+/** The Dashboard's share rows, up to five, each bar against the biggest. */
 function ShareRows({ rows, label }: { rows: [string, number][]; label: (key: string) => ReactNode }) {
   const max = rows[0]?.[1] ?? 1;
   return (
     <ul className="dash-rows bars">
-      {rows.slice(0, 5).map(([key, n], i) => (
-        <li key={key} style={{ "--share": n / max, "--swatch": sliceColor(i) ?? "var(--muted-foreground)" } as CSSProperties}>
+      {rows.slice(0, 5).map(([key, n]) => (
+        <li key={key} style={{ "--share": n / max } as CSSProperties}>
           <span className="dash-row-label">{label(key)}</span>
           <span className="dash-row-value">{n}</span>
         </li>
@@ -178,7 +180,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
   return (
     <div className="content wide visitors-page">
       <div className="row reports-head">
-        <h2>Visitors</h2>
+        <h1>Visitors</h1>
         <span className={`live-pill${visitors.length ? "" : " idle"}`}><span className="live-dot" aria-hidden />Live</span>
       </div>
 
