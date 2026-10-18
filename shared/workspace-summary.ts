@@ -40,17 +40,30 @@ export interface WorkspaceSummaryRow {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
-export function workspaceSummary(row: WorkspaceSummaryRow): WorkspaceSummary {
-  let s: Record<string, unknown> = {};
+function readSettings(settings: string | null): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(row.settings ?? "{}");
-    if (parsed && typeof parsed === "object") s = parsed as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(settings ?? "{}");
+    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
   } catch {
     // Unreadable settings: the defaults.
   }
-  // The widget's public logo URLs (the widget key is public: it's in the install snippet).
-  const base = row.widgetKey ? `/api/widget/${encodeURIComponent(row.widgetKey)}` : null;
+  return {};
+}
+
+/**
+ * The workspace's logos as uploaded for its widget (Chat widget → Appearance): public URLs, since the
+ * widget key is in the install snippet anyway. Null when none is uploaded. Also on `/me` for the
+ * sidebar's workspace switcher.
+ */
+export function workspaceLogos(widgetKey: string | null, settings: string | Record<string, unknown> | null): { logoUrl: string | null; logoDarkUrl: string | null } {
+  const s = typeof settings === "string" || settings === null ? readSettings(settings) : settings;
+  const base = widgetKey ? `/api/widget/${encodeURIComponent(widgetKey)}` : null;
   const logo = (key: unknown, path: string) => (base && typeof key === "string" ? `${base}/${path}?v=${encodeURIComponent(key)}` : null);
+  return { logoUrl: logo(s.logoKey, "logo"), logoDarkUrl: logo(s.logoDarkKey, "logo-dark") };
+}
+
+export function workspaceSummary(row: WorkspaceSummaryRow): WorkspaceSummary {
+  const s = readSettings(row.settings);
   const installedOn = typeof s.installedOn === "string" && s.installedOn ? s.installedOn : null;
   return {
     workspaceId: row.workspaceId,
@@ -58,8 +71,7 @@ export function workspaceSummary(row: WorkspaceSummaryRow): WorkspaceSummary {
     workspaceSlug: row.workspaceSlug ?? "",
     role: row.role,
     color: typeof s.color === "string" && HEX.test(s.color) ? s.color.toLowerCase() : APPEARANCE_DEFAULTS.color,
-    logoUrl: logo(s.logoKey, "logo"),
-    logoDarkUrl: logo(s.logoDarkKey, "logo-dark"),
+    ...workspaceLogos(row.widgetKey, s),
     installedOn,
     installed: installedOn !== null || typeof s.installedAt === "number" || Boolean(row.installMarked),
     open: row.open ?? 0,

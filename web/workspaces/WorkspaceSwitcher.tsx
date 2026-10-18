@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { navigate } from "../lib/router.ts";
 import { CheckIcon, ChevronDownIcon, ColumnsIcon, PlusIcon, SettingsIcon } from "@/components/icons";
 import { DeskIcon } from "../components/DeskIcon.tsx";
+import { useThemePref } from "../lib/theme.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
@@ -21,7 +22,7 @@ export function WorkspaceSwitcher({ current, all }: { current: Membership; all: 
     <>
       <DropdownMenu>
         <DropdownMenuTrigger render={<button type="button" className="brand ws-switcher" aria-label={`Workspace: ${current.workspaceName}. Switch workspace`} />}>
-          <DeskIcon />
+          <WorkspaceLogo workspace={current} fallback={<DeskIcon />} />
           <span>{current.workspaceName}</span>
           <ChevronDownIcon className="ws-switcher-chevron" />
         </DropdownMenuTrigger>
@@ -30,7 +31,7 @@ export function WorkspaceSwitcher({ current, all }: { current: Membership; all: 
             <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
             {all.map((m) => (
               <DropdownMenuItem key={m.workspaceId} onClick={() => m.workspaceId !== current.workspaceId && switchWorkspace(m)}>
-                <span className="ws-initial" aria-hidden="true">{m.workspaceName.slice(0, 1).toUpperCase()}</span>
+                <WorkspaceLogo workspace={m} fallback={<span className="ws-initial" aria-hidden="true">{m.workspaceName.slice(0, 1).toUpperCase()}</span>} />
                 <span className="ws-menu-name">{m.workspaceName}</span>
                 {m.workspaceId === current.workspaceId && <CheckIcon className="ws-menu-check" aria-label="Current" />}
               </DropdownMenuItem>
@@ -59,6 +60,17 @@ export function WorkspaceSwitcher({ current, all }: { current: Membership; all: 
       <NewWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
     </>
   );
+}
+
+/**
+ * The workspace's own logo, as uploaded for its widget (the dark-background one on the dark theme),
+ * else `fallback`: the Jun mark at the top, the initial in the menu.
+ */
+function WorkspaceLogo({ workspace: w, fallback }: { workspace: Membership; fallback: ReactNode }) {
+  useThemePref();
+  const dark = document.documentElement.dataset.theme === "dark";
+  const logo = (dark ? w.logoDarkUrl : null) ?? w.logoUrl;
+  return logo ? <img className="ws-logo" src={logo} alt="" /> : <>{fallback}</>;
 }
 
 /** The same sidebar top before /me answers (ShellSkeleton), so nothing moves when it does. */

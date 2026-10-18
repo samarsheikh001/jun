@@ -6,6 +6,7 @@ import { newId, randomToken, safeEqual } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
 import { fillSlugs } from "../lib/workspace-slug.ts";
 import { slugBase } from "../../shared/workspace-slug.ts";
+import { workspaceLogos } from "../../shared/workspace-summary.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 
 const MIN_SETUP_TOKEN_LENGTH = 16;
@@ -99,18 +100,25 @@ auth.get("/me", async (c) => {
   if (!user) return c.json({ user: null, setupComplete: await isSetupComplete(c) });
   const list = () =>
     c.env.DB.prepare(
-      `SELECT w.id AS workspaceId, w.name AS workspaceName, w.slug AS workspaceSlug, m.role FROM members m
-       JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = ? ORDER BY m.created_at`,
+      // The first inbox's widget key and settings: the switcher shows the workspace's uploaded logo.
+      `SELECT w.id AS workspaceId, w.name AS workspaceName, w.slug AS workspaceSlug, m.role, i.widget_key AS widgetKey, i.settings FROM members m
+       JOIN workspaces w ON w.id = m.workspace_id
+       LEFT JOIN inboxes i ON i.id = (SELECT id FROM inboxes WHERE workspace_id = w.id ORDER BY created_at LIMIT 1)
+       WHERE m.user_id = ? ORDER BY m.created_at`,
     )
       .bind(user.id)
-      .all<{ workspaceSlug: string | null }>();
+      .all<{ workspaceId: string; workspaceName: string; workspaceSlug: string | null; role: string; widgetKey: string | null; settings: string | null }>();
   let memberships = await list();
   // D-96: workspaces from before slugs get theirs now.
   if (memberships.results.some((m) => !m.workspaceSlug)) {
     await fillSlugs(c.env.DB);
     memberships = await list();
   }
-  return c.json({ user, memberships: memberships.results, setupComplete: true });
+  return c.json({
+    user,
+    memberships: memberships.results.map(({ widgetKey, settings, ...m }) => ({ ...m, ...workspaceLogos(widgetKey, settings) })),
+    setupComplete: true,
+  });
 });
 
 // Managing your own passkeys.

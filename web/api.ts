@@ -63,6 +63,7 @@ export function describeError(error: unknown): string {
 
 export interface Me {
   user: { id: string; name: string; email: string | null } | null;
-  memberships?: { workspaceId: string; workspaceName: string; workspaceSlug: string; role: "owner" | "admin" | "agent" }[];
+  /** `logoUrl` / `logoDarkUrl`: the workspace's uploaded widget logos (null: none), for the switcher. */
+  memberships?: { workspaceId: string; workspaceName: string; workspaceSlug: string; role: "owner" | "admin" | "agent"; logoUrl?: string | null; logoDarkUrl?: string | null }[];
   setupComplete: boolean;
 }
