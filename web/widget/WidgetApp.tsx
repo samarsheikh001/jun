@@ -1824,11 +1824,13 @@ const INTRO_MS = 12_000;
 /** What "Contact the team" says when it starts a conversation. */
 const TEAM_REQUEST = "I'd like to talk to someone on your team.";
 
-/** The visitor's last message has no team reply after it yet (system notices don't count). */
+/** The visitor's last message, or the handoff to the team, has no reply after it yet (other system notices don't count). */
 function lastVisitorWaiting(messages: Message[]): Message | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!;
     if (m.authorType === "visitor") return m;
+    // A handoff (the AI's answer, then "I'll get a teammate…") leaves them waiting for the team from then on.
+    if (m.authorType === "system" && m.meta.handoffReason) return m;
     if (m.authorType === "agent" || m.authorType === "ai") return null;
   }
   return null;
