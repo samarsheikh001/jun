@@ -6,15 +6,23 @@
 // OpenAI's examples; the gallery states no licence: check before launch, like the agent guide (D-52).
 // The dashboard loads it only when the Templates tab opens (a lazy chunk); the MCP serves it too.
 
+// D-103: our own support templates (shared/support-widget-templates.ts) come first.
+
+import { SUPPORT_TEMPLATES } from "./support-widget-templates.ts";
+
 export interface WidgetTemplate {
   id: string;
   name: string;
   description: string;
+  /** support: ours, for a support desk's cards; gallery: ChatKit Studio's. */
+  group: "support" | "gallery";
+  /** Extra words `findTemplates` matches. */
+  tags: string[];
   /** The whole .widget file. */
   file: string;
 }
 
-export const WIDGET_TEMPLATES: WidgetTemplate[] = [
+const GALLERY: Omit<WidgetTemplate, "group" | "tags">[] = [
   {
     id: "flight_tracker",
     name: "Flight tracker",
@@ -130,3 +138,33 @@ export const WIDGET_TEMPLATES: WidgetTemplate[] = [
     file: "{\n  \"version\": \"1.0\",\n  \"name\": \"Stacked bar chart\",\n  \"template\": \"{\\\"type\\\":\\\"Card\\\",\\\"size\\\":\\\"lg\\\",\\\"children\\\":[{\\\"type\\\":\\\"Col\\\",\\\"gap\\\":6,\\\"children\\\":[{\\\"type\\\":\\\"Row\\\",\\\"align\\\":\\\"center\\\",\\\"children\\\":[{\\\"type\\\":\\\"Col\\\",\\\"children\\\":[{\\\"type\\\":\\\"Text\\\",\\\"value\\\":{{ (title) | tojson }},\\\"weight\\\":\\\"semibold\\\",\\\"size\\\":\\\"lg\\\"},{\\\"type\\\":\\\"Text\\\",\\\"value\\\":{{ (subtitle) | tojson }},\\\"color\\\":\\\"secondary\\\",\\\"size\\\":\\\"sm\\\"}]},{\\\"type\\\":\\\"Spacer\\\"},{\\\"type\\\":\\\"Text\\\",\\\"value\\\":{{ (rangeLabel) | tojson }},\\\"color\\\":\\\"tertiary\\\",\\\"size\\\":\\\"sm\\\"}]},{\\\"type\\\":\\\"Chart\\\",\\\"data\\\":{{ (weeklyInstalls) | tojson }},\\\"barGap\\\":1,\\\"showYAxis\\\":true,\\\"series\\\":[{\\\"type\\\":\\\"bar\\\",\\\"dataKey\\\":\\\"desktop\\\",\\\"label\\\":\\\"Desktop\\\"},{\\\"type\\\":\\\"bar\\\",\\\"dataKey\\\":\\\"android\\\",\\\"label\\\":\\\"Android\\\",\\\"stack\\\":\\\"mobile\\\",\\\"color\\\":\\\"red\\\"},{\\\"type\\\":\\\"bar\\\",\\\"dataKey\\\":\\\"ios\\\",\\\"label\\\":\\\"iOS\\\",\\\"stack\\\":\\\"mobile\\\",\\\"color\\\":\\\"red\\\"}],\\\"xAxis\\\":{\\\"dataKey\\\":\\\"date\\\",\\\"labels\\\":{{ (dateLabels) | tojson }}}}]}]}\",\n  \"sample\": {\n    \"title\": \"Install mix\",\n    \"subtitle\": \"Desktop vs mobile\",\n    \"rangeLabel\": \"Last 7 days\",\n    \"dateLabels\": {\n      \"2024-04-17\": \"Apr 17\",\n      \"2024-04-18\": \"Apr 18\",\n      \"2024-04-19\": \"Apr 19\",\n      \"2024-04-20\": \"Apr 20\",\n      \"2024-04-21\": \"Apr 21\",\n      \"2024-04-22\": \"Apr 22\",\n      \"2024-04-23\": \"Apr 23\"\n    },\n    \"weeklyInstalls\": [\n      {\n        \"date\": \"2024-04-17\",\n        \"desktop\": 446,\n        \"android\": 86,\n        \"ios\": 360\n      },\n      {\n        \"date\": \"2024-04-18\",\n        \"desktop\": 364,\n        \"android\": 46,\n        \"ios\": 410\n      },\n      {\n        \"date\": \"2024-04-19\",\n        \"desktop\": 243,\n        \"android\": 63,\n        \"ios\": 180\n      },\n      {\n        \"date\": \"2024-04-20\",\n        \"desktop\": 89,\n        \"android\": 61,\n        \"ios\": 150\n      },\n      {\n        \"date\": \"2024-04-21\",\n        \"desktop\": 137,\n        \"android\": 63,\n        \"ios\": 200\n      },\n      {\n        \"date\": \"2024-04-22\",\n        \"desktop\": 224,\n        \"android\": 54,\n        \"ios\": 170\n      },\n      {\n        \"date\": \"2024-04-23\",\n        \"desktop\": 138,\n        \"android\": 92,\n        \"ios\": 230\n      }\n    ]\n  },\n  \"jsonSchema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"title\": {\n        \"type\": \"string\"\n      },\n      \"subtitle\": {\n        \"type\": \"string\"\n      },\n      \"rangeLabel\": {\n        \"type\": \"string\"\n      },\n      \"dateLabels\": {\n        \"type\": \"object\",\n        \"propertyNames\": {\n          \"type\": \"string\"\n        },\n        \"additionalProperties\": {\n          \"type\": \"string\"\n        }\n      },\n      \"weeklyInstalls\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"date\": {\n              \"type\": \"string\"\n            },\n            \"desktop\": {\n              \"type\": \"number\"\n            },\n            \"android\": {\n              \"type\": \"number\"\n            },\n            \"ios\": {\n              \"type\": \"number\"\n            }\n          },\n          \"required\": [\n            \"date\",\n            \"desktop\",\n            \"android\",\n            \"ios\"\n          ],\n          \"additionalProperties\": false\n        }\n      }\n    },\n    \"required\": [\n      \"title\",\n      \"subtitle\",\n      \"rangeLabel\",\n      \"dateLabels\",\n      \"weeklyInstalls\"\n    ],\n    \"additionalProperties\": false\n  }\n}\n",
   },
 ];
+
+export const WIDGET_TEMPLATES: WidgetTemplate[] = [
+  ...SUPPORT_TEMPLATES.map((t) => ({ ...t, group: "support" as const })),
+  ...GALLERY.map((t) => ({ ...t, group: "gallery" as const, tags: [] })),
+];
+
+const words = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+const FILLER = new Set(["the", "and", "for", "with", "that", "this", "their", "them", "show", "shows", "card", "cards", "widget", "make", "want", "from", "into", "can", "our", "your"]);
+
+/**
+ * The templates closest to what a card is for ("show the customer's invoices"): each word of the
+ * request found in a template's tags counts 3, in its name 2, in its description 1; support
+ * templates win ties. Best first, only those with a match; every template for an empty request.
+ */
+export function findTemplates(request: string): WidgetTemplate[] {
+  const asked = [...new Set(words(request))].filter((w) => (w.length > 2 || /\d/.test(w)) && !FILLER.has(w));
+  if (!asked.length) return WIDGET_TEMPLATES;
+  const stem = (w: string) => w.replace(/(?:es|s)$/, "");
+  const has = (pool: string[], w: string) => pool.some((p) => p === w || stem(p) === stem(w));
+  return WIDGET_TEMPLATES.map((t, i) => {
+    const tags = t.tags.flatMap(words);
+    const name = words(t.name);
+    const description = words(t.description);
+    const score = asked.reduce((n, w) => n + (has(tags, w) ? 3 : 0) + (has(name, w) ? 2 : 0) + (has(description, w) ? 1 : 0), 0);
+    return { t, score: score + (score && t.group === "support" ? 0.5 : 0), i };
+  })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.t);
+}

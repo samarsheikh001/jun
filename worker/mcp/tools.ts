@@ -19,7 +19,7 @@ import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
 import { readTestTurns, testCustomer } from "../lib/agent-input.ts";
 import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
 import { editFrontmatter, editYaml, readFrontmatter, readYaml, setBody, withJsonKey, type Edit } from "../../shared/agent-files.ts";
-import { FILE_FORMAT, IDENTITY_GUIDE, MCP_INSTRUCTIONS } from "../../shared/agent-guide.ts";
+import { FILE_FORMAT, IDENTITY_GUIDE, MCP_INSTRUCTIONS, WIDGET_DESIGN_GUIDE } from "../../shared/agent-guide.ts";
 import { agentLinks } from "../../shared/agent-links.ts";
 import { actionSetupProblems, MAX_DESK_SECRETS, MAX_SECRET_VALUE, SECRET_NAME, secretRefs } from "../../shared/action-setup.ts";
 import { cardFromResult, customerRefs } from "../../shared/action-try.ts";
@@ -28,7 +28,7 @@ import { curlActionFile, curlActionName, parseCurl } from "../../shared/curl.ts"
 import { jinjaNames } from "../../shared/jinja.ts";
 import type { TestReply, TestTurn } from "../../shared/test-chat.ts";
 import { schemaParams } from "../../shared/widget-schema.ts";
-import { WIDGET_TEMPLATES } from "../../shared/widget-templates.ts";
+import { findTemplates, WIDGET_TEMPLATES, type WidgetTemplate } from "../../shared/widget-templates.ts";
 import {
   cardControls, cardFromShape, checkExamples, nodeText, parseWidgetFile, previewWidget, renderSummary, renderWidget, starterWidget, toolButtonInputs, widgetSchema, type WidgetNode,
 } from "../../shared/widgets.ts";
@@ -950,6 +950,8 @@ const ACTIONS: Tool[] = [
   }),
 ];
 
+const WIDGET_DESIGN_GUIDE_URI = "jun://guide/widget-design";
+
 const WIDGET_FIELDS: Record<string, JsonSchema> = {
   title: S.string("The card's title on the desk (the file's name key)."),
   template: { type: ["string", "object"], description: "A Jinja template that renders the ChatKit component tree as JSON (values with | tojson); or the tree itself as an object for a fixed card. See jun://guide/chatkit-widgets." },
@@ -1003,8 +1005,9 @@ const WIDGETS: Tool[] = [
   tool({
     name: "create_widget",
     title: "Create a widget",
-    description: "Adds a widget (a card). Start from a gallery template (fromTemplate; widget_templates lists them), or pass a template and sample, or nothing for a starter card. Show it from an action with update_action widget: <name>.",
-    inputSchema: schema({ name: S.string("File name: a lowercase letter, then lowercase letters, digits, _ and -."), fromTemplate: S.string("A gallery template's id, like flight_tracker."), ...WIDGET_FIELDS, ...SAVE }, ["name"]),
+    description:
+      "Adds a widget (a card). Start from the closest template (fromTemplate; widget_templates with `for` finds it), then change its data and look; a template and sample of your own only when none is close. Show it from an action with update_action widget: <name>. Rename a template's tool:<name> buttons to your own actions.",
+    inputSchema: schema({ name: S.string("File name: a lowercase letter, then lowercase letters, digits, _ and -."), fromTemplate: S.string("A template's id, like order_status or invoices."), ...WIDGET_FIELDS, ...SAVE }, ["name"]),
     annotations: WRITE,
     run: (ctx, args) =>
       commit(ctx, args, (files) => {
@@ -1053,29 +1056,37 @@ const WIDGETS: Tool[] = [
   tool({
     name: "widget_templates",
     title: "Widget templates",
-    description: "ChatKit Studio's gallery of ready cards (flight tracker, events, purchases, charts…): id, name, what it shows and its data's parameters. create_widget fromTemplate copies one.",
-    inputSchema: schema({}),
+    description:
+      "Ready cards to start from: Jun's support templates (account, plans, order status, orders, invoices, refund form, usage, ticket, confirm a change) and ChatKit Studio's gallery. Pass `for` (what the card shows) to get the closest first. create_widget fromTemplate copies one; get_widget_template shows its file.",
+    inputSchema: schema({ for: S.string("Optional: what the card is for, like \"the customer's invoices\" or \"confirm a plan change\".") }),
     annotations: READ,
-    async run() {
-      return done(
-        WIDGET_TEMPLATES.map((t) => {
-          let params = "";
-          try {
-            const s = widgetSchema(parseWidgetFile(t.id, t.file));
-            params = s ? schemaParams(s).filter((p) => !p.path.includes(".") && !p.path.includes("[")).map((p) => p.path).join(", ") : "";
-          } catch {
-            // listed anyway
-          }
-          return `- ${t.id}: ${t.name}. ${t.description}${params ? ` Data: ${params}.` : ""}`;
-        }).join("\n"),
-      );
+    async run(_ctx, args) {
+      const request = str(args, "for") ?? "";
+      const found = findTemplates(request);
+      const lineOf = (t: WidgetTemplate) => {
+        let params = "";
+        try {
+          const s = widgetSchema(parseWidgetFile(t.id, t.file));
+          params = s ? schemaParams(s).filter((p) => !p.path.includes(".") && !p.path.includes("[")).map((p) => p.path).join(", ") : "";
+        } catch {
+          // listed anyway
+        }
+        return `- ${t.id}: ${t.name}. ${t.description}${params ? ` Data: ${params}.` : ""}`;
+      };
+      const next = `\nStart from the closest one: create_widget { name, fromTemplate }, change its data to your action's result (update_widget), then preview_widget and look at the picture. ${WIDGET_DESIGN_GUIDE_URI} has the rules for a good card.`;
+      if (request) {
+        if (!found.length) return done(`No template matches "${request}". Call widget_templates without \`for\` to see them all, or start from the closest support template.`);
+        return done(`Closest first:\n${found.slice(0, 6).map(lineOf).join("\n")}${next}`);
+      }
+      const group = (g: WidgetTemplate["group"]) => found.filter((t) => t.group === g).map(lineOf).join("\n");
+      return done(`Support templates (Jun's own, for a support desk):\n${group("support")}\n\nChatKit Studio's gallery:\n${group("gallery")}${next}`);
     },
   }),
   tool({
     name: "get_widget_template",
     title: "Get a widget template",
-    description: "One gallery template's whole .widget file.",
-    inputSchema: schema({ id: S.string("The template's id, like ride_status.") }, ["id"]),
+    description: "One template's whole .widget file (template, sample, schema, states, summary).",
+    inputSchema: schema({ id: S.string("The template's id, like order_status.") }, ["id"]),
     annotations: READ,
     async run(_ctx, args) {
       const t = WIDGET_TEMPLATES.find((x) => x.id === args.id);
@@ -1871,6 +1882,7 @@ export const MCP_TOOLS: Tool[] = [...GENERAL, ...INSTRUCTIONS, ...TASKS, ...ACTI
 const GUIDES: (McpResource & { text: () => string })[] = [
   { uri: "jun://guide/files", name: "file-format", title: "The agent's file format", description: "Every file and key of the support agent's config, with examples.", mimeType: "text/markdown", text: () => FILE_FORMAT },
   { uri: "jun://guide/chatkit-widgets", name: "chatkit-widgets", title: "ChatKit widget authoring guide", description: "OpenAI ChatKit Studio's guide for AIs that write widgets (components, props, layout).", mimeType: "text/markdown", text: () => CHATKIT_AUTHORING_GUIDE },
+  { uri: WIDGET_DESIGN_GUIDE_URI, name: "widget-design", title: "Building a good card", description: "How to build a widget that looks right: start from a template, fit it to the real data, look at the picture; layout, colour, button and data rules.", mimeType: "text/markdown", text: () => WIDGET_DESIGN_GUIDE },
   { uri: IDENTITY_GUIDE_URI, name: "identity", title: "Identify signed-in customers", description: "What the company's server and pages need so the chat knows who's signed in ({user.*} in actions): the token, code for Node, Python, Ruby and PHP, and checking it.", mimeType: "text/markdown", text: () => IDENTITY_GUIDE },
   {
     uri: "jun://guide/jinja",

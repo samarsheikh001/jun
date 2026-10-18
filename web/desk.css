@@ -1155,6 +1155,11 @@ textarea.agent-prose { font-family: var(--font-sans); font-size: 14px; line-heig
 /* W-23: My widgets / Templates, and a template up close (preview beside its name and Use). */
 .agent-gallery-tabs { justify-self: start; width: fit-content; }
 .agent-gallery-note { margin: -4px 0 0; }
+.agent-gallery-group { display: flex; flex-direction: column; gap: 4px; }
+.agent-gallery-group + .agent-gallery-group { margin-top: 24px; }
+.agent-gallery-group-title { margin: 0; font-size: 14px; font-weight: 600; }
+.agent-gallery-group > p { margin: 0; }
+.agent-gallery-group > .agent-gallery-grid { margin-top: 12px; }
 .agent-gallery-empty-actions { justify-content: center; gap: 8px; flex-wrap: wrap; }
 button.agent-tile-link { padding: 0; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; font-weight: 600; text-align: left; cursor: pointer; }
 .agent-template-dialog { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0; width: min(920px, calc(100vw - 32px)); max-width: none !important; padding: 0; overflow: hidden; }

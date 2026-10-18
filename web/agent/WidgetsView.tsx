@@ -207,7 +207,7 @@ function nameProblem(cfg: AgentConfig, raw: string): string | null {
   return `widgets/${name}.widget` in cfg.draft ? "There's already a widget with this name." : null;
 }
 
-/** Templates: ChatKit Studio's gallery, loaded when the tab opens; one opens in a dialog to use it. */
+/** Templates: our support cards, then ChatKit Studio's gallery (D-103), loaded when the tab opens; one opens in a dialog to use it. */
 function TemplateGallery({ cfg, canEdit, query }: { cfg: AgentConfig; canEdit: boolean; query: string }) {
   const [templates, setTemplates] = useState<WidgetTemplate[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -223,20 +223,31 @@ function TemplateGallery({ cfg, canEdit, query }: { cfg: AgentConfig; canEdit: b
   }, []);
   if (failed) return <p className="error small">The templates didn't load. Reload the page to try again.</p>;
   if (!templates) return <p className="muted small agent-gallery-none">Loading templates…</p>;
-  const shown = query ? templates.filter((t) => `${t.name} ${t.description}`.toLowerCase().includes(query)) : templates;
+  const shown = query ? templates.filter((t) => `${t.name} ${t.description} ${t.tags.join(" ")}`.toLowerCase().includes(query)) : templates;
+  const groups = [
+    { group: "support", title: "For support", note: "Jun's own cards for a support desk: account, plans, orders, invoices, refunds, usage, tickets and a change to confirm." },
+    { group: "gallery", title: "From ChatKit Studio", note: "OpenAI's gallery of example cards." },
+  ] as const;
   return (
     <>
-      <p className="muted small agent-gallery-note">
-        From ChatKit Studio's gallery. Pick one to start from, then change it with the AI or in Code, and show it from an action.
-      </p>
+      <p className="muted small agent-gallery-note">Pick one to start from, then change it with the AI or in Code, and show it from an action.</p>
       {shown.length === 0 ? (
         <p className="muted small agent-gallery-none">No template matches "{query}".</p>
       ) : (
-        <ul className="agent-gallery-grid">
-          {shown.map((t) => (
-            <TemplateTile key={t.id} template={t} onOpen={() => setPicked(t)} />
-          ))}
-        </ul>
+        groups.map(({ group, title, note }) => {
+          const items = shown.filter((t) => t.group === group);
+          return items.length ? (
+            <section key={group} className="agent-gallery-group">
+              <h3 className="agent-gallery-group-title">{title}</h3>
+              <p className="muted small">{note}</p>
+              <ul className="agent-gallery-grid">
+                {items.map((t) => (
+                  <TemplateTile key={t.id} template={t} onOpen={() => setPicked(t)} />
+                ))}
+              </ul>
+            </section>
+          ) : null;
+        })
       )}
       <TemplateDialog cfg={cfg} canEdit={canEdit} template={picked} onClose={() => setPicked(null)} />
     </>

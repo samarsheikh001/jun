@@ -387,6 +387,84 @@ window.JunDesk?.logout();
  * The MCP server's `instructions` (sent on initialize): what the agent is, how changes go live, and the
  * hard rules. The whole file format is the resource jun://guide/files (FILE_FORMAT), so this stays short.
  */
+/**
+ * D-103: how to build a good card, for a person's AI over the MCP (resource jun://guide/widget-design).
+ * The rules follow our renderer (web/widget/chatkit/) and the support templates
+ * (shared/support-widget-templates.ts): keep them in step.
+ */
+export const WIDGET_DESIGN_GUIDE = `# Building a good card
+
+A widget is a card in the customer's chat: the answer to one question, at the chat window's width
+(about 360 px). Customers glance at it, so it shows one thing and makes the next step obvious.
+
+## The loop
+
+1. **Start from a template.** \`widget_templates\` with \`for\` (what the card shows, like "the customer's
+   invoices") lists the closest first. Jun's support templates (account_overview, plan_picker,
+   order_status, order_list, invoices, refund_request, usage_limits, ticket_status, confirm_change)
+   already follow these rules. \`create_widget { name, fromTemplate }\` copies one.
+2. **Fit it to the real data.** Call the action (\`try_action\`) and shape the template to its JSON:
+   rename fields, drop rows the result doesn't have, keep the layout. Put that result in \`sample\` and
+   update \`jsonSchema\` to match. Add \`states\` for the cases that look different (empty, overdue,
+   cancelled, past due).
+3. **Rename the buttons' actions.** A template's \`tool:upgrade_plan\`, \`tool:order_status\`,
+   \`tool:request_refund\` and \`tool:apply_change\` are placeholders: point them at your own actions, with
+   a payload holding what the action needs.
+4. **Look at it.** \`preview_widget\` for the sample and each state (\`state\`), in light and dark
+   (\`theme\`). Read the picture, not just "No problems". Fix what looks wrong and preview again.
+5. **Connect it.** \`update_action { name, widget }\`, then \`test_chat\` with a question that should show it.
+
+Write a template from scratch only when no template is close, and still follow the rules below.
+
+## Rules
+
+**Layout**
+- Root: \`Card\` with \`"size":"sm"\` for nearly everything. \`ListView\` for a list where each row does
+  something when picked (orders, tickets). Never a Card inside a Card.
+- Top line: what it is and its state. A \`Caption\` over a \`Title "size":"sm"\` on the left (e.g. "Order
+  #10482" over "Arriving Thu, Oct 22"), a \`Spacer\`, and a \`Badge\` for the status on the right.
+- Details as label / value rows: \`Row [Caption label, Spacer, Text value "size":"sm"]\`, in a
+  \`Col "gap":2\`. Four or five rows at most; leave out what the customer didn't ask about.
+- A \`Divider "flush":true\` between the header and the body, or the body and a list. Not between every row.
+- Totals and amounts: \`"weight":"semibold"\` on the value. Long names: \`"maxLines":1\` or \`2\`.
+- Progress: a \`Box\` track (\`"height":4\`–\`6\`, \`"radius":"full"\`, \`"background":"alpha-10"\`) holding a
+  \`Box\` with \`"width":"<n>%"\`. Colour it \`primary\`, \`warning\` from 80 %, \`danger\` when full.
+- A highlighted note (a promise, a cost, the latest update): a \`Box\` with \`"padding":3\`,
+  \`"radius":"lg"\`, \`"background":"alpha-5"\`.
+
+**Colour**
+- Badges carry state: \`success\` done or fine, \`info\` in progress, \`warning\` waiting or due, \`danger\`
+  failed or overdue, \`secondary\` neutral. Map each status explicitly; write the label in words
+  (\`status | replace("_", " ") | capitalize\`).
+- Otherwise leave colours alone: the card takes the chat's own palette and the desk's brand colour, in
+  light and dark. No hex colours, no gradients, no \`theme\` on the Card.
+
+**Buttons**
+- At most one main button (\`"style":"primary"\`: solid, in the desk's brand colour) and one secondary
+  one (the default, an outline), each \`"block":true\` at the bottom, or \`"size":"sm"\` on a row. A link out is \`open_url\` with
+  \`"iconEnd":"external-link"\`.
+- Words say what happens: "Switch to Pro", "Pay now", "Request refund". Not "Submit" or "OK".
+- A button that changes something runs \`tool:<action>\`; the action's \`widget_done\` line tells the
+  customer it worked. For a change that needs a yes, use the Card's own \`confirm\` and \`cancel\`
+  (cancel \`{"type":"dismiss"}\`), like confirm_change, and say exactly what changes and what it costs.
+- Forms: \`"asForm":true\` on the Card with \`confirm\`, a \`Label\` over each field (\`fieldName\`), and
+  \`"required":true\` on what the action needs. A \`Select\` for a known set of answers.
+
+**Data**
+- Show values the way people read them: amounts with their currency ("$49.00"), dates written out
+  ("Thu, Oct 22"), counts in words ("7 of 10 used"). If the API returns raw values, format them in
+  the action's response or with Jinja (\`round\`, \`~\`), never show ids or ISO timestamps.
+- Every optional field behind \`{% if field %}\`, and an empty list says so ("No orders yet") instead of
+  an empty card.
+- Facts come only from the data: no prices, dates or promises written into the template.
+- A \`summary\` line for the folded chat: "Order {{ number }} · {{ status }}".
+
+**Don'ts**
+- No images unless the data has a real https URL for one (product photos, logos).
+- No more than about 25 lines of content; split it or show a list that opens the detail.
+- No Markdown tables or headings inside a card: use rows.
+`;
+
 export const MCP_INSTRUCTIONS = `You are connected to a Jun desk: an AI support desk. These tools change its **support agent**, the AI
 that answers the company's customers in their website chat. The agent is a set of files: instructions.md
 (persona and rules), tasks/<name>.md (procedures), actions/<name>.yaml (HTTP requests the AI may make),
@@ -412,6 +490,10 @@ Knowledge (the websites and documents the AI answers from) is separate from thes
 - Knowledge isn't versioned: no history or restore. remove_source can't be undone, so ask the person first.
 - Before writing a task to answer a question, run search_knowledge with it: if the AI already finds the
   answer in the knowledge, it doesn't need a task.
+
+Cards (widgets): start from the closest template (widget_templates with \`for\`), fit it to the action's
+real result, and look at preview_widget's picture before calling it done. jun://guide/widget-design has
+the rules for a good card.
 
 Signed-in customers: actions that use {user.id} or other {user.*} fields run only for customers the
 website has identified with a token signed by the desk's identity secret. get_identity says whether that's
