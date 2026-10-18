@@ -20,7 +20,8 @@ function CardShot({ shot }: { shot: Extract<Shot, { kind: "card" }> }) {
   useEffect(ready, []);
   return (
     <div className="shot shot-card">
-      <WidgetCard widget={{ id: "preview", name: shot.name, root: shot.root }} interactive={false} theme={shot.theme} />
+      {/* Live, as customers see it (read-only greys the buttons); nothing clicks a screenshot. */}
+      <WidgetCard widget={{ id: "preview", name: shot.name, root: shot.root }} interactive onAction={() => {}} theme={shot.theme} />
     </div>
   );
 }
