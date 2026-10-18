@@ -319,14 +319,21 @@
   var wrap = root.querySelector(".w"), card = root.querySelector(".nudge");
   var button = root.querySelector(".btn");
   // W-04: colour and side from the desk's settings, so changing them needs no new snippet.
-  // Hidden until then (at most 1.5 s) so the button doesn't flash in the default colour.
+  // Hidden until then, however long they take: guessing showed the plain button, then swapped it for the
+  // island. Only when the desk can't be reached does the button show, in the default colour.
+  var branded, lastLauncher = store("jun:launcher:" + key);
   function brand(cfg) {
+    if (branded) return;
+    branded = 1;
     var c = color || (cfg && cfg.color);
     if (c && /^#[0-9a-f]{6}$/i.test(c)) wrap.style.setProperty("--c", c);
     if (cfg) {
       // Readable text on that colour: the desk works it out (textOn), for data-color too (?color=).
       wrap.style.setProperty("--t", cfg.text);
       openers = !open && cfg.openers;
+      // The desk's mode changed since this tab's last page: forget the early frame's box.
+      if (lastLauncher && lastLauncher != cfg.launcher) wrap.classList.remove(lastLauncher), frame.style.cssText = "", frame.classList.remove("sized");
+      store("jun:launcher:" + key, cfg.launcher);
       // W-04: side, corner rounding, dark theme, and the launcher (the card and the island load the frame now).
       // D-89: the desk keeps sending `launcher` (island | card | button) from its mode and greeting card switch.
       wrap.classList.add(cfg.position, cfg.launcher); // "left", "island", "card"
@@ -351,10 +358,12 @@
   function paintTheme() {
     wrap.classList.toggle("dark", (theme || deskTheme) == "dark");
   }
-  setTimeout(brand, 1500);
-  nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config?color=" + encodeURIComponent(color || "")).then(function (r) { return r.json(); }).then(brand, function () { brand(); });
+  nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config?color=" + encodeURIComponent(color || "")).then(function (r) { if (!r.ok) throw r; return r.json(); }).then(brand, function () { brand(); });
   var badge = root.querySelector(".badge");
   var frame = root.querySelector("iframe"), open;
+  // The island and the card draw themselves in their frame (unseen until it has sized itself), so on this
+  // tab's next pages it starts loading before the settings answer.
+  if (/^(island|card)$/.test(lastLauncher)) wrap.classList.add(lastLauncher, "on"), load();
 
   function post(message) {
     if (frame.contentWindow) frame.contentWindow.postMessage(message, origin);
