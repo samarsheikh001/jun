@@ -1546,7 +1546,7 @@ const DESK: Tool[] = [
       const look = widgetLook(settings, inbox!.name, ...(Object.values(workspaceLogos(inbox!.widgetKey, settings)) as [string | null, string | null]));
       const open = args.open === true;
       const page = args.page === "dark" ? "dark" : "light";
-      const shot = await screenshot(ctx.env, ctx.origin, { kind: "chat", key: inbox!.widgetKey, look, open, page }, { width: 520, height: open ? 760 : 360 });
+      const shot = await screenshot(ctx.env, ctx.origin, { kind: "chat", key: inbox!.widgetKey, look, open, page }, { width: 1024, height: open ? 760 : 360, selector: ".shot-chat" });
       const what = `${look.mode === "island" ? "The island" : look.greetingCard ? "The chat window with its greeting card" : "The chat window with a button"}, ${open ? "open" : "closed"}, on a ${page} page: colour ${look.color}, theme ${look.theme}${look.mode === "island" ? `, island colour ${look.islandSurface}` : ""}.${args.chat !== undefined ? " (Unsaved changes: update_desk_settings saves them.)" : ""}`;
       return "image" in shot ? { text: what, images: [shot.image] } : { text: `${what}\nNo picture: ${shot.skipped}.` };
     },

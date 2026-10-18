@@ -5,6 +5,7 @@
 // the look the way the Appearance page feeds its draft. Sets <html data-ready> once it's drawn.
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
+import { BUTTON_TEXT, logoFor, textOn } from "../../shared/appearance.ts";
 import { readShot, type Shot } from "../../shared/shot.ts";
 import { WidgetCard } from "../widget/chatkit/WidgetCard.tsx";
 import "../styles.css";
@@ -43,9 +44,8 @@ function ChatShot({ shot }: { shot: Extract<Shot, { kind: "chat" }> }) {
       }
       if (data?.type === "jun:css" && frame.current) {
         frame.current.style.cssText = String(data.css ?? "");
-        Object.assign(frame.current.style, { left: "50%", right: "auto", translate: "-50% 0" });
-        if (shot.look.launcher === "island") frame.current.style.translate = "none";
-        setSized(true);
+        // The island centres itself, as on a website; the card is placed on a side there, centred here.
+        if (shot.look.launcher !== "island") Object.assign(frame.current.style, { left: "50%", right: "auto", translate: "-50% 0" });        setSized(true);
         // The island and the card spring into place: wait for them to settle.
         setTimeout(ready, 1200);
       }
@@ -54,16 +54,27 @@ function ChatShot({ shot }: { shot: Extract<Shot, { kind: "chat" }> }) {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [shot, button]);
-  const brand = { "--c": shot.look.color } as CSSProperties;
+  // Chrome paints a transparent frame opaque when its colour scheme differs from the page's: match the
+  // frame's (its theme; "auto" is light in the headless browser).
+  useEffect(() => {
+    document.documentElement.style.colorScheme = shot.look.theme === "dark" ? "dark" : "light";
+  }, [shot]);
+  const brand = { "--c": shot.look.color, "--t": textOn(shot.look.color) } as CSSProperties;
+  // As the loader: on a dark button colour, the logo for dark backgrounds (W-21).
+  const logo = logoFor(shot.look, textOn(shot.look.color) === "#ffffff");
   return (
-    <div className={`shot shot-chat ${shot.page} ${shot.look.launcher}`} style={brand}>
+    <div className={`shot shot-chat page-${shot.page} launcher-${shot.look.launcher}`} style={brand}>
       <iframe
         ref={frame}
         className={`shot-frame${sized ? " sized" : ""}${button && !shot.open ? " hidden" : ""}`}
         title="Chat"
         src={`/widget?key=${encodeURIComponent(shot.key)}&preview=1&persist=0`}
       />
-      {button && !shot.open && <span className="shot-launcher" aria-hidden="true" />}
+      {button && !shot.open && (
+        <span className={`shot-launcher${shot.look.buttonStyle === "text" ? " txt" : ""}`} aria-hidden="true">
+          {shot.look.buttonStyle === "text" ? BUTTON_TEXT : logo ? <img src={logo} alt="" /> : null}
+        </span>
+      )}
     </div>
   );
 }

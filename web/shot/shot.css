@@ -3,11 +3,18 @@
 html, body { margin: 0; }
 /* The chat window's surface behind the card, in the card's theme. */
 .shot-card { width: 380px; padding: 16px; box-sizing: border-box; background: var(--surface); color: var(--text); }
-.shot-chat { position: fixed; inset: 0; background: #f4f4f2; }
-.shot-chat.dark { background: #16181d; }
-.shot-frame { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; width: 380px; height: 600px; border: 0; background: none; visibility: hidden; }
+/* A stage at the bottom centre of a desktop-wide viewport (the widget turns full-screen under 768px);
+   the screenshot is cropped to it. */
+.shot-chat { position: fixed; left: 50%; bottom: 0; translate: -50% 0; width: 520px; height: 100%; background: #f4f4f2; }
+.shot-chat.page-dark { background: #16181d; }
+.shot-frame { position: absolute; bottom: 22px; width: 380px; height: 600px; border: 0; background: none; visibility: hidden; }
+/* The island places its own frame (its jun:css centres it); the window's is centred here. */
+.shot-chat:not(.launcher-island) .shot-frame { left: 50%; translate: -50% 0; }
 .shot-frame.sized { visibility: visible; }
 .shot-frame.hidden { display: none; }
-.shot-chat.button .shot-frame { border-radius: 16px; background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16); }
-.shot-launcher { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; width: 52px; height: 52px; border-radius: 16px; background: var(--c); }
+.shot-chat.launcher-button .shot-frame { border-radius: 16px; background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16); }
+/* The loader's button (keep in step with public/widget.js, like the Appearance preview's). */
+.shot-launcher { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; width: 52px; height: 52px; border-radius: 16px; background: var(--c); color: var(--t); display: grid; place-items: center; overflow: hidden; }
+.shot-launcher img { width: 100%; height: 100%; object-fit: cover; }
+.shot-launcher.txt { width: auto; padding: 0 18px; font: 600 14px system-ui, sans-serif; }
 .shot-error { font: 14px system-ui, sans-serif; padding: 16px; }
