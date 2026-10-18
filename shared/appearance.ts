@@ -28,9 +28,11 @@ export type ButtonStyle = "logo" | "text";
 export const BUTTON_TEXT = "Chat with us";
 /**
  * The island launcher's surface: `dark` is always near-black with white text (like Apple's
- * Dynamic Island), whatever the page or theme; `page` follows the widget's `theme`.
+ * Dynamic Island), whatever the page or theme; `page` follows the widget's `theme`; `auto` (the
+ * default, D-99) stands out from the page behind it: near-black on a light page, light on a dark one.
  */
-export type IslandSurface = "dark" | "page";
+export type IslandSurface = "auto" | "dark" | "page";
+const ISLAND_SURFACES: readonly IslandSurface[] = ["auto", "dark", "page"];
 
 export const APPEARANCE_DEFAULTS = {
   color: "#2f5bea",
@@ -41,7 +43,8 @@ export const APPEARANCE_DEFAULTS = {
   /** A desk that never chose has the chat window with its greeting card (the `card` launcher before D-89). */
   mode: "window",
   greetingCard: true,
-  islandSurface: "dark",
+  /** D-99: near-black on light pages (the look before `auto`), light on dark ones. */
+  islandSurface: "auto",
   greeting: "Hi! How can we help?",
   replyTime: "We usually reply in a few minutes",
   placeholder: "Write a message…",
@@ -76,7 +79,7 @@ export interface WidgetLook {
   suggestions: string[];
   /** Island launcher (D-39): the turning multi-colour border. On unless turned off. */
   neon: boolean;
-  /** Island launcher: near-black (`dark`, the default) or following `theme` (`page`). */
+  /** Island launcher: against the page behind it (`auto`, the default), near-black (`dark`) or following `theme` (`page`). */
   islandSurface: IslandSurface;
   /** Chat window: the round button shows the logo or "Chat with us". */
   buttonStyle: ButtonStyle;
@@ -150,10 +153,21 @@ export function widgetLook(s: Record<string, unknown>, workspaceName: string, lo
       ? s.suggestions.filter((q): q is string => typeof q === "string" && q.trim() !== "").map((q) => clean(q).slice(0, SUGGESTION_LIMIT)).slice(0, SUGGESTIONS_MAX)
       : [],
     neon: s.neon !== false,
-    islandSurface: s.islandSurface === "page" ? "page" : APPEARANCE_DEFAULTS.islandSurface,
+    islandSurface: ISLAND_SURFACES.includes(s.islandSurface as IslandSurface) ? (s.islandSurface as IslandSurface) : APPEARANCE_DEFAULTS.islandSurface,
     buttonStyle: s.buttonStyle === "text" ? "text" : "logo",
     sound: s.sound !== false,
   };
+}
+
+/**
+ * D-99: the island's palette for its surface setting and the page behind it (`backdrop`, as the
+ * loader saw it at the island's spot; null until it says): its near-black one, a light one, or the
+ * theme's (`page`). `auto` stays near-black until the loader reports a dark page.
+ */
+export function islandPalette(surface: IslandSurface, backdrop: "light" | "dark" | null): "dark" | "light" | "theme" {
+  if (surface === "page") return "theme";
+  if (surface === "dark") return "dark";
+  return backdrop === "dark" ? "light" : "dark";
 }
 
 /**
@@ -209,7 +223,7 @@ export function applyAppearance(settings: Record<string, unknown>, body: Record<
     settings.sound = body.sound;
   }
   if (body.islandSurface !== undefined) {
-    if (body.islandSurface !== "dark" && body.islandSurface !== "page") throw new Error("Island surface must be dark or page.");
+    if (!ISLAND_SURFACES.includes(body.islandSurface as IslandSurface)) throw new Error("Island surface must be auto, dark or page.");
     settings.islandSurface = body.islandSurface;
   }
   if (body.radius !== undefined) {

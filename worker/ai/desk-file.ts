@@ -199,13 +199,13 @@ function parseChat(raw: Record<string, unknown>, issues: DeskIssue[]): NonNullab
     }
   }
   if (raw.island !== undefined && raw.island !== null) {
-    if (!isRecord(raw.island)) problem("island", "use surface: dark or page, and glow: true or false.");
+    if (!isRecord(raw.island)) problem("island", "use surface: auto, dark or page, and glow: true or false.");
     else {
       unknownKeys(raw.island, ["surface", "glow"], "chat.island.", issues);
       const island: NonNullable<NonNullable<DeskFile["chat"]>["island"]> = {};
       if (raw.island.surface !== undefined) {
-        if (raw.island.surface === "dark" || raw.island.surface === "page") island.surface = raw.island.surface;
-        else problem("island.surface", "use dark (near-black on every page) or page (follows the theme).");
+        if (raw.island.surface === "auto" || raw.island.surface === "dark" || raw.island.surface === "page") island.surface = raw.island.surface;
+        else problem("island.surface", "use auto (stands out from the page behind it), dark (near-black on every page) or page (follows the theme).");
       }
       if (raw.island.glow !== undefined) {
         if (bool(raw.island.glow)) island.glow = raw.island.glow as boolean;
@@ -502,7 +502,7 @@ export function renderDeskFile(desk: DeskFile): string {
     if (chat.position !== undefined) out.push(line(2, "position", chat.position, "window: left | right"));
     if (chat.island !== undefined) {
       out.push("  island:  # island only");
-      if (chat.island.surface !== undefined) out.push(line(4, "surface", chat.island.surface, "dark | page"));
+      if (chat.island.surface !== undefined) out.push(line(4, "surface", chat.island.surface, "auto | dark | page"));
       if (chat.island.glow !== undefined) out.push(line(4, "glow", chat.island.glow, "the turning multi-colour border"));
     }
     if (chat.theme !== undefined) out.push(line(2, "theme", chat.theme, "auto | light | dark"));

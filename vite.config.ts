@@ -16,15 +16,15 @@ function minifyLoader(): Plugin {
     name: "jun:minify-loader",
     apply: "build",
     writeBundle(options) {
-      // The AI-21 page-actions chunk (widget-actions.js) is minified the same way.
-      for (const name of ["widget.js", "widget-actions.js"]) {
+      // The AI-21 page-actions chunk (widget-actions.js) and D-99's island backdrop chunk are minified the same way.
+      for (const name of ["widget.js", "widget-actions.js", "widget-backdrop.js"]) {
         const file = join(options.dir ?? "", name);
         if (!existsSync(file)) continue;
         const source = readFileSync(file, "utf8");
         if (!source.startsWith("/*!")) continue; // already minified
         const result = minifySync(name, source, { compress: true, mangle: true });
         if (result.errors.length) throw new Error(`${name} minify failed: ${result.errors.map((e) => e.message).join("; ")}`);
-        writeFileSync(file, `/*! Jun ${name === "widget.js" ? "widget loader" : "page actions"} | MIT License | source: public/${name} */\n${result.code}`);
+        writeFileSync(file, `/*! Jun ${name === "widget.js" ? "widget loader" : name === "widget-actions.js" ? "page actions" : "island backdrop"} | MIT License | source: public/${name} */\n${result.code}`);
       }
     },
   };

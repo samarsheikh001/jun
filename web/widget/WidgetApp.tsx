@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
-import { logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
+import { islandPalette, logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
 import { allowedToRun, answersSeq, isPageControl, pointOf, reloadedResult } from "../../shared/page-control.ts";
 import { actionWaits, restSummary, waitingCardLine } from "../../shared/island.ts";
@@ -174,6 +174,20 @@ function noteSent(clientMsgId: string): void {
   }
 }
 
+// D-99: the island's first-visit questions show once per browser (stored, so only with consent).
+const introKey = (key: string) => `jun:intro:${key}`;
+/** True the first time on this browser (and marks it shown); false without consent, storage, or after. */
+function claimIntro(key: string): boolean {
+  if (!persist) return false;
+  try {
+    if (localStorage.getItem(introKey(key))) return false;
+    localStorage.setItem(introKey(key), "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function markEnded(key: string, id: string): void {
   const ids = readEnded(key);
   if (!ids.includes(id)) writeEnded(key, [...ids, id]);
@@ -305,8 +319,10 @@ interface WidgetConfig extends WidgetLook {
 
 /** In a frame on a host page (the loader's, or the Appearance preview), as the morphing island (D-39). */
 const asIsland = (look: WidgetLook) => look.launcher === "island" && window.parent !== window;
-/** The island on its near-black surface (the default; `page` follows the theme). */
-const islandDark = (look: WidgetLook) => asIsland(look) && look.islandSurface !== "page";
+/** D-99: what the page behind the island is, as the loader saw it (`jun:backdrop`); null until it says. */
+type Backdrop = "light" | "dark" | null;
+/** The island's palette: near-black, light (an `auto` island on a dark page), or the theme's; null when not the island. */
+const islandLook = (look: WidgetLook, backdrop: Backdrop) => (asIsland(look) ? islandPalette(look.islandSurface, backdrop) : null);
 /** The frame's theme as drawn: `auto` follows the visitor's system, as styles.css does. */
 const effectiveTheme = (look: WidgetLook): "light" | "dark" =>
   look.theme === "auto" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : look.theme;
@@ -328,7 +344,7 @@ function tooDarkForIsland(color: string): boolean {
 }
 
 /** W-04: brand colour (with readable text on it), light/dark/auto and corner rounding on the frame. */
-function applyLook(look: WidgetLook): void {
+function applyLook(look: WidgetLook, backdrop: Backdrop): void {
   const root = document.documentElement;
   if (/^#[0-9a-f]{6}$/i.test(look.color)) {
     root.style.setProperty("--accent", look.color);
@@ -339,13 +355,16 @@ function applyLook(look: WidgetLook): void {
   root.classList.toggle("island", asIsland(look));
   // D-39: the island's own near-black palette (widget.css, html.island-dark); a near-black brand
   // colour would vanish on it, so its buttons go white there instead.
-  root.classList.toggle("island-dark", islandDark(look));
-  if (islandDark(look) && tooDarkForIsland(look.color)) {
+  const palette = islandLook(look, backdrop);
+  root.classList.toggle("island-dark", palette === "dark");
+  if (palette === "dark" && tooDarkForIsland(look.color)) {
     root.style.setProperty("--accent", "#f5f5f5");
     root.style.setProperty("--accent-text", "#0c0c0d");
   }
-  if (look.theme === "auto") delete root.dataset.theme;
-  else root.dataset.theme = look.theme;
+  // D-99: an auto island on a dark page is drawn light, whatever the theme.
+  const theme = palette === "light" ? "light" : look.theme;
+  if (theme === "auto") delete root.dataset.theme;
+  else root.dataset.theme = theme;
   for (const [name, value] of Object.entries(radiusVars(look.radius))) root.style.setProperty(name, value);
 }
 
@@ -356,6 +375,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [draft, setDraft] = useState<WidgetLook | null>(null);
   /** D-92: the host site's theme (data-theme, JunDesk.setTheme), over the desk's; null = the desk's. */
   const [hostTheme, setHostTheme] = useState<WidgetTheme | null>(null);
+  const [backdrop, setBackdrop] = useState<Backdrop>(null);
   const config = useMemo(() => {
     const look = saved && draft ? { ...saved, ...draft } : saved;
     return look && hostTheme ? { ...look, theme: hostTheme } : look;
@@ -515,6 +535,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         const t = data.theme;
         setHostTheme(t === "light" || t === "dark" || t === "auto" ? t : null);
       }
+      if (data?.type === "jun:backdrop") setBackdrop(data.dark === true ? "dark" : data.dark === false ? "light" : null);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
         if (typeof data.sessionId === "string") setSessionId(data.sessionId);
@@ -568,8 +589,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   // Before paint: the island sizes its frame before paint too, and its first paint must already
   // be on the transparent page (html.island), not the plain white one.
   useLayoutEffect(() => {
-    if (config) applyLook(config);
-  }, [config]);
+    if (config) applyLook(config, backdrop);
+  }, [config, backdrop]);
 
   useEffect(() => {
     postToHost({ type: "jun:unread", count: conversations.filter(unread).length });
@@ -692,7 +713,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       postToHost({ type: next ? "jun:open" : "jun:close" });
     };
     const summary = conversations.find((c) => c.id === id) ?? null;
-    const cardTheme = islandDark(config) ? "dark" : effectiveTheme(config);
+    const palette = islandLook(config, backdrop);
+    const cardTheme = palette === "dark" || palette === "light" ? palette : effectiveTheme(config);
     return (
       <WidgetThread
         key={threadKey}
@@ -1298,7 +1320,7 @@ function WidgetThread({
 
   const hasChat = Boolean(conversationId || starting || opener || intent?.spec.opening || intent?.spec.exit);
   const setIslandOpen = island?.setOpen;
-  const islandState = useIslandState({ island: Boolean(island), open, hasChat, conversationId, opener, intent, handling });
+  const islandState = useIslandState({ island: Boolean(island), open, hasChat, conversationId, opener, intent, handling, introKey: island && island.suggestions.length > 0 && !preview ? api.key : null });
   // The box takes focus when the island opens (and again once a new chat's thread, or another
   // island state, swaps the box in).
   useEffect(() => {
@@ -1551,6 +1573,12 @@ function WidgetThread({
     return (
       <Island state={shown} live={live} neon={island.neon} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
         {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} waiting={waitingLine} onOpen={() => island.setOpen(true)} />}
+        {shown === "intro" && (
+          <div className="i-open">
+            <IslandChips questions={island.suggestions.slice(0, 3)} onPick={(q) => { island.setOpen(true); void send(q, []); }} />
+            <RestPill logoUrl={island.logoUrl} suggestions={[]} placeholder={placeholder} unread={null} onOpen={() => island.setOpen(true)} />
+          </div>
+        )}
         {shown === "nudge" && opener && <NudgeLine logoUrl={island.logoUrl} text={opener.text} from={opener.from ?? null} onAsk={() => island.setOpen(true)} onDismiss={dismissNudge} />}
         {shown === "open" && (
           <div className="i-open">
@@ -1718,7 +1746,7 @@ function ThreadSkeleton() {
  * Open with nothing asked yet it's the question box; with a chat it shows the latest exchange, or
  * the whole conversation once a teammate has it or the visitor asked for it.
  */
-function useIslandState({ island, open, hasChat, conversationId, opener, intent, handling }: {
+function useIslandState({ island, open, hasChat, conversationId, opener, intent, handling, introKey }: {
   island: boolean;
   open: boolean;
   hasChat: boolean;
@@ -1726,8 +1754,27 @@ function useIslandState({ island, open, hasChat, conversationId, opener, intent,
   opener: Opener | undefined;
   intent: ChatIntent | undefined;
   handling: ConversationSummary["handling"] | null;
+  /** D-99: the widget key while a first visit could show the questions over the pill (null: never). */
+  introKey: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
+  // D-99: on a first visit, once the page has settled, the suggested questions rise over the resting
+  // pill for a while (longer while the pointer is on them), then fold away. Once per browser.
+  const [intro, setIntro] = useState(false);
+  const introWanted = Boolean(island && introKey && !conversationId && !intent && !opener && !open);
+  useEffect(() => {
+    if (!introWanted || !introKey) return;
+    const timer = setTimeout(() => claimIntro(introKey) && setIntro(true), INTRO_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [introWanted, introKey]);
+  useEffect(() => {
+    if (!intro) return;
+    if (!introWanted) return setIntro(false);
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => (timer = setTimeout(() => (document.querySelector(".i-box:hover") ? arm() : setIntro(false)), INTRO_MS));
+    arm();
+    return () => clearTimeout(timer);
+  }, [intro, introWanted]);
   const [nudgeShown, setNudgeShown] = useState(false);
   const nudgeText = island && !conversationId && !intent && opener ? opener.text : null;
   useEffect(() => {
@@ -1736,7 +1783,7 @@ function useIslandState({ island, open, hasChat, conversationId, opener, intent,
     const timer = setTimeout(() => setNudgeShown(false), NUDGE_MS);
     return () => clearTimeout(timer);
   }, [nudgeText]);
-  const state: IslandState = !open ? (nudgeText && nudgeShown ? "nudge" : "rest") : !hasChat ? "open" : handling === "human" || showAll ? "panel" : "answer";
+  const state: IslandState = !open ? (nudgeText && nudgeShown ? "nudge" : intro ? "intro" : "rest") : !hasChat ? "open" : handling === "human" || showAll ? "panel" : "answer";
   return { state, showAll, setShowAll, dismissNudge: () => setNudgeShown(false) };
 }
 
@@ -1761,6 +1808,9 @@ function pressTitle(m: Message): string | null {
 
 /** How long the island's one-line offer of help stays before it rests again. */
 const NUDGE_MS = 8_000;
+/** D-99: the first-visit questions rise this long after the island loads, and stay this long (more while hovered). */
+const INTRO_DELAY_MS = 1_500;
+const INTRO_MS = 12_000;
 
 /** What "Contact the team" says when it starts a conversation. */
 const TEAM_REQUEST = "I'd like to talk to someone on your team.";

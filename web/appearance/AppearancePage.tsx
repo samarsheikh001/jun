@@ -279,8 +279,8 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
               </>
             ) : (
               <>
-                <Row label="Island colour" hint={look.islandSurface === "dark" ? "Near-black on every page, whatever the theme." : "Follows the theme below."}>
-                  <Segmented value={look.islandSurface} disabled={off} label="Island colour" options={[["dark", "Dark"], ["page", "Match theme"]]} onChange={(value) => edit({ islandSurface: value as IslandSurface })} />
+                <Row label="Island colour" hint={look.islandSurface === "auto" ? "Stands out from the page behind it: near-black on light pages, light on dark ones." : look.islandSurface === "dark" ? "Near-black on every page, whatever the theme." : "Follows the theme below."}>
+                  <Segmented value={look.islandSurface} disabled={off} label="Island colour" options={[["auto", "Auto"], ["dark", "Dark"], ["page", "Match theme"]]} onChange={(value) => edit({ islandSurface: value as IslandSurface })} />
                 </Row>
                 <SwitchRow title="Neon border" hint="A slowly turning multi-colour glow around the island." checked={draft.neon !== false} disabled={off} onChange={(checked) => edit({ neon: checked })} />
               </>

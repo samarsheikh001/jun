@@ -127,7 +127,7 @@ extra: 1
     /^chat\.color: Colour must look like #2f5bea/,
     /^chat\.launcher: use mode: island or window instead/,
     /^chat\.rounding: Corner rounding must be a whole number from 0 to 24/,
-    /^chat\.island\.surface: use dark/,
+    /^chat\.island\.surface: use auto/,
     /^chat\.allowedWebsites: not a website: not a domain/,
     /^chat\.openers: opener 1: "pricing" must start with \/ or \*/,
     /^hours\.timeZone: use a time zone name/,

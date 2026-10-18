@@ -49,17 +49,18 @@ function Typewriter({ phrases, fallback }: { phrases: string[]; fallback: string
 }
 
 /**
- * rest: the pill (or, with a chat, a one-line summary of its last answer). nudge: a one-line offer
+ * rest: the pill (or, with a chat, a one-line summary of its last answer). intro (D-99): a first
+ * visit's suggested questions over the resting pill, for a few seconds. nudge: a one-line offer
  * of help (P-01, V-07). open: the suggested questions over the pill's row. thinking: one status
  * line while the assistant works (before the first reply, and while a card's button is being
  * handled). answer: the latest exchange, its question as the title, over the pill's row; it folds
  * itself back to rest a few seconds after it's done (`autoFold`). panel: the whole conversation
  * (a teammate's chat, or "Earlier").
  */
-export type IslandState = "rest" | "nudge" | "open" | "thinking" | "answer" | "panel";
+export type IslandState = "rest" | "intro" | "nudge" | "open" | "thinking" | "answer" | "panel";
 
 /** Each state's width; phones cap every width at the frame minus 24px. */
-const WIDTHS: Record<IslandState, number> = { rest: 360, nudge: 440, open: 660, thinking: 420, answer: 560, panel: 660 };
+const WIDTHS: Record<IslandState, number> = { rest: 360, intro: 460, nudge: 440, open: 660, thinking: 420, answer: 560, panel: 660 };
 /** D-79: a one-line pill that hugs its text stays within these. */
 const HUG_MIN = 240;
 const HUG_MAX = 480;
@@ -173,7 +174,7 @@ export function Island({ state, live, neon, onOpen, autoFold = null, hug = false
   // "/" opens the resting island from inside the frame too (after Escape the focus is still here;
   // the loader handles the key on the host page).
   useEffect(() => {
-    if (state !== "rest" && state !== "nudge") return;
+    if (state !== "rest" && state !== "intro" && state !== "nudge") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();

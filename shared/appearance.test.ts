@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APPEARANCE_DEFAULTS, applyAppearance, launcherOf, logoFor, modeOf, radiusVars, textOn, widgetLook } from "./appearance.ts";
+import { APPEARANCE_DEFAULTS, applyAppearance, islandPalette, launcherOf, logoFor, modeOf, radiusVars, textOn, widgetLook } from "./appearance.ts";
 
 test("appearance: an untouched desk gets the original look", () => {
   assert.deepEqual(widgetLook({}, "Acme", null), {
@@ -19,7 +19,7 @@ test("appearance: an untouched desk gets the original look", () => {
     placeholder: "Write a message…",
     suggestions: [],
     neon: true,
-    islandSurface: "dark",
+    islandSurface: "auto",
     buttonStyle: "logo",
     sound: true,
   });
@@ -81,21 +81,33 @@ test("appearance: the reply sound (W-20) is on unless turned off; only true or f
   assert.equal(settings.sound, true);
 });
 
-test("appearance: the island is dark unless set to follow the page; only dark and page are accepted", () => {
-  assert.equal(APPEARANCE_DEFAULTS.islandSurface, "dark");
+test("appearance: the island stands out from the page unless set; auto, dark and page are accepted", () => {
+  assert.equal(APPEARANCE_DEFAULTS.islandSurface, "auto");
   assert.equal(widgetLook({ islandSurface: "page" }, "Acme", null).islandSurface, "page");
   assert.equal(widgetLook({ islandSurface: "dark" }, "Acme", null).islandSurface, "dark");
-  assert.equal(widgetLook({ islandSurface: "light" }, "Acme", null).islandSurface, "dark");
-  assert.equal(widgetLook({ islandSurface: 1 }, "Acme", null).islandSurface, "dark");
+  assert.equal(widgetLook({ islandSurface: "auto" }, "Acme", null).islandSurface, "auto");
+  assert.equal(widgetLook({ islandSurface: "light" }, "Acme", null).islandSurface, "auto");
+  assert.equal(widgetLook({ islandSurface: 1 }, "Acme", null).islandSurface, "auto");
   const settings: Record<string, unknown> = {};
   applyAppearance(settings, { islandSurface: "page" });
   assert.equal(settings.islandSurface, "page");
   applyAppearance(settings, { islandSurface: "dark" });
   assert.equal(settings.islandSurface, "dark");
   for (const islandSurface of ["light", "", null, true]) {
-    assert.throws(() => applyAppearance(settings, { islandSurface }), /Island surface must be dark or page\./);
+    assert.throws(() => applyAppearance(settings, { islandSurface }), /Island surface must be auto, dark or page\./);
   }
   assert.equal(settings.islandSurface, "dark");
+  applyAppearance(settings, { islandSurface: "auto" });
+  assert.equal(settings.islandSurface, "auto");
+});
+
+test("appearance: an auto island is near-black until the page behind it is dark (D-99)", () => {
+  assert.equal(islandPalette("auto", null), "dark");
+  assert.equal(islandPalette("auto", "light"), "dark");
+  assert.equal(islandPalette("auto", "dark"), "light");
+  assert.equal(islandPalette("dark", "dark"), "dark");
+  assert.equal(islandPalette("page", "dark"), "theme");
+  assert.equal(islandPalette("page", null), "theme");
 });
 
 test("appearance: the dark-background logo (W-21) is used only on dark surfaces, else the main logo", () => {

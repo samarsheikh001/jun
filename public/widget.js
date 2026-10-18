@@ -338,6 +338,8 @@
       // AI-32 (D-93): the desk's switch; data-page-control="off" keeps this site out. After consent (connect).
       pageControl = cfg.pageControl && script.getAttribute("data-page-control") != "off";
       if (pageControl && consented) chunk("page-control");
+      // D-99: an "auto" island is drawn against the page behind it: widget-backdrop.js watches that colour.
+      if (cfg.launcher == "island" && cfg.islandSurface == "auto") window.JunDesk._bd = { host: host, post: post }, chunk("backdrop");
     }
     paintTheme();
     wrap.classList.add("on");
@@ -409,6 +411,8 @@
       post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented, theme: theme });
       post({ type: open ? "jun:open" : "jun:close" });
       if (pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
+      var bd = window.JunDesk._bd;
+      if (bd && bd.dark != null) post({ type: "jun:backdrop", dark: bd.dark });
     }
     if (type == "jun:proactive-shown") pendingOpener = null;
     if (type == "jun:open" || type == "jun:close") setOpen(type == "jun:open");

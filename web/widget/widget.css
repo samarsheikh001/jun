@@ -328,8 +328,9 @@ html.island.island-dark {
 .i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s; }
 /* While an answer streams in, the box grows with it without bouncing. */
 .i-box.i-live { transition-duration: 0.25s; transition-timing-function: ease-out; }
-.i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
-.i-shell { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.1); }
+.i-s-intro, .i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
+.i-shell { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.1); transition: background-color 0.3s; }
+/* D-99: the shell fades (0.3s) when an auto island changes palette as the page behind it turns dark or light. */
 /* Neon border: a conic gradient turning slowly, drawn as a 1.5px ring on the box's own edge (masked, so its corners match the shell's) with a blurred copy behind for the glow. */
 @property --i-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 .i-ring, .i-glow { --i-neon: conic-gradient(from var(--i-angle), #ff5ec8, #8b5cff, #35c8ff, #3dffa8, #ffd54a, #ff7a5c, #ff5ec8); position: absolute; border-radius: inherit; background: var(--i-neon); animation: i-turn 6s linear infinite; pointer-events: none; }
