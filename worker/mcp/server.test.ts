@@ -101,3 +101,48 @@ test("HTTP: JSON answers, 202 for notifications, 405 for GET, 403 for a foreign 
   const refused = await serveMcp(post({ jsonrpc: "2.0", id: 1, method: "ping" }), fake, async () => new Response("no", { status: 401 }));
   assert.equal(refused.status, 401);
 });
+
+const slow: McpServer<{ who: string }> = {
+  ...fake,
+  tools: [
+    {
+      name: "slow",
+      title: "Slow",
+      description: "Counts, with a picture.",
+      inputSchema: { type: "object" },
+      long: true,
+      run: async (_ctx, _args, progress) => {
+        progress("Starting…", 0, 2);
+        progress("one", 1, 2);
+        progress("still one");
+        progress("two", 2, 2);
+        return { text: "done", images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }] };
+      },
+    },
+  ],
+};
+
+test("tools/call: images follow the text; progress only with a progressToken, always growing", async () => {
+  const sent: { params: { progress: number; total?: number; message: string; progressToken: unknown } }[] = [];
+  const res = await handleMessage(slow, ctx, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "slow", _meta: { progressToken: "t1" } } }, (n) => sent.push(n as never));
+  assert.deepEqual((res?.result as { content: unknown[] }).content, [{ type: "text", text: "done" }, { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }]);
+  assert.deepEqual(sent.map((n) => n.params.message), ["Starting…", "one", "still one", "two"]);
+  assert.ok(sent.every((n) => n.params.progressToken === "t1"));
+  const values = sent.map((n) => n.params.progress);
+  assert.ok(values.every((v, i) => i === 0 || v > values[i - 1]!), `growing: ${values.join(", ")}`);
+  const quiet: unknown[] = [];
+  await handleMessage(slow, ctx, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "slow" } }, (n) => quiet.push(n));
+  assert.equal(quiet.length, 0);
+});
+
+test("HTTP: a long tool answers as an event stream (progress, then the response) when the client takes one", async () => {
+  const call = { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "slow", _meta: { progressToken: 5 } } };
+  const res = await serveMcp(post(call), slow, login);
+  assert.equal(res.headers.get("content-type"), "text/event-stream");
+  const events = (await res.text()).split("\n\n").filter((e) => e.startsWith("event: message")).map((e) => JSON.parse(e.split("\ndata: ")[1]!) as { method?: string; id?: number });
+  assert.deepEqual(events.map((e) => e.method ?? `response ${e.id}`), [...Array(4).fill("notifications/progress"), "response 7"]);
+  // JSON-only clients get plain JSON.
+  const plain = await serveMcp(post(call, { accept: "application/json" }), slow, login);
+  assert.equal(plain.headers.get("content-type"), "application/json");
+  assert.equal(((await plain.json()) as { id: number }).id, 7);
+});

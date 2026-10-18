@@ -31,6 +31,11 @@
   // Workers AI: embeddings, reranking, and the zero-key default chat model.
   "ai": { "binding": "AI" },
 
+  // Browser Run (AI-31): the MCP's preview_widget / preview_chat screenshot the desk's own shot.html
+  // with a Quick Action (no API token, nothing to provision; the Free plan has 10 browser minutes a
+  // day). Without it, or in local dev (Quick Actions need a remote binding), previews are text only.
+  "browser": { "binding": "BROWSER" },
+
   // Website crawling (K-01): one message per page.
   "queues": {
     "producers": [{ "binding": "CRAWL_QUEUE", "queue": "jun-desk-crawl" }],

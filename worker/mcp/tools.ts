@@ -1,18 +1,19 @@
 import { parseDocument, stringify } from "yaml";
 import { changedPaths, INSTRUCTIONS_PATH, isConfigPath, parseConfig, WEBSITE_ACTIONS_PATH, withCurrentPaths, type AgentConfig, type ConfigFiles, type ConfigIssue, type ToolSpec } from "../ai/config.ts";
 import { ConfigConflictError, listVersions, loadConfigFiles, saveConfig } from "../ai/config-store.ts";
-import { DESK_PATH, parseDeskFile, updateDeskText, type DeskFile } from "../ai/desk-file.ts";
+import { applyDesk, DESK_PATH, parseDeskFile, updateDeskText, type DeskFile, type DeskIssue } from "../ai/desk-file.ts";
 import { DEFAULT_REPLAY_SAMPLE, MAX_REPLAY_SAMPLE, runEval, type EvalEvent } from "../ai/eval.ts";
 import { AiUnavailableError, createModel, loadAiSettings } from "../ai/providers.ts";
-import { deleteSource, DEFAULT_MAX_PAGES, finishStuckSyncs } from "../ai/knowledge.ts";
+import { deleteSource, DEFAULT_MAX_PAGES, finishStuckSyncs, type SourceSettings } from "../ai/knowledge.ts";
 import { documentInput, DocumentInputError, sourceState, sourceType } from "../ai/knowledge-input.ts";
-import { addFileSource, addWebsite, listSources, resyncSource, type SourceListRow } from "../ai/knowledge-sources.ts";
+import { addFileSource, addWebsite, listSources, replaceDocument, resyncSource, type SourceListRow } from "../ai/knowledge-sources.ts";
 import { searchKnowledge } from "../ai/search.ts";
 import { runTestChat } from "../ai/test-chat.ts";
 import { runTool } from "../ai/tools.ts";
 import { recordUsage } from "../ai/topics.ts";
 import { CHATKIT_AUTHORING_GUIDE } from "../ai/chatkit-authoring.ts";
-import { applySavedDesk, generatedDeskFile } from "../lib/desk.ts";
+import { applySavedDesk, generatedDeskFile, loadDeskState } from "../lib/desk.ts";
+import { newId } from "../lib/crypto.ts";
 import { readTestTurns, testCustomer } from "../lib/agent-input.ts";
 import { loadToolSecrets, workerSecretNames } from "../lib/tool-secrets.ts";
 import { editFrontmatter, editYaml, readFrontmatter, readYaml, setBody, withJsonKey, type Edit } from "../../shared/agent-files.ts";
@@ -30,6 +31,10 @@ import {
   cardControls, cardFromShape, checkExamples, nodeText, parseWidgetFile, previewWidget, renderSummary, renderWidget, starterWidget, toolButtonInputs, widgetSchema, type WidgetNode,
 } from "../../shared/widgets.ts";
 import { JUN_VERSION } from "../../shared/version.ts";
+import { unifiedDiff } from "../../shared/line-diff.ts";
+import { widgetLook } from "../../shared/appearance.ts";
+import { workspaceLogos } from "../../shared/workspace-summary.ts";
+import { screenshot, type ShotResult } from "./shot.ts";
 import { HttpError, type Role } from "../types.ts";
 import { ToolError, type JsonSchema, type McpResource, type McpServer, type McpTool, type ToolAnnotations, type ToolResult } from "./server.ts";
 
@@ -68,6 +73,9 @@ const need = (args: Args, key: string): string => {
   return value!;
 };
 const json = (value: unknown) => JSON.stringify(value, null, 2);
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+/** diff_versions' answer is cut here (a whole-config rewrite can be long). */
+const MAX_DIFF = 40_000;
 const block = (path: string, text: string) => `--- ${path} ---\n${text.endsWith("\n") ? text : `${text}\n`}--- end of ${path} ---`;
 const humanize = (name: string) => {
   const words = name.replace(/[_-]+/g, " ").trim();
@@ -480,17 +488,59 @@ const GENERAL: Tool[] = [
     },
   }),
   tool({
+    name: "diff_versions",
+    title: "Compare versions",
+    description: "What changed between two versions, as a unified diff per file: from `from` to `to` (default: the live one). Without `from`, the version before `to`. `paths` limits it to some files.",
+    inputSchema: schema({
+      from: S.int("The older version (default: the one before `to`; 0: the built-in default).", { minimum: 0 }),
+      to: S.int("The newer version (default: the live one).", { minimum: 1 }),
+      paths: S.strings("Only these files, like tasks/refunds.md."),
+    }),
+    annotations: READ,
+    async run(ctx, args) {
+      const to = await loadConfigFiles(ctx.env, ctx.workspaceId, typeof args.to === "number" ? args.to : undefined);
+      if (to.version === null) fail(typeof args.to === "number" ? `There's no version ${args.to}.` : "Nothing saved yet: the agent runs the built-in default.");
+      const fromVersion = typeof args.from === "number" ? args.from : to.version! - 1;
+      if (fromVersion >= to.version!) fail(`from (${fromVersion}) must be older than to (${to.version}).`);
+      // Version 0 is the built-in default: there is no row for it, so loadConfigFiles answers with the default.
+      const from = await loadConfigFiles(ctx.env, ctx.workspaceId, Math.max(fromVersion, 0));
+      if (fromVersion >= 1 && from.version === null) fail(`There's no version ${fromVersion}.`);
+      const only = Array.isArray(args.paths) ? new Set(args.paths.map(String)) : null;
+      const paths = changedPaths(from.files, to.files).filter((p) => !only || only.has(p));
+      const label = `v${fromVersion >= 1 ? fromVersion : "0 (the built-in default)"} → v${to.version}`;
+      if (!paths.length) return done(`${label}: no changes${only ? " to those files" : ""}.`);
+      const diffs = paths.map((p) => unifiedDiff(p, from.files[p] ?? null, to.files[p] ?? null)).filter(Boolean);
+      const text = diffs.join("\n");
+      const cut = text.length > MAX_DIFF ? `${text.slice(0, MAX_DIFF)}\n… (cut at ${MAX_DIFF} characters: pass paths to see one file)` : text;
+      return done(`${label}: ${plural(paths.length, "file")} changed (${paths.join(", ")}).\n${cut}`);
+    },
+  }),
+  tool({
     name: "restore",
     title: "Restore a version",
-    description: "Makes an older version live again, saved as a new version (nothing is lost; history keeps every version).",
-    inputSchema: schema({ version: S.int("The version to bring back (history lists them).", { minimum: 1 }), ...SAVE }, ["version"]),
+    description: "Makes an older version live again, saved as a new version (nothing is lost; history keeps every version). With `paths`, brings back only those files and keeps the rest as they are now (a path the old version doesn't have is deleted).",
+    inputSchema: schema({
+      version: S.int("The version to bring back (history lists them).", { minimum: 1 }),
+      paths: S.strings("Only these files, like tasks/refunds.md (default: every file)."),
+      ...SAVE,
+    }, ["version"]),
     annotations: WRITE,
     run: (ctx, args) =>
-      commit(ctx, args, async () => {
+      commit(ctx, args, async (files) => {
         const v = args.version as number;
         const old = await loadConfigFiles(ctx.env, ctx.workspaceId, v);
         if (old.version === null) fail(`There's no version ${v}.`);
-        return { files: old.files, summary: `restore version ${v}` };
+        if (!Array.isArray(args.paths)) return { files: old.files, summary: `restore version ${v}` };
+        const paths = [...new Set(args.paths.map(String))];
+        if (!paths.length) fail("paths is empty: name the files to bring back, or leave it out for all of them.");
+        const unknown = paths.filter((p) => old.files[p] === undefined && files[p] === undefined);
+        if (unknown.length) fail(`Neither version ${v} nor the live one has ${unknown.join(", ")}.`);
+        const next = { ...files };
+        for (const p of paths) {
+          if (old.files[p] === undefined) delete next[p];
+          else next[p] = old.files[p]!;
+        }
+        return { files: next, summary: `restore ${paths.join(", ")} from version ${v}`, show: paths };
       }),
   }),
   tool({
@@ -1034,12 +1084,13 @@ const WIDGETS: Tool[] = [
   tool({
     name: "preview_widget",
     title: "Preview a widget",
-    description: "Renders a widget through the desk's renderer with its sample (or a named state, or data you pass): problems, an outline of the card, what each control does, and a link to see it on the desk.",
+    description: "Renders a widget through the desk's renderer with its sample (or a named state, or data you pass): a picture of the card as customers see it, problems, an outline of the card, what each control does, and a link to see it on the desk. Look at the picture before you call a card done.",
     inputSchema: schema({
       name: S.string("A saved widget's name (or the name for `file`)."),
       file: S.string("Optional: an unsaved .widget file to render instead."),
       state: S.string("A named state to render (states in the file)."),
       data: S.object("Data to render with instead of the sample."),
+      theme: S.string("The chat's theme to draw it in (default light).", { enum: ["light", "dark"] }),
     }),
     annotations: READ,
     async run(ctx, args) {
@@ -1078,10 +1129,14 @@ const WIDGETS: Tool[] = [
       const inputsOf = (n: string) => config.tools.find((t) => t.name === n)?.input ?? null;
       const missing = root ? toolButtonInputs(root, inputsOf).flatMap((b) => b.missing.map((m) => `"${b.label}" runs ${b.tool} without its required input ${m.name}.`)) : [];
       const saved = files[`widgets/${name}.widget`] !== undefined;
+      const theme = args.theme === "dark" ? "dark" : "light";
+      const shot: ShotResult | null = root ? await screenshot(ctx.env, ctx.origin, { kind: "card", name, root, theme }, { width: 380, height: 1200, selector: ".shot-card" }) : null;
       return {
         isError: problems.length > 0,
+        ...(shot && "image" in shot ? { images: [shot.image] } : {}),
         text: [
           problems.length ? `Problems:\n${problems.map((p) => `- ${p}`).join("\n")}` : "No problems.",
+          shot && "image" in shot ? `The picture shows it in the ${theme} theme, at the chat window's width.` : shot ? `No picture: ${shot.skipped}.` : "",
           ...missing.map((m) => `Warning: ${m}`),
           summaryLine ? `Folded line: ${summaryLine}` : "",
           root ? `Card:\n${outline(root)}` : "",
@@ -1237,7 +1292,8 @@ const TESTS: Tool[] = [
       sample: S.int("With replay: how many conversations (default 20, at most 50).", { minimum: 1, maximum: MAX_REPLAY_SAMPLE }),
     }),
     annotations: { readOnlyHint: true, openWorldHint: true },
-    async run(ctx, args) {
+    long: true,
+    async run(ctx, args, progress) {
       const stored = await latest(ctx);
       const candidateFiles = overlay(stored.files, args.files);
       const parsed = parseConfig(candidateFiles);
@@ -1250,6 +1306,18 @@ const TESTS: Tool[] = [
       const [model, judgeModel] = await models(ctx, ["answer", "judge"]);
       const workspace = await ctx.env.DB.prepare("SELECT name FROM workspaces WHERE id = ?").bind(ctx.workspaceId).first<{ name: string }>();
       const events: EvalEvent[] = [];
+      // One progress line per case or replayed conversation, counted against the start's totals.
+      let total = 0;
+      let finished = 0;
+      const onEvent = (e: EvalEvent) => {
+        events.push(e);
+        if (e.type === "start") {
+          total = e.cases + e.conversations;
+          progress(`Running ${plural(e.cases, "case")}${e.conversations ? ` and replaying ${plural(e.conversations, "conversation")}` : ""}…`, 0, total);
+        }
+        if (e.type === "case") progress(`${e.pass ? "PASS" : "FAIL"} ${e.name}`, ++finished, total);
+        if (e.type === "replay") progress(`Replayed "${e.question.slice(0, 60)}": ${e.verdict}`, ++finished, total);
+      };
       await runEval(
         {
           env: ctx.env,
@@ -1262,7 +1330,7 @@ const TESTS: Tool[] = [
           sample: replay ? Math.min(Math.max(typeof args.sample === "number" ? args.sample : DEFAULT_REPLAY_SAMPLE, 1), MAX_REPLAY_SAMPLE) : 0,
           mockTools: args.mockTools === true,
         },
-        (e) => events.push(e),
+        onEvent,
         { cases: true, replay },
       );
       const lines: string[] = [];
@@ -1290,7 +1358,8 @@ const TESTS: Tool[] = [
       page: S.string("The page path the customer is on, like /billing."),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-    async run(ctx, args) {
+    long: true,
+    async run(ctx, args, progress) {
       requireAdmin(ctx);
       const stored = await latest(ctx);
       const files = overlay(stored.files, args.files);
@@ -1324,6 +1393,7 @@ const TESTS: Tool[] = [
           step.press.turn = at!;
         }
         turns.push(step);
+        progress(`Customer: ${step.press ? `presses "${step.text}"` : step.text.slice(0, 80)}`, out.length + 0.5, steps.length);
         const checked = readTestTurns(turns);
         let reply: TestReply | null = null;
         let error = "";
@@ -1342,6 +1412,7 @@ const TESTS: Tool[] = [
         turns.push({ role: "ai", reply });
         const number = turns.filter((t) => t.role === "ai").length;
         out.push(`Customer: ${step.press ? `[presses "${step.text}"]` : step.text}\nAI reply ${number}:\n${replyText(reply)}`);
+        progress(`AI reply ${number} written`, out.length, steps.length);
       }
       const state = JSON.stringify(turns);
       return done(`${out.join("\n\n")}\n\n${state.length <= 60_000 ? `To continue this chat (or press a button), pass these turns back:\n${state}` : "(The chat is too long to continue; start a new one.)"}${args.real === true ? "" : "\n(Safe mode: POST actions were answered without making changes.)"}`);
@@ -1438,6 +1509,48 @@ const DESK: Tool[] = [
         return { files: { ...files, [DESK_PATH]: updateDeskText(text, before, after) }, summary: `update desk settings (${Object.keys(patch).join(", ")})`, show: args.dryRun === true ? [DESK_PATH] : [] };
       }),
   }),
+  tool({
+    name: "preview_chat",
+    title: "Preview the chat widget",
+    description: "A picture of the website chat as customers see it, closed (the island, greeting card or button) or open, on a light or dark page: the live look, or with `chat` changes laid over it before you save them (the same keys as update_desk_settings' chat). Nothing is saved.",
+    inputSchema: schema({
+      chat: S.object("Unsaved chat settings to show, like { color: \"#0f766e\", mode: \"island\" } (default: the live look)."),
+      open: S.bool("true: the chat opened (default: closed, as a visitor first sees it)."),
+      page: S.string("The website's colour behind it (default light).", { enum: ["light", "dark"] }),
+    }),
+    annotations: READ,
+    async run(ctx, args) {
+      const [state, inbox, { files }] = await Promise.all([
+        loadDeskState(ctx.env, ctx.workspaceId),
+        ctx.env.DB.prepare("SELECT i.widget_key AS widgetKey, w.name FROM inboxes i JOIN workspaces w ON w.id = i.workspace_id WHERE i.workspace_id = ? ORDER BY i.created_at LIMIT 1")
+          .bind(ctx.workspaceId)
+          .first<{ widgetKey: string; name: string }>(),
+        latest(ctx),
+      ]);
+      if (!inbox) fail("This workspace has no chat widget yet.");
+      let settings = state.settings;
+      if (args.chat !== undefined) {
+        if (!isRecord(args.chat)) fail("chat must be an object of chat settings.");
+        // The draft the same way update_desk_settings would write it, applied to a copy of the settings.
+        const { text } = await deskText(ctx, files);
+        const issues: DeskIssue[] = [];
+        const desk = mergeDesk(parseDeskFile(text) as Record<string, unknown>, { chat: args.chat }) as DeskFile;
+        parseDeskFile(stringify(desk), issues);
+        if (issues.length) fail(`Those chat settings have problems:\n${issues.map((i) => `- ${i.path}: ${i.message}`).join("\n")}`);
+        try {
+          settings = applyDesk(desk, state.settings, state.ai, () => newId("op")).settings;
+        } catch (error) {
+          fail(`Those chat settings have a problem: ${(error as Error).message}`);
+        }
+      }
+      const look = widgetLook(settings, inbox!.name, ...(Object.values(workspaceLogos(inbox!.widgetKey, settings)) as [string | null, string | null]));
+      const open = args.open === true;
+      const page = args.page === "dark" ? "dark" : "light";
+      const shot = await screenshot(ctx.env, ctx.origin, { kind: "chat", key: inbox!.widgetKey, look, open, page }, { width: 520, height: open ? 760 : 360 });
+      const what = `${look.mode === "island" ? "The island" : look.greetingCard ? "The chat window with its greeting card" : "The chat window with a button"}, ${open ? "open" : "closed"}, on a ${page} page: colour ${look.color}, theme ${look.theme}${look.mode === "island" ? `, island colour ${look.islandSurface}` : ""}.${args.chat !== undefined ? " (Unsaved changes: update_desk_settings saves them.)" : ""}`;
+      return "image" in shot ? { text: what, images: [shot.image] } : { text: `${what}\nNo picture: ${shot.skipped}.` };
+    },
+  }),
 ];
 
 // ---------- knowledge (D-87) ----------
@@ -1452,8 +1565,10 @@ async function knowledgeCall<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/** get_source lists at most this many pages, and cuts a document's text here. */
+const MAX_PAGES_LISTED = 300;
+const MAX_SOURCE_TEXT = 40_000;
 const when = (ms: number | null) => (ms ? new Date(ms).toISOString().replace(/\.\d+Z$/, "Z") : "never");
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function sourceLine(s: SourceListRow, maxPages: number | null): string {
   const type = sourceType(s.kind, maxPages);
@@ -1483,6 +1598,71 @@ const KNOWLEDGE: Tool[] = [
         .all<{ id: string; maxPages: number | null }>();
       const maxPages = new Map(caps.results.map((r) => [r.id, r.maxPages ?? DEFAULT_MAX_PAGES]));
       return done(`${plural(sources.length, "source")}, newest first:\n${sources.map((s) => sourceLine(s, maxPages.get(s.id) ?? null)).join("\n")}`);
+    },
+  }),
+  tool({
+    name: "get_source",
+    title: "Get a source",
+    description: "One knowledge source in detail. A website: every page it read (URL, title, chunks, when it changed) and the pages left out. A document: its text, from the original for text and Markdown, else what was indexed from it (PDF, DOCX), so you can change it with update_document.",
+    inputSchema: schema({ id: S.string("The source's id (list_knowledge shows it).") }, ["id"]),
+    annotations: READ,
+    async run(ctx, args) {
+      const id = need(args, "id");
+      const source = (await listSources(ctx.env, ctx.workspaceId)).find((s) => s.id === id);
+      if (!source) fail(`There's no source ${id}. list_knowledge shows the ids.`);
+      const row = (await ctx.env.DB.prepare("SELECT body, settings FROM kb_sources WHERE id = ?").bind(id).first<{ body: string | null; settings: string }>())!;
+      const settings = JSON.parse(row.settings) as SourceSettings;
+      const head = sourceLine(source!, source!.kind === "website" ? (settings.maxPages ?? DEFAULT_MAX_PAGES) : null);
+      if (source!.kind === "website") {
+        const pages = await ctx.env.DB.prepare(
+          `SELECT d.url, d.title, d.updated_at AS updatedAt, (SELECT COUNT(*) FROM kb_chunks c WHERE c.document_id = d.id) AS chunks
+           FROM kb_documents d WHERE d.source_id = ? AND d.content_hash IS NOT NULL ORDER BY d.url LIMIT ?`,
+        )
+          .bind(id, MAX_PAGES_LISTED)
+          .all<{ url: string; title: string | null; updatedAt: number; chunks: number }>();
+        const lines = pages.results.map((p) => `- ${p.url}${p.title ? ` · "${p.title}"` : ""} · ${plural(p.chunks, "chunk")} · changed ${when(p.updatedAt)}`);
+        const more = source!.pageCount > pages.results.length ? `\n… and ${source!.pageCount - pages.results.length} more.` : "";
+        const left = settings.exclude?.length ? `\nLeft out (never read): ${settings.exclude.join(", ")}` : "";
+        const blocked = settings.disallow?.length ? `\nrobots.txt blocks: ${settings.disallow.slice(0, 20).join(", ")}` : "";
+        return done(`${head}\nPages:\n${lines.join("\n") || "- none yet"}${more}${left}${blocked}`);
+      }
+      // A document: the original text where it is text, else the indexed chunks in order.
+      let content: string | null = null;
+      let from = "the original";
+      if (source!.kind === "snippet") content = row.body ?? "";
+      else if (settings.file && (settings.file.format === "markdown" || settings.file.format === "text")) content = (await (await ctx.env.FILES.get(settings.file.key))?.text()) ?? null;
+      if (content === null) {
+        from = `what was indexed from the ${settings.file?.format ?? "file"} (the original isn't text)`;
+        const chunks = await ctx.env.DB.prepare("SELECT heading, text FROM kb_chunks WHERE source_id = ? ORDER BY position").bind(id).all<{ heading: string; text: string }>();
+        content = chunks.results.map((c) => (c.heading ? `## ${c.heading}\n${c.text}` : c.text)).join("\n\n");
+      }
+      const cut = content.length > MAX_SOURCE_TEXT ? `${content.slice(0, MAX_SOURCE_TEXT)}\n… (cut at ${MAX_SOURCE_TEXT} characters)` : content;
+      return done(`${head}\nText (${from}):\n${block(settings.file?.name ?? source!.title, cut || "(empty)")}`);
+    },
+  }),
+  tool({
+    name: "update_document",
+    title: "Update a document",
+    description: "Replaces a document's content in place (same id, re-indexed in the background), like uploading a new version of it: `text` (plain text or Markdown) or `base64` + `filename` for a file. get_source shows the current text. Knowledge isn't versioned, so the old content is gone: ask the person first unless they asked for the change. Websites change on the site: resync_source them instead.",
+    inputSchema: schema({
+      id: S.string("The document's source id (list_knowledge shows it)."),
+      name: S.string("A new title (default: the current one)."),
+      text: S.string("The new content as plain text or Markdown."),
+      base64: S.string("A new file's bytes, base64-encoded (instead of text)."),
+      filename: S.string("With base64: the file's name, like returns-policy.pdf."),
+    }, ["id"]),
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    async run(ctx, args) {
+      requireAdmin(ctx);
+      const id = need(args, "id");
+      const current = await ctx.env.DB.prepare("SELECT title FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(id, ctx.workspaceId).first<{ title: string }>();
+      if (!current) fail(`There's no source ${id}. list_knowledge shows the ids.`);
+      const replaced = await knowledgeCall(async () => {
+        const input = documentInput({ ...args, name: str(args, "name")?.trim() || current!.title });
+        return replaceDocument(ctx.env, ctx.workspaceId, id, { name: input.fileName, title: input.title, bytes: input.bytes });
+      });
+      if (!replaced) fail(`There's no source ${id}.`);
+      return done(`Replaced "${str(args, "name")?.trim() || current!.title}" (${id}, ${replaced!.format}, ${replaced!.size} bytes): ${replaced!.kind === "snippet" ? "re-indexed" : "re-indexing in the background; list_knowledge shows when it's ready"}.`);
     },
   }),
   tool({

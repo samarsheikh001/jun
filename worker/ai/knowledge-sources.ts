@@ -107,6 +107,43 @@ export async function addFileSource(
   return { id, title, format, size: bytes.byteLength };
 }
 
+/**
+ * A file source's content replaced in place (the MCP's update_document): same id, so links to it and
+ * its place in the list stay; the new original goes to the same R2 key and is indexed again. A text
+ * snippet gets its new body. The source's kind, or null when there's no such source; a website throws.
+ */
+export async function replaceDocument(
+  env: Env,
+  workspaceId: string,
+  sourceId: string,
+  file: { name: string; title: string; bytes: Uint8Array },
+): Promise<{ kind: "file" | "snippet"; format: FileFormat | "text"; size: number } | null> {
+  const source = await env.DB.prepare("SELECT kind, settings FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(sourceId, workspaceId).first<{ kind: SourceListRow["kind"]; settings: string }>();
+  if (!source) return null;
+  if (source.kind === "website") throw new HttpError(400, "not_a_document", "That's a website: re-sync it to read it again (its pages change on the site, not here).");
+  const { name, title, bytes } = file;
+  if (bytes.byteLength > MAX_KB_FILE_BYTES) throw new HttpError(400, "too_large", TOO_LARGE);
+  if (source.kind === "snippet") {
+    await env.DB.prepare("UPDATE kb_sources SET title = ?, body = ? WHERE id = ?").bind(title, new TextDecoder().decode(bytes), sourceId).run();
+    await indexSnippet(env, sourceId);
+    return { kind: "snippet", format: "text", size: bytes.byteLength };
+  }
+  let format: FileFormat;
+  try {
+    format = sniffFormat(name, bytes);
+  } catch (error) {
+    if (error instanceof UnsupportedFile) throw new HttpError(400, "unsupported_file", error.message);
+    throw error;
+  }
+  const settings = JSON.parse(source.settings) as SourceSettings;
+  const key = settings.file?.key ?? fileKey(workspaceId, sourceId);
+  await env.FILES.put(key, bytes, { httpMetadata: { contentType: FILE_CONTENT_TYPES[format] } });
+  settings.file = { key, name, format, size: bytes.byteLength };
+  await env.DB.prepare("UPDATE kb_sources SET title = ?, settings = ? WHERE id = ?").bind(title, JSON.stringify(settings), sourceId).run();
+  await startFileIndex(env, sourceId);
+  return { kind: "file", format, size: bytes.byteLength };
+}
+
 /** Re-crawls a website, re-indexes a file or a snippet. The source's kind, or null when there's no such source. */
 export async function resyncSource(env: Env, workspaceId: string, sourceId: string): Promise<SourceListRow["kind"] | null> {
   const source = await env.DB.prepare("SELECT kind FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(sourceId, workspaceId).first<{ kind: SourceListRow["kind"] }>();

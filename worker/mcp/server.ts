@@ -5,6 +5,10 @@
 // body; notifications and responses get 202 with no body; GET (a server-to-client SSE stream) is 405,
 // since the server never starts a conversation; no Mcp-Session-Id. Checked against the spec pages
 // for 2025-11-25 (basic/transports, server/tools, server/resources) on 2026-10-14.
+// A long tool (`long`: run_tests, test_chat) answers as an SSE stream when the client accepts one
+// (spec: the server MAY answer a POST with text/event-stream and send notifications before the
+// response): notifications/progress for the request's progressToken, a comment every 15 s so proxies
+// and clients don't give up, then the response. Checked against basic/utilities/progress on 2026-10-18.
 // Pure apart from the tools it's given, so the protocol is unit-tested without a Worker.
 
 /** Newest first. A client asking for another version gets the newest (it may then disconnect). */
@@ -29,11 +33,15 @@ export interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
-/** What a tool returns: text for the AI; `isError` when it failed in a way the AI can fix. */
+/** What a tool returns: text for the AI; `isError` when it failed in a way the AI can fix; images after the text. */
 export interface ToolResult {
   text: string;
   isError?: boolean;
+  images?: { data: string; mimeType: string }[];
 }
+
+/** A long tool's progress line: "case 3 of 8 passed". `done`/`total` when it counts. */
+export type Progress = (message: string, done?: number, total?: number) => void;
 
 export interface McpTool<C> {
   name: string;
@@ -41,7 +49,9 @@ export interface McpTool<C> {
   description: string;
   inputSchema: JsonSchema;
   annotations?: ToolAnnotations;
-  run: (ctx: C, args: Record<string, unknown>) => Promise<ToolResult>;
+  /** Takes long enough to stream progress (see the header). */
+  long?: boolean;
+  run: (ctx: C, args: Record<string, unknown>, progress: Progress) => Promise<ToolResult>;
 }
 
 export interface McpResource {
@@ -111,8 +121,23 @@ export function checkArguments(schema: JsonSchema, args: Record<string, unknown>
   return null;
 }
 
-/** One JSON-RPC message. Null for a notification or a response (nothing to answer). */
-export async function handleMessage<C>(server: McpServer<C>, ctx: C, message: unknown): Promise<JsonRpcResponse | null> {
+/** A notification the server sends while it answers a request (progress). */
+export interface JsonRpcNotification {
+  jsonrpc: "2.0";
+  method: string;
+  params: Record<string, unknown>;
+}
+
+const progressToken = (params: Record<string, unknown>): string | number | null => {
+  const token = isRecord(params._meta) ? params._meta.progressToken : undefined;
+  return typeof token === "string" || typeof token === "number" ? token : null;
+};
+
+/**
+ * One JSON-RPC message. Null for a notification or a response (nothing to answer). `notify` carries
+ * a tool's progress (only when the request asked for it with a progressToken).
+ */
+export async function handleMessage<C>(server: McpServer<C>, ctx: C, message: unknown, notify?: (n: JsonRpcNotification) => void): Promise<JsonRpcResponse | null> {
   if (!isRecord(message) || message.jsonrpc !== "2.0") return rpcError(null, INVALID_REQUEST, "Not a JSON-RPC 2.0 message.");
   const hasId = "id" in message && (typeof message.id === "string" || typeof message.id === "number");
   // A response to us (we never send requests) or a notification: nothing to answer.
@@ -145,8 +170,18 @@ export async function handleMessage<C>(server: McpServer<C>, ctx: C, message: un
         const args = (params.arguments ?? {}) as Record<string, unknown>;
         // Input problems are the AI's to fix: a tool result, not a protocol error (spec: Error Handling).
         const problem = checkArguments(tool.inputSchema, args);
-        const result = problem ? { text: `${problem} Nothing was changed.`, isError: true } : await runTool(tool, ctx, args);
-        return ok(id, { content: [{ type: "text", text: result.text }], isError: result.isError === true });
+        const token = progressToken(params);
+        let last: number | null = null;
+        // The spec wants `progress` to grow with every notification, so a line that doesn't count still moves it on a little.
+        const progress: Progress = (text, done, total) => {
+          if (token === null || !notify) return;
+          const value = done ?? (last ?? 0) + 1;
+          last = last !== null && value <= last ? last + 0.01 : value;
+          notify({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: last, ...(total !== undefined ? { total } : {}), message: text } });
+        };
+        const result: ToolResult = problem ? { text: `${problem} Nothing was changed.`, isError: true } : await runTool(tool, ctx, args, progress);
+        const images = (result.images ?? []).map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType }));
+        return ok(id, { content: [{ type: "text", text: result.text }, ...images], isError: result.isError === true });
       }
       case "resources/list":
         return ok(id, { resources: await server.listResources(ctx) });
@@ -167,9 +202,9 @@ export async function handleMessage<C>(server: McpServer<C>, ctx: C, message: un
   }
 }
 
-async function runTool<C>(tool: McpTool<C>, ctx: C, args: Record<string, unknown>): Promise<ToolResult> {
+async function runTool<C>(tool: McpTool<C>, ctx: C, args: Record<string, unknown>, progress: Progress): Promise<ToolResult> {
   try {
-    return await tool.run(ctx, args);
+    return await tool.run(ctx, args, progress);
   } catch (error) {
     if (error instanceof ToolError) return { text: error.message, isError: true };
     console.error(`mcp tool ${tool.name}:`, error);
@@ -208,6 +243,41 @@ export async function serveMcp<C>(request: Request, server: McpServer<C>, login:
     const answers = (await Promise.all(body.map((m) => handleMessage(server, ctx, m)))).filter((a): a is JsonRpcResponse => a !== null);
     return answers.length ? json(answers) : new Response(null, { status: 202 });
   }
+  if (isLongCall(server, body) && /text\/event-stream/i.test(request.headers.get("accept") ?? "")) return streamAnswer(server, ctx, body);
   const answer = await handleMessage(server, ctx, body);
   return answer ? json(answer, answer.error?.code === INVALID_REQUEST && answer.id === null ? 400 : 200) : new Response(null, { status: 202 });
+}
+
+/** A tools/call of a `long` tool. */
+function isLongCall<C>(server: McpServer<C>, body: unknown): boolean {
+  if (!isRecord(body) || body.method !== "tools/call" || !isRecord(body.params)) return false;
+  const name = body.params.name;
+  return server.tools.some((t) => t.name === name && t.long === true);
+}
+
+/** How often a streamed answer sends a keep-alive comment. */
+export const KEEPALIVE_MS = 15_000;
+
+/** A long call's answer as SSE: progress notifications, keep-alive comments, then the response; then it ends. */
+function streamAnswer<C>(server: McpServer<C>, ctx: C, body: unknown): Response {
+  const stream = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = stream.writable.getWriter();
+  const encoder = new TextEncoder();
+  // Writes go one after another; a client that hung up only stops the writing, never the tool.
+  let chain = Promise.resolve();
+  const write = (text: string) => {
+    chain = chain.then(() => writer.write(encoder.encode(text))).catch(() => {});
+  };
+  const event = (message: unknown) => write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
+  const keepAlive = setInterval(() => write(": working\n\n"), KEEPALIVE_MS);
+  void (async () => {
+    try {
+      const answer = await handleMessage(server, ctx, body, event);
+      if (answer) event(answer);
+    } finally {
+      clearInterval(keepAlive);
+      chain = chain.then(() => writer.close()).catch(() => {});
+    }
+  })();
+  return new Response(stream.readable, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
 }

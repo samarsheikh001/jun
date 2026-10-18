@@ -153,10 +153,11 @@ export default defineConfig({
       optimizeDeps: { include: ["motion/react", "d3-scale", "d3-shape"] },
       build: { rollupOptions: { input: { main: "index.html" } } },
     },
-    // The widget frame (see preactWidget): built into the same folder, after the client build.
+    // The widget frame (see preactWidget) and the MCP previews' screenshot page (shot.html): built into
+    // the same folder, after the client build.
     widget: {
       consumer: "client",
-      build: { outDir: "dist/client", emptyOutDir: false, copyPublicDir: false, rollupOptions: { input: { widget: "widget.html" } } },
+      build: { outDir: "dist/client", emptyOutDir: false, copyPublicDir: false, rollupOptions: { input: { widget: "widget.html", shot: "shot.html" } } },
     },
   },
 });

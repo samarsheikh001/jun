@@ -1,0 +1,13 @@
+/* AI-31: the screenshot page (shot.html). The card sits on its own on a plain page, at the chat
+   window's width; the chat stands on a page of the chosen colour, as on a website. */
+html, body { margin: 0; }
+/* The chat window's surface behind the card, in the card's theme. */
+.shot-card { width: 380px; padding: 16px; box-sizing: border-box; background: var(--surface); color: var(--text); }
+.shot-chat { position: fixed; inset: 0; background: #f4f4f2; }
+.shot-chat.dark { background: #16181d; }
+.shot-frame { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; width: 380px; height: 600px; border: 0; background: none; visibility: hidden; }
+.shot-frame.sized { visibility: visible; }
+.shot-frame.hidden { display: none; }
+.shot-chat.button .shot-frame { border-radius: 16px; background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16); }
+.shot-launcher { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; width: 52px; height: 52px; border-radius: 16px; background: var(--c); }
+.shot-error { font: 14px system-ui, sans-serif; padding: 16px; }

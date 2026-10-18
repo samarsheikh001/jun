@@ -285,7 +285,8 @@ How changes work:
   comments. write_file is for anything they don't cover.
 - Before making a change live, check it: run_tests runs tests/*.yaml, test_chat chats with the agent as a
   customer (changes made by POST actions are pretended unless real: true), try_action calls one action,
-  preview_widget renders a card. history lists versions; restore brings an old one back as a new version.
+  preview_widget shows a picture of a card and preview_chat one of the chat widget. history lists versions,
+  diff_versions shows what changed, and restore brings an old version (or some of its files) back as a new one.
 - Ask the person before making changes live if they haven't said to, and add a test case for each
   behaviour you add or fix.
 

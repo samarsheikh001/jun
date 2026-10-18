@@ -32,7 +32,12 @@ async function rpc(method: string, params?: unknown, headers: Record<string, str
     body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, ...(params === undefined ? {} : { params }) }),
   });
   const text = await res.text();
-  return { status: res.status, headers: res.headers, json: text ? (JSON.parse(text) as Record<string, any>) : null };
+  // A long tool answers as an event stream: progress notifications (kept in `progress`), then the response.
+  if (res.headers.get("content-type") === "text/event-stream") {
+    const events = text.split("\n\n").filter((e) => e.startsWith("event: message")).map((e) => JSON.parse(e.slice(e.indexOf("data: ") + 6)) as Record<string, any>);
+    return { status: res.status, headers: res.headers, json: events.find((e) => "id" in e) ?? null, progress: events.filter((e) => e.method === "notifications/progress") };
+  }
+  return { status: res.status, headers: res.headers, json: text ? (JSON.parse(text) as Record<string, any>) : null, progress: [] };
 }
 
 async function tool(name: string, args: Record<string, unknown> = {}, as = token): Promise<{ text: string; isError: boolean }> {
@@ -100,7 +105,7 @@ await step("initialize, notifications/initialized, tools/list with every group, 
   assert.equal(note.status, 202);
   const tools = (await rpc("tools/list")).json!.result.tools as { name: string; inputSchema: { type: string } }[];
   const names = tools.map((t) => t.name);
-  for (const name of ["get_agent", "read_file", "write_file", "check", "history", "restore", "connections", "update_instructions", "create_task", "task_uses", "create_action", "action_from_curl", "try_action", "action_status", "set_key", "create_widget", "widget_templates", "preview_widget", "widget_from_data", "add_test_case", "run_tests", "test_chat", "website_actions", "set_website_action", "get_desk_settings", "update_desk_settings", "list_knowledge", "add_website", "add_document", "resync_source", "remove_source", "search_knowledge"]) {
+  for (const name of ["get_agent", "read_file", "write_file", "check", "history", "diff_versions", "restore", "connections", "update_instructions", "create_task", "task_uses", "create_action", "action_from_curl", "try_action", "action_status", "set_key", "create_widget", "widget_templates", "preview_widget", "preview_chat", "widget_from_data", "add_test_case", "run_tests", "test_chat", "website_actions", "set_website_action", "get_desk_settings", "update_desk_settings", "list_knowledge", "get_source", "update_document", "add_website", "add_document", "resync_source", "remove_source", "search_knowledge"]) {
     assert.ok(names.includes(name), name);
   }
   assert.ok(tools.every((t) => t.inputSchema.type === "object" && /^[a-z_]+$/.test(t.name)));
@@ -163,6 +168,8 @@ await step("create_action (httpbin), create_task using it, create_widget from a 
   assert.match(preview, /^No problems\./);
   assert.match(preview, /Card:\n(Card|ListView|Basic)/);
   assert.match(preview, new RegExp(`/agent/widgets/mcp_ride`));
+  // The e2e desk is on this computer, which Browser Run can't reach: the answer says so instead of a picture.
+  assert.match(preview, /No picture: the desk runs on this computer/);
   const test = await ok("add_test_case", { file: "mcp", name: "refund goes to a person", message: "I want my money back for order A-1042", expect: { outcome: "handoff" } });
   assert.match(test, /tests\/mcp\.yaml \(new\)/);
   const files = (await owner.call(`/workspaces/${workspaceId}/agent`)).json.files as Record<string, string>;
@@ -190,19 +197,39 @@ await step("History shows the MCP as the source; restore brings an old version b
   assert.ok(files["actions/mcp_order_lookup.yaml"]);
   await ok("restore", { version: latest });
   assert.ok(((await owner.call(`/workspaces/${workspaceId}/agent`)).json.files as Record<string, string>)["tasks/mcp-refunds.md"]);
+  // What changed between two versions, file by file.
+  const diff = await ok("diff_versions", { from: afterAction, to: latest });
+  assert.match(diff, new RegExp(`v${afterAction} → v${latest}: `));
+  assert.match(diff, /--- \/dev\/null\n\+\+\+ b\/tasks\/mcp-refunds\.md\n@@ -0,0 \+1,\d+ @@\n\+---/);
+  assert.match(await ok("diff_versions", { from: latest, to: latest + 2, paths: ["tasks/mcp-refunds.md"] }), /no changes to those files/);
+  // Restoring one file keeps the rest as it is now.
+  const one = await ok("restore", { version: afterAction, paths: ["tasks/mcp-refunds.md"] });
+  assert.match(one, /restore tasks\/mcp-refunds\.md from version/);
+  const now = (await owner.call(`/workspaces/${workspaceId}/agent`)).json.files as Record<string, string>;
+  assert.equal(now["tasks/mcp-refunds.md"], undefined, "the old version didn't have it");
+  assert.ok(now["widgets/mcp_ride.widget"], "the rest stays");
+  assert.equal((await tool("restore", { version: afterAction, paths: ["tasks/nope.md"] })).isError, true);
+  await ok("restore", { version: latest, paths: ["tasks/mcp-refunds.md"] });
 });
 
 await step("update_desk_settings changes the widget's public config (desk.yaml applied like a save)", async () => {
   const dry = await ok("update_desk_settings", { chat: { greeting: GREETING }, dryRun: true });
   assert.match(dry, new RegExp(`greeting: ${GREETING}`));
   assert.notEqual((await widgetConfig()).greeting, GREETING);
+  const look = await ok("preview_chat", { chat: { color: "#0f766e" }, open: true, page: "dark" });
+  assert.match(look, /, open, on a dark page: colour #0f766e/);
+  assert.match(look, /Unsaved changes/);
+  assert.match(look, /No picture: /);
+  const teal = await tool("preview_chat", { chat: { color: "teal" } });
+  assert.equal(teal.isError, true, teal.text);
+  assert.match(teal.text, /chat.color: Colour must look like/);
   const saved = await ok("update_desk_settings", { chat: { greeting: GREETING } });
   assert.match(saved, /desk\.yaml/);
   assert.equal((await widgetConfig()).greeting, GREETING);
   const settings = await ok("get_desk_settings");
   assert.match(settings, new RegExp(`greeting: ${GREETING}`));
-  const bad = await tool("update_desk_settings", { chat: { launcher: "rocket" } });
-  assert.equal(bad.isError, true);
+  const bad = await tool("update_desk_settings", { chat: { mode: "rocket" } });
+  assert.equal(bad.isError, true, bad.text);
   assert.match(bad.text, /desk\.yaml/);
 });
 
@@ -238,7 +265,12 @@ await step("website-actions.yaml through set_website_action; widget_from_data ma
 });
 
 await step("test_chat: one real AI turn with the saved agent (safe mode)", async () => {
-  const chat = await ok("test_chat", { messages: ["Where is my order A-1042?"] });
+  // A long tool: with a progressToken, progress arrives on the stream before the answer.
+  const streamed = await rpc("tools/call", { name: "test_chat", arguments: { messages: ["Where is my order A-1042?"] }, _meta: { progressToken: "e2e" } });
+  assert.equal(streamed.headers.get("content-type"), "text/event-stream");
+  assert.ok(streamed.progress.length >= 2, JSON.stringify(streamed.progress));
+  assert.ok(streamed.progress.every((n) => n.params.progressToken === "e2e"));
+  const chat = (streamed.json!.result.content as { text: string }[])[0]!.text;
   assert.match(chat, /Customer: Where is my order A-1042\?\nAI reply 1:/);
   assert.match(chat, /pass these turns back/);
 });
@@ -280,6 +312,15 @@ The only animal allowed in the Glimmer office is a ${PHRASE}, and it must wear a
   assert.match(found, new RegExp(PHRASE));
   assert.match(found, new RegExp(`source ${docId} "${MARK}"`));
   assert.match(found, /score -?\d/);
+  // Its text, then a new version of it in place: same id, the new text found, the old one gone.
+  assert.match(await ok("get_source", { id: docId }), new RegExp(`Text \\(the original\\):[\\s\\S]*${PHRASE}`));
+  const NEW = `wombat-${run}`;
+  assert.match(await ok("update_document", { id: docId, text: `# Pet policy\n\nThe only animal allowed in the Glimmer office is a ${NEW}.\n` }), new RegExp(`Replaced "${MARK}" \\(${docId}, markdown`));
+  const until = Date.now() + 90_000;
+  while (!(await ok("search_knowledge", { query: NEW })).includes(NEW) && Date.now() < until) await new Promise((r) => setTimeout(r, 1000));
+  assert.match(await ok("get_source", { id: docId }), new RegExp(NEW));
+  assert.doesNotMatch(await ok("search_knowledge", { query: `Glimmer office ${PHRASE}` }), new RegExp(PHRASE));
+  assert.equal((await tool("update_document", { id: "src_nope", text: "x" })).isError, true);
 });
 
 await step("knowledge: a member's token searches and lists, but can't add, re-sync or remove", async () => {
@@ -289,7 +330,7 @@ await step("knowledge: a member's token searches and lists, but can't add, re-sy
   assert.equal((await teammate.register(`/invites/${inviteToken}`, new SoftAuthenticator(), { name: `Mo ${run}`, email: `mo-${run}@acme.test` })).status, 200);
   const memberToken = (await teammate.call(`/workspaces/${workspaceId}/tokens`, { body: { name: "e2e mcp member" } })).json.token as string;
   assert.match(memberToken, /^jun_/);
-  assert.match((await tool("search_knowledge", { query: PHRASE }, memberToken)).text, new RegExp(PHRASE));
+  assert.match((await tool("search_knowledge", { query: "Which animal is allowed in the Glimmer office?" }, memberToken)).text, /Glimmer office/);
   assert.equal((await tool("list_knowledge", {}, memberToken)).isError, false);
   for (const [name, args] of [["add_document", { name: "nope", text: "nope" }], ["add_website", { url: "https://example.com" }], ["resync_source", { id: docId }], ["remove_source", { id: docId, confirm: true }]] as const) {
     const refused = await tool(name, args, memberToken);
@@ -310,6 +351,8 @@ await step("knowledge: add_website is accepted and listed; resync_source; bad in
   assert.ok(siteId, added);
   assert.match(added, /Added the page example\.com/);
   assert.match(await ok("list_knowledge"), new RegExp(`${siteId} · page · https://example\\.com/ · (queued|crawling|ready|failed)`));
+  assert.match(await ok("get_source", { id: siteId }), /Pages:\n/);
+  assert.match((await tool("update_document", { id: siteId, text: "x" })).text, /That's a website/);
   assert.match(await ok("resync_source", { id: docId }), /Re-indexing/);
   assert.equal((await tool("resync_source", { id: "src_nope" })).isError, true);
 });
