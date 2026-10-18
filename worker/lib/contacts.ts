@@ -47,27 +47,46 @@ export async function createVisitor(db: D1Database, workspaceId: string): Promis
   return { token: await issueToken(db, contactId), contactId };
 }
 
-function profileUpdate(db: D1Database, contactId: string, identity: VerifiedIdentity) {
+/**
+ * V-11: the company a verified token names, created or refreshed (its name and attributes as the
+ * latest token says); null when the token names none.
+ */
+export async function upsertCompany(db: D1Database, workspaceId: string, company: VerifiedIdentity["company"]): Promise<string | null> {
+  if (!company) return null;
   const now = Date.now();
-  // Verified attributes replace the previous ones: the host app is the source of truth.
+  const row = await db
+    .prepare(
+      `INSERT INTO companies (id, workspace_id, external_id, name, attributes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (workspace_id, external_id) DO UPDATE SET name = COALESCE(excluded.name, name), attributes = excluded.attributes, updated_at = excluded.updated_at
+       RETURNING id`,
+    )
+    .bind(newId("co"), workspaceId, company.id, company.name, JSON.stringify(company.attributes), now, now)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+function profileUpdate(db: D1Database, contactId: string, identity: VerifiedIdentity, companyId: string | null) {
+  const now = Date.now();
+  // Verified attributes (and the company) replace the previous ones: the host app is the source of truth.
   return db
-    .prepare("UPDATE contacts SET name = COALESCE(?, name), email = COALESCE(?, email), attributes = ?, verified_at = ?, last_seen_at = ? WHERE id = ?")
-    .bind(identity.name, identity.email, JSON.stringify(identity.attributes), now, now, contactId);
+    .prepare("UPDATE contacts SET name = COALESCE(?, name), email = COALESCE(?, email), attributes = ?, company_id = ?, verified_at = ?, last_seen_at = ? WHERE id = ?")
+    .bind(identity.name, identity.email, JSON.stringify(identity.attributes), companyId, now, now, contactId);
 }
 
 /** The contact for a verified user, created if new. */
 export async function upsertIdentified(db: D1Database, workspaceId: string, identity: VerifiedIdentity): Promise<string> {
+  const companyId = await upsertCompany(db, workspaceId, identity.company);
   const existing = await db.prepare("SELECT id FROM contacts WHERE workspace_id = ? AND external_id = ?").bind(workspaceId, identity.id).first<{ id: string }>();
   if (existing) {
-    await profileUpdate(db, existing.id, identity).run();
+    await profileUpdate(db, existing.id, identity, companyId).run();
     return existing.id;
   }
   const contactId = newId("ct");
   const now = Date.now();
   try {
     await db
-      .prepare("INSERT INTO contacts (id, workspace_id, external_id, name, email, attributes, verified_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(contactId, workspaceId, identity.id, identity.name, identity.email, JSON.stringify(identity.attributes), now, now, now)
+      .prepare("INSERT INTO contacts (id, workspace_id, external_id, name, email, attributes, company_id, verified_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(contactId, workspaceId, identity.id, identity.name, identity.email, JSON.stringify(identity.attributes), companyId, now, now, now)
       .run();
     return contactId;
   } catch (error) {
@@ -98,17 +117,18 @@ export async function identify(db: D1Database, workspaceId: string, identity: Ve
   const current = currentToken ? await findVisitor(db, workspaceId, currentToken) : null;
 
   if (current?.externalId === identity.id) {
-    await profileUpdate(db, current.contactId, identity).run();
+    await profileUpdate(db, current.contactId, identity, await upsertCompany(db, workspaceId, identity.company)).run();
     return { contactId: current.contactId, token: currentToken!, movedConversations: [] };
   }
 
   if (current && current.externalId === null) {
+    const companyId = await upsertCompany(db, workspaceId, identity.company);
     const existing = await db.prepare("SELECT id FROM contacts WHERE workspace_id = ? AND external_id = ?").bind(workspaceId, identity.id).first<{ id: string }>();
     if (!existing) {
       // First time we see this user: the anonymous contact becomes them.
       await db.batch([
         db.prepare("UPDATE contacts SET external_id = ? WHERE id = ?").bind(identity.id, current.contactId),
-        profileUpdate(db, current.contactId, identity),
+        profileUpdate(db, current.contactId, identity, companyId),
       ]);
       return { contactId: current.contactId, token: currentToken!, movedConversations: [] };
     }
@@ -117,7 +137,7 @@ export async function identify(db: D1Database, workspaceId: string, identity: Ve
       db.prepare("UPDATE conversations SET contact_id = ? WHERE contact_id = ?").bind(existing.id, current.contactId),
       db.prepare("UPDATE visitor_tokens SET contact_id = ? WHERE contact_id = ?").bind(existing.id, current.contactId),
       db.prepare("DELETE FROM contacts WHERE id = ?").bind(current.contactId),
-      profileUpdate(db, existing.id, identity),
+      profileUpdate(db, existing.id, identity, companyId),
     ]);
     return { contactId: existing.id, token: currentToken!, movedConversations: moved.results.map((r) => r.id) };
   }

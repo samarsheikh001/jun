@@ -246,6 +246,8 @@ export function IdentityPanel({ workspaceId }: { workspaceId: string }) {
   const example = `// On your server, for the signed-in user (any JWT library; HS256):
 const userToken = jwt.sign(
   { sub: user.id, email: user.email, name: user.name, attributes: { plan: user.plan },
+    // Optional (B2B): their company, so agents and the AI see the account and its other people.
+    company: { id: user.org.id, name: user.org.name, attributes: { plan: user.org.plan, seats: user.org.seats } },
     // Optional: the user's own key for your API, for actions that act as them ({user.secrets.API_TOKEN}).
     secrets: { API_TOKEN: user.apiToken } },
   process.env.JUN_IDENTITY_SECRET,

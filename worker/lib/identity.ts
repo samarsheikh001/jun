@@ -18,7 +18,18 @@ export interface VerifiedIdentity {
    * shown to agents or put in the AI's prompt.
    */
   secrets: Record<string, string>;
+  /** V-11: the user's company (`company` claim), or null when the token doesn't say. */
+  company: VerifiedCompany | null;
   expiresAt: number;
+}
+
+/** V-11: `company: { id, name?, attributes? }`, the account the user belongs to. */
+export interface VerifiedCompany {
+  /** The host app's company id. */
+  id: string;
+  name: string | null;
+  /** plan, seats, MRR…: strings, numbers, booleans (same rules as the user's attributes). */
+  attributes: Record<string, string | number | boolean>;
 }
 
 export class IdentityError extends Error {}
@@ -69,6 +80,15 @@ function cleanSecrets(raw: unknown): VerifiedIdentity["secrets"] {
 
 const optionalString = (value: unknown, max: number) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null);
 
+function cleanCompany(raw: unknown): VerifiedCompany | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new IdentityError("company must be an object: { id, name, attributes }.");
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === "string" || typeof r.id === "number" ? String(r.id).trim().slice(0, 200) : "";
+  if (!id) throw new IdentityError("company needs an id (your app's id for the company).");
+  return { id, name: optionalString(r.name, 200), attributes: cleanAttributes(r.attributes) };
+}
+
 export async function verifyIdentityToken(token: string, secret: string, now = Date.now()): Promise<VerifiedIdentity> {
   const parts = token.trim().split(".");
   if (parts.length !== 3) throw new IdentityError("Malformed identity token.");
@@ -97,6 +117,7 @@ export async function verifyIdentityToken(token: string, secret: string, now = D
     name: optionalString(claims.name, 200),
     attributes: cleanAttributes(claims.attributes),
     secrets: cleanSecrets(claims.secrets),
+    company: cleanCompany(claims.company),
     expiresAt: claims.exp * 1000,
   };
 }

@@ -103,6 +103,24 @@ await step("on a shared computer, another user never inherits Ada's history", as
   assert.equal((await listConversations(fresh.json.token)).length, 2);
 });
 
+await step("V-11: people of one company are grouped; agents see the company and its other people's chats", async () => {
+  const acme = { id: "org_acme", name: "Acme", attributes: { plan: "enterprise", seats: 40 } };
+  assert.equal((await identify(ada, await userToken(ADA, { name: "Ada Lovelace", company: { name: "No id" } }))).status, 401);
+  assert.equal((await identify(ada, await userToken(ADA, { name: "Ada Lovelace", company: acme }))).status, 200);
+  const { token } = await newVisitor();
+  const graceChat = await startConversation(token, "Our invoices look wrong");
+  assert.equal((await identify(token, await userToken(GRACE, { name: "Grace Hopper", company: { ...acme, attributes: { plan: "enterprise", seats: 41 } } }))).status, 200);
+  const adaChat = (await listConversations(ada))[0]!;
+  const summary = (await agent.call(`/conversations/${adaChat.id}`)).json.conversation;
+  const company = (await agent.call(`/workspaces/${workspaceId}/contacts/${summary.contact.id}`)).json.contact.company;
+  assert.equal(company.externalId, "org_acme");
+  assert.equal(company.name, "Acme");
+  assert.deepEqual(company.attributes, { plan: "enterprise", seats: 41 }, "the latest token's attributes win");
+  assert.equal(company.people, 2);
+  assert.deepEqual(company.conversations.map((c: { id: string }) => c.id), [graceChat.id], "only the other people's chats");
+  assert.equal(company.conversations[0].contactName, "Grace Hopper");
+});
+
 let agentHub: TestSocket;
 let live: TestSocket;
 const SESSION = `e2e${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;

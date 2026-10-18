@@ -301,7 +301,8 @@ Claims:
 | \`sub\` | yes | Your app's own, stable user id: actions get it as \`{user.id}\`. |
 | \`exp\` | yes | Expiry, seconds since 1970. Keep it short (an hour) and sign a new one per page load. |
 | \`email\`, \`name\` | no | Shown to agents; \`{user.email}\`, \`{user.name}\`. |
-| \`attributes\` | no | Up to 50 strings, numbers or booleans (\`plan\`, \`company\`…): \`{user.plan}\`. Names: letters, digits, _. |
+| \`attributes\` | no | Up to 50 strings, numbers or booleans (\`plan\`, \`role\`…): \`{user.plan}\`. Names: letters, digits, _. |
+| \`company\` | no | The account they belong to (B2B): \`{ "id": "…", "name": "Acme", "attributes": { "plan": "pro", "seats": 12 } }\`. People of one company are grouped: agents see the company and its other people's chats, the AI sees its name and attributes. \`id\` is required; attributes as above. |
 | \`secrets\` | no | Up to 10 of the user's own keys for your API, \`{ "API_TOKEN": "…" }\`: \`{user.secrets.API_TOKEN}\` in an action's headers. Never stored or shown to agents or the AI. |
 
 Node (\`npm i jsonwebtoken\`):
@@ -311,7 +312,8 @@ import jwt from "jsonwebtoken";
 
 export function junToken(user) {
   return jwt.sign(
-    { sub: String(user.id), email: user.email, name: user.name, attributes: { plan: user.plan } },
+    { sub: String(user.id), email: user.email, name: user.name, attributes: { plan: user.plan },
+      company: { id: String(user.org.id), name: user.org.name, attributes: { plan: user.org.plan, seats: user.org.seats } } },
     process.env.JUN_IDENTITY_SECRET,
     { algorithm: "HS256", expiresIn: "1h" },
   );

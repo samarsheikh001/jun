@@ -1004,11 +1004,12 @@ export class Conversation extends DurableObject<Env> {
   /** The customer as the host app verified them (V-03), or null for anonymous visitors. */
   async #verifiedCustomer(ref: ConversationRef): Promise<ToolUser | null> {
     const row = await this.env.DB.prepare(
-      `SELECT ct.id, ct.external_id, ct.name, ct.email, ct.attributes FROM conversations c JOIN contacts ct ON ct.id = c.contact_id
+      `SELECT ct.id, ct.external_id, ct.name, ct.email, ct.attributes, co.external_id AS company_id, co.name AS company_name, co.attributes AS company_attributes
+       FROM conversations c JOIN contacts ct ON ct.id = c.contact_id LEFT JOIN companies co ON co.id = ct.company_id
        WHERE c.id = ? AND ct.external_id IS NOT NULL AND ct.verified_at IS NOT NULL`,
     )
       .bind(ref.conversationId)
-      .first<{ id: string; external_id: string; name: string | null; email: string | null; attributes: string }>();
+      .first<{ id: string; external_id: string; name: string | null; email: string | null; attributes: string; company_id: string | null; company_name: string | null; company_attributes: string | null }>();
     if (!row) return null;
     // AI-24: their own keys for actions, from their latest identity token while it's valid.
     let secrets: Record<string, string> | null = null;
@@ -1017,7 +1018,8 @@ export class Conversation extends DurableObject<Env> {
     } catch (error) {
       console.error("the customer's keys couldn't be loaded:", error);
     }
-    return { id: row.external_id, name: row.name, email: row.email, attributes: JSON.parse(row.attributes) as ToolUser["attributes"], ...(secrets ? { secrets } : {}) };
+    const company = row.company_id ? { id: row.company_id, name: row.company_name, attributes: JSON.parse(row.company_attributes ?? "{}") as ToolUser["attributes"] } : null;
+    return { id: row.external_id, name: row.name, email: row.email, attributes: JSON.parse(row.attributes) as ToolUser["attributes"], company, ...(secrets ? { secrets } : {}) };
   }
 
   /** Hands an AI conversation to the team: tells the visitor, and leaves agents a brief (AI-04). */

@@ -116,7 +116,11 @@ ${intent.skill.instructions}`;
 
 function describeCustomer(c: ToolUser): string {
   const attrs = Object.entries(c.attributes).map(([k, v]) => `${k}: ${String(v)}`);
-  return [c.name && `name: ${c.name}`, c.email && `email: ${c.email}`, `user id: ${c.id}`, ...attrs].filter(Boolean).join("; ");
+  // V-11: the account they belong to (B2B: plan, seats, MRR live on the company).
+  const company = c.company
+    ? `company: ${c.company.name ?? c.company.id}${Object.keys(c.company.attributes).length ? ` (${Object.entries(c.company.attributes).map(([k, v]) => `${k}: ${String(v)}`).join(", ")})` : ""}`
+    : "";
+  return [c.name && `name: ${c.name}`, c.email && `email: ${c.email}`, `user id: ${c.id}`, ...attrs, company].filter(Boolean).join("; ");
 }
 
 export function systemPrompt(options: PromptOptions): string {

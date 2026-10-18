@@ -1658,6 +1658,9 @@ const IDENTITY: Tool[] = [
         `- {user.name}: ${identity!.name ?? "(none)"}`,
         ...Object.entries(identity!.attributes).map(([k, v]) => `- {user.${k}}: ${JSON.stringify(v)}`),
         ...Object.keys(identity!.secrets).map((k) => `- {user.secrets.${k}}: set (never shown)`),
+        identity!.company
+          ? `- company: ${identity!.company.id}${identity!.company.name ? ` (${identity!.company.name})` : ""}${Object.keys(identity!.company.attributes).length ? `, ${JSON.stringify(identity!.company.attributes)}` : ""}`
+          : "- company: (none; add a company claim to group people by account)",
         `Expires ${minutes > 0 ? `in ${plural(minutes, "minute")}` : "within a minute"}${minutes > 24 * 60 ? ": that's long; an hour, signed fresh per page load, is safer" : ""}.`,
       ];
       return done(lines.join("\n"));

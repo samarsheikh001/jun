@@ -21,8 +21,16 @@ test("a valid HS256 identity token verifies, with attributes cleaned", async () 
     name: "Ada",
     attributes: { plan: "pro", seats: 5, trial: false },
     secrets: {},
+    company: null,
     expiresAt: exp * 1000,
   });
+});
+
+test("V-11: a company claim names the account; it needs an id, and keeps only plain attributes", async () => {
+  const token = await signIdentityToken({ sub: "42", exp, company: { id: 7, name: " Acme ", attributes: { plan: "pro", seats: 12, nested: { x: 1 }, "bad key": 1 } } }, SECRET);
+  assert.deepEqual((await verifyIdentityToken(token, SECRET, now)).company, { id: "7", name: "Acme", attributes: { plan: "pro", seats: 12 } });
+  await assert.rejects(verifyIdentityToken(await signIdentityToken({ sub: "42", exp, company: { name: "Acme" } }, SECRET), SECRET, now), /company needs an id/);
+  await assert.rejects(verifyIdentityToken(await signIdentityToken({ sub: "42", exp, company: "Acme" }, SECRET), SECRET, now), /company must be an object/);
 });
 
 test("AI-24: a token's secrets claim carries the user's own keys, kept apart from attributes", async () => {

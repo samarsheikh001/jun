@@ -746,6 +746,8 @@ export interface ToolUser {
   attributes: Record<string, string | number | boolean>;
   /** AI-24: their own keys ({user.secrets.NAME}, headers only), from their identity token while it's valid. */
   secrets?: Record<string, string>;
+  /** V-11: their company, as the host app last said (the `company` claim). */
+  company?: { id: string; name: string | null; attributes: Record<string, string | number | boolean> } | null;
 }
 
 export class NotSignedInError extends Error {

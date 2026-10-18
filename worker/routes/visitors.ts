@@ -149,11 +149,34 @@ visitors.get("/workspaces/:id/contacts/:contactId", async (c) => {
   const workspaceId = c.req.param("id");
   await memberRole(c, workspaceId);
   const row = await c.env.DB.prepare(
-    "SELECT id, name, email, external_id, verified_at, attributes, created_at, last_seen_at FROM contacts WHERE id = ? AND workspace_id = ?",
+    "SELECT id, name, email, external_id, verified_at, attributes, company_id, created_at, last_seen_at FROM contacts WHERE id = ? AND workspace_id = ?",
   )
     .bind(c.req.param("contactId"), workspaceId)
-    .first<{ id: string; name: string | null; email: string | null; external_id: string | null; verified_at: number | null; attributes: string; created_at: number; last_seen_at: number }>();
+    .first<{ id: string; name: string | null; email: string | null; external_id: string | null; verified_at: number | null; attributes: string; company_id: string | null; created_at: number; last_seen_at: number }>();
   if (!row) throw new HttpError(404, "not_found", "Contact not found.");
+  // V-11: their company, how many people it has here, and its other people's latest chats.
+  let company = null;
+  if (row.company_id) {
+    const db = c.env.DB;
+    const [co, people, chats] = await db.batch([
+      db.prepare("SELECT external_id, name, attributes FROM companies WHERE id = ? AND workspace_id = ?").bind(row.company_id, workspaceId),
+      db.prepare("SELECT COUNT(*) AS n FROM contacts WHERE company_id = ?").bind(row.company_id),
+      db.prepare(
+        `SELECT cv.id, cv.status, cv.last_message_at AS lastMessageAt, cv.last_message_preview AS preview, ct.name AS contactName, ct.email AS contactEmail
+         FROM conversations cv JOIN contacts ct ON ct.id = cv.contact_id
+         WHERE ct.company_id = ? AND ct.id != ? AND cv.workspace_id = ? ORDER BY cv.last_message_at DESC LIMIT 10`,
+      ).bind(row.company_id, row.id, workspaceId),
+    ]);
+    const co0 = co!.results[0] as { external_id: string; name: string | null; attributes: string } | undefined;
+    if (co0)
+      company = {
+        externalId: co0.external_id,
+        name: co0.name,
+        attributes: JSON.parse(co0.attributes) as Record<string, string | number | boolean>,
+        people: (people!.results[0] as { n: number }).n,
+        conversations: chats!.results,
+      };
+  }
   return c.json({
     contact: {
       id: row.id,
@@ -165,6 +188,7 @@ visitors.get("/workspaces/:id/contacts/:contactId", async (c) => {
       attributes: JSON.parse(row.attributes) as Record<string, string | number | boolean>,
       createdAt: row.created_at,
       lastSeenAt: row.last_seen_at,
+      company,
     },
   });
 });

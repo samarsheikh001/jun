@@ -137,6 +137,14 @@ interface ContactDetails {
   attributes: Record<string, string | number | boolean>;
   createdAt: number;
   lastSeenAt: number;
+  /** V-11: the account they belong to, from the identity token's `company` claim. */
+  company: {
+    externalId: string;
+    name: string | null;
+    attributes: Record<string, string | number | boolean>;
+    people: number;
+    conversations: (PastConversation & { contactName: string | null; contactEmail: string | null })[];
+  } | null;
 }
 
 interface PastConversation {
@@ -213,6 +221,7 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
           {!details.verified && !details.name && !details.email && (<><dt /><dd className="muted">Anonymous visitor. Add a name or email if they tell you.</dd></>)}
         </dl>
       )}
+      {details.company && <CompanyCard company={details.company} />}
       {others.length > 0 && (
         <>
           <h3>Other conversations ({others.length})</h3>
@@ -222,6 +231,40 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
                 <a href={deskHref(`/inbox/${h.id}`)} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${h.id}`); }}>
                   <span className="small">{h.preview || "Conversation"}</span>
                   <span className="muted small">{h.status === "resolved" ? "Resolved" : h.status === "open" ? "Open" : h.status} · {day(h.lastMessageAt)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+const statusWord = (s: string) => (s === "resolved" ? "Resolved" : s === "open" ? "Open" : s);
+
+/** V-11: the customer's company (B2B): its details and its other people's latest chats. */
+function CompanyCard({ company }: { company: NonNullable<ContactDetails["company"]> }) {
+  return (
+    <>
+      <h3>Company</h3>
+      <dl className="env small">
+        <dt>Name</dt><dd>{company.name ?? <code>{company.externalId}</code>}</dd>
+        {company.name && (<><dt>Company ID</dt><dd><code>{company.externalId}</code></dd></>)}
+        {Object.entries(company.attributes).map(([k, v]) => (
+          <span key={k} style={{ display: "contents" }}><dt>{k}</dt><dd>{String(v)}</dd></span>
+        ))}
+        <dt>People</dt><dd>{company.people === 1 ? "1 person signed in" : `${company.people} people signed in`}</dd>
+      </dl>
+      {company.conversations.length > 0 && (
+        <>
+          <h3>Their team's conversations</h3>
+          <ul className="contact-history">
+            {company.conversations.map((h) => (
+              <li key={h.id}>
+                <a href={deskHref(`/inbox/${h.id}`)} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${h.id}`); }}>
+                  <span className="small">{h.preview || "Conversation"}</span>
+                  <span className="muted small">{h.contactName ?? h.contactEmail ?? "Someone"} · {statusWord(h.status)} · {day(h.lastMessageAt)}</span>
                 </a>
               </li>
             ))}
