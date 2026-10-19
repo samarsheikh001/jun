@@ -1755,7 +1755,6 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .ribbon-layers .team { fill: var(--stream-0); }
 /* Without the AI's parts the team's chats are the whole ribbon, in the main blue. */
 .ribbon[data-solo] .ribbon-layers .team { fill: var(--stream-2); }
-.ribbon-layers { animation: ribbon-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .ribbon-marker { stroke: var(--ribbon-line); stroke-width: 1; stroke-dasharray: 3 3; }
 .ribbon-marker.on { stroke: color-mix(in oklch, var(--foreground) 45%, transparent); stroke-dasharray: none; }
 .ribbon-pill {
@@ -1770,9 +1769,7 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .day-axis { position: relative; height: 18px; margin-top: 6px; }
 .day-axis span { position: absolute; top: 0; width: 60px; text-align: center; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
 .day-axis span.on { z-index: 1; color: var(--foreground); background: var(--background); border-radius: 4px; }
-@keyframes ribbon-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) {
-  .ribbon-layers { animation: none; }
   .ribbon-pill, .ribbon-layers path { transition: none; }
 }
 
