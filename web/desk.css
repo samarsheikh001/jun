@@ -2468,12 +2468,12 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
 .digest-head h1 > svg { flex: none; width: 20px; height: 20px; }
 .digest-day { color: var(--muted-foreground); font-weight: 405; overflow: hidden; text-overflow: ellipsis; }
 .digest-sheet { display: grid; gap: 20px; padding: 22px 26px 24px; border-top: 1px solid var(--border); border-radius: 22px 22px 0 0; background: var(--background); }
-.digest-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 14px; line-height: 20px; }
+.digest-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--muted-foreground); font-size: 14px; line-height: 20px; }
 .digest-meta > span:last-child { font-size: 12.5px; white-space: nowrap; }
 .digest-headline { margin: -8px 0 0; padding-bottom: 22px; border-bottom: 1px solid var(--border); font-size: 21px; line-height: 38px; font-weight: 405; letter-spacing: -0.01em; text-wrap: pretty; }
 .digest-headline.writing { color: var(--muted-foreground); }
 .digest-chip { display: inline-block; padding: 0 8px; border-radius: 8px; background: color-mix(in oklch, oklch(0.62 0.16 250) 13%, var(--background)); color: oklch(0.58 0.17 250); font-weight: 525; line-height: 32px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.digest-group > summary { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 14px; line-height: 20px; cursor: pointer; list-style: none; user-select: none; }
+.digest-group > summary { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted-foreground); font-size: 13px; font-weight: 525; line-height: 20px; cursor: pointer; list-style: none; user-select: none; }
 .digest-group > summary::-webkit-details-marker { display: none; }
 .digest-group > summary > svg { width: 15px; height: 15px; transition: transform 150ms; }
 .digest-group:not([open]) > summary { margin-bottom: 0; }
@@ -2483,14 +2483,14 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
 .digest-row { position: relative; display: grid; gap: 8px; padding: 13px 14px 13px 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); transition: border-color 150ms, background-color 150ms; }
 .digest-row.linked:hover { border-color: color-mix(in oklch, var(--border), var(--foreground) 14%); }
 .digest-row-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.digest-row-text { flex: 1; min-width: 0; color: var(--foreground); font-family: var(--font-mono); font-size: 13.5px; line-height: 21px; letter-spacing: -0.01em; text-decoration: none; text-wrap: pretty; overflow-wrap: anywhere; }
+.digest-row-text { flex: 1; min-width: 0; color: var(--foreground); font-size: 14px; line-height: 21px; text-decoration: none; text-wrap: pretty; overflow-wrap: anywhere; }
 /* The whole row opens its link; chats and Ask sit above that layer. */
 a.digest-row-text::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 a.digest-row-text:focus-visible { outline: none; }
 .digest-row:has(a.digest-row-text:focus-visible) { outline: 2px solid var(--ring); outline-offset: 1px; }
 .digest-row-extra { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: fit-content; font-size: 12.5px; }
 .digest-row-side { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; gap: 6px; margin-top: -1px; }
-.digest-tag { flex: none; padding: 0 7px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; line-height: 20px; white-space: nowrap; --hue: var(--muted-foreground); background: color-mix(in oklch, var(--hue) 12%, var(--card)); color: var(--hue); }
+.digest-tag { flex: none; padding: 0 7px; border-radius: 6px; font-size: 12px; line-height: 20px; white-space: nowrap; --hue: var(--muted-foreground); background: color-mix(in oklch, var(--hue) 12%, var(--card)); color: var(--hue); }
 .digest-tag.red { --hue: oklch(0.6 0.19 25); }
 .digest-tag.amber { --hue: oklch(0.7 0.15 70); }
 .digest-tag.blue { --hue: oklch(0.6 0.16 250); }
@@ -2512,7 +2512,7 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .brief-ask:hover, .brief-ask:focus-visible { background: var(--muted); color: var(--foreground); }
 /* On a pointer, Ask shows on the row's hover (or keyboard focus); touch screens always show it. */
 @media (hover: hover) { .digest-row:not(:hover, :focus-within) .brief-ask { opacity: 0; } }
-.brief-more { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 12px; }
+.brief-more { color: var(--muted-foreground); font-size: 12px; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
