@@ -1,4 +1,4 @@
-import type { AskStep, AskTurn, ProposalOutcome, ProposedAction } from "../../shared/desk-assistant.ts";
+import { PROPOSAL_KINDS, type AskStep, type AskTurn, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
 
 // D-132: Home's assistant thread kept in this browser (localStorage, per workspace + member), so a reload
 // or leaving Home doesn't wipe it. Pure parts here: what's stored, how it's read back, and the Recent
@@ -24,7 +24,7 @@ export const EXPIRED: ProposalOutcome = { status: "cancelled", detail: "expired"
 
 export const askKey = (workspaceId: string, userId: string) => `jun:ask:${workspaceId}:${userId}`;
 
-const KINDS = new Set(["assign", "status", "tags", "note", "reply_draft", "issue", "knowledge_website", "knowledge_text"]);
+const KINDS = new Set<string>(PROPOSAL_KINDS);
 const STEP_STATUS = new Set(["running", "done", "error"]);
 const OUTCOME_STATUS = new Set(["done", "cancelled", "failed"]);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -39,6 +39,9 @@ function readProposal(v: unknown): ProposedAction | null {
   if (!isObj(v) || !str(v.callId) || !str(v.tool) || !str(v.summary) || !isObj(v.labels) || !isObj(v.proposal) || !KINDS.has(v.proposal.kind as string)) return null;
   const p = v.proposal;
   if (p.kind === "tags" && (!Array.isArray(p.add) || !Array.isArray(p.remove))) return null;
+  if ("changes" in p && !Array.isArray(p.changes)) return null;
+  const text = (x: unknown) => x === null || str(x);
+  if (p.kind === "agent_file" && (!str(p.path) || !text(p.before) || !text(p.after))) return null;
   return v as unknown as ProposedAction;
 }
 
@@ -83,7 +86,8 @@ export function trimTurns(turns: StoredTurn[], maxBytes = MAX_BYTES): StoredTurn
 
 /** What goes in localStorage: the finished turns without ids, trimmed, and the recent questions. */
 export function serialiseAsk(turns: Turn[], recent: string[]): string {
-  const stored = turns.map(({ id: _id, ...t }) => t as StoredTurn);
+  // D-133: an invite link made on a card stays in the tab, never in storage.
+  const stored = turns.map(({ id: _id, ...t }) => ("outcome" in t && t.outcome?.link ? { ...t, outcome: { status: t.outcome.status, ...(t.outcome.detail ? { detail: t.outcome.detail } : {}) } } : t) as StoredTurn);
   return JSON.stringify({ v: 1, turns: trimTurns(stored), recent: recent.slice(0, MAX_RECENT) } satisfies Stored);
 }
 

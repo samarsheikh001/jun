@@ -61,3 +61,19 @@ test("addRecent: newest first, once each, capped", () => {
   assert.deepEqual(r, ["Six", "Five", "Four", "Three", "one"]);
   assert.equal(r.length, MAX_RECENT);
 });
+
+test("serialise: an invite link made on a card isn't stored (D-133); new kinds come back", () => {
+  const invite: ProposedAction = { callId: "abc123xyz", tool: "propose_team", proposal: { kind: "team_invite", role: "agent" }, labels: {}, summary: "Make an invite link" };
+  const file: ProposedAction = { callId: "abc123xyz", tool: "propose_agent_file", proposal: { kind: "agent_file", path: "instructions.md", op: "edit", before: "a\n", after: "b\n" }, labels: {}, summary: "Change instructions.md" };
+  const turns: Turn[] = [
+    { id: 1, role: "user", text: "Invite Sam" },
+    { id: 2, role: "assistant", text: "", proposal: invite, outcome: { status: "done", detail: "made", link: "https://desk/invite/secret" } },
+    { id: 3, role: "assistant", text: "", proposal: file, outcome: { status: "done", detail: "version 3" } },
+  ];
+  const raw = serialiseAsk(turns, []);
+  assert.doesNotMatch(raw, /secret/);
+  const back = restoreAsk(raw, () => 0).turns;
+  assert.equal(back.length, 3);
+  assert.deepEqual(back[1]!.role === "assistant" && back[1]!.outcome, { status: "done", detail: "made" });
+  assert.equal(back[2]!.role === "assistant" && back[2]!.proposal?.proposal.kind, "agent_file");
+});

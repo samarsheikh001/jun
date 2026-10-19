@@ -1,5 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
-import { isDeskLink, outcomeTitle, type AskEvent, type AskStep, type AskTurn, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
+import {
+  agentFileLink,
+  isDeskLink,
+  outcomeTitle,
+  proposalCard,
+  proposalRisk,
+  type AskEvent,
+  type AskStep,
+  type AskTurn,
+  type Proposal,
+  type ProposalKind,
+  type ProposalOutcome,
+  type ProposedAction,
+  type SettingChange,
+} from "../../shared/desk-assistant.ts";
+import { unifiedDiff } from "../../shared/line-diff.ts";
 import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
 import { ApiError } from "../api.ts";
 import { Markdown } from "../components/Markdown.tsx";
@@ -18,6 +33,10 @@ import {
   EditIcon,
   FileIcon,
   GlobeIcon,
+  KeyIcon,
+  MailIcon,
+  NotificationIcon,
+  PaletteIcon,
   RageClickIcon,
   RefreshIcon,
   SearchIcon,
@@ -128,7 +147,7 @@ const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
 
 /** What the server gets back: the chat without local ids, steps or errors. */
 const history = (turns: Turn[]): AskTurn[] =>
-  turns.flatMap((t): AskTurn[] => (t.role === "error" ? [] : t.role === "user" ? [{ role: "user", text: t.text }] : [{ role: "assistant", text: t.text, ...(t.proposal ? { proposal: t.proposal } : {}), ...(t.outcome ? { outcome: t.outcome } : {}) }]));
+  turns.flatMap((t): AskTurn[] => (t.role === "error" ? [] : t.role === "user" ? [{ role: "user", text: t.text }] : [{ role: "assistant", text: t.text, ...(t.proposal ? { proposal: t.proposal } : {}), ...(t.outcome ? { outcome: { status: t.outcome.status, ...(t.outcome.detail ? { detail: t.outcome.detail } : {}) } } : {}) }]));
 
 /** One answer from the assistant, after `turns` (which end with a question or a card's outcome). */
 async function answer(ws: string, turns: Turn[]): Promise<void> {
@@ -260,6 +279,10 @@ const TOOL_ICONS: Record<string, () => ReactNode> = {
   list_agent_files: () => <BotIcon />,
   read_agent_file: () => <FileIcon />,
   list_teammates: () => <UsersIcon />,
+  read_settings: () => <SettingsIcon />,
+  list_inbox_setup: () => <TagIcon />,
+  read_knowledge_source: () => <BookOpenIcon />,
+  run_tests: () => <CheckIcon />,
 };
 const toolIcon = (tool: string) => (TOOL_ICONS[tool] ?? (() => <ToolIcon />))();
 
@@ -275,16 +298,23 @@ function pathIcon(path: string): ReactNode {
   return <FileIcon />;
 }
 
-const PROPOSAL_ICONS: Record<ProposedAction["proposal"]["kind"], () => ReactNode> = {
-  assign: () => <UsersIcon />,
-  status: () => <CheckIcon />,
-  tags: () => <TagIcon />,
-  note: () => <EditIcon />,
-  reply_draft: () => <ChatIcon />,
-  issue: () => <BugIcon />,
-  knowledge_website: () => <BookOpenIcon />,
-  knowledge_text: () => <BookOpenIcon />,
-};
+/** A card's icon by what it changes. */
+function proposalIcon(kind: ProposalKind): ReactNode {
+  if (kind === "assign" || kind.startsWith("team_")) return <UsersIcon />;
+  if (kind === "status") return <CheckIcon />;
+  if (kind === "handling" || kind === "agent_file" || kind === "ai_settings") return <BotIcon />;
+  if (kind === "tags" || kind.startsWith("tag_") || kind.startsWith("topic_")) return <TagIcon />;
+  if (kind === "note" || kind.startsWith("saved_reply_")) return <EditIcon />;
+  if (kind === "reply_draft" || kind === "invite_visitor") return <ChatIcon />;
+  if (kind === "issue") return <BugIcon />;
+  if (kind === "contact") return <ContactsIcon />;
+  if (kind.startsWith("knowledge_")) return <BookOpenIcon />;
+  if (kind === "notifications") return <NotificationIcon />;
+  if (kind.startsWith("email_")) return <MailIcon />;
+  if (kind === "identity_off") return <KeyIcon />;
+  if (kind === "desk_settings") return <PaletteIcon />;
+  return <SettingsIcon />;
+}
 
 // ---------- steps ----------
 
@@ -453,18 +483,7 @@ function Answer({ text, streaming }: { text: string; streaming: boolean }) {
 
 // ---------- proposals ----------
 
-const CARD_COPY: Record<ProposedAction["proposal"]["kind"], [string, string]> = {
-  assign: ["Assign this chat?", "Assign"],
-  status: ["Change this chat's status?", "Change status"],
-  tags: ["Change this chat's tags?", "Update tags"],
-  note: ["Add an internal note?", "Add note"],
-  reply_draft: ["Open a reply draft?", "Open draft"],
-  issue: ["Draft an issue from this chat?", "Open issue dialog"],
-  knowledge_website: ["Add this site to the knowledge?", "Add website"],
-  knowledge_text: ["Add this document to the knowledge?", "Add document"],
-};
-
-function Chip({ icon, children, tone, href }: { icon?: ReactNode; children: ReactNode; tone?: "add" | "remove"; href?: string }) {
+function Chip({ icon, children, tone, href, title }: { icon?: ReactNode; children: ReactNode; tone?: "add" | "remove"; href?: string; title?: string }) {
   const body = (
     <>
       {icon && <span className="ask-chip-icon" aria-hidden="true">{icon}</span>}
@@ -472,46 +491,171 @@ function Chip({ icon, children, tone, href }: { icon?: ReactNode; children: Reac
     </>
   );
   const cls = `ask-chip${tone ? ` ${tone}` : ""}`;
-  return href ? <DeskLink href={href} className={cls} title="Open this chat">{body}</DeskLink> : <span className={cls}>{body}</span>;
+  return href ? <DeskLink href={href} className={cls} title={title ?? "Open"}>{body}</DeskLink> : <span className={cls}>{body}</span>;
 }
 
-/** What changes, as entity chips: the chat, then the tags, teammate, status or page. */
+/** Where a proposal's thing lives in the desk, for its chip. */
+function targetHref(p: Proposal): string | undefined {
+  if (p.kind === "contact") return `/contacts/${p.contactId}`;
+  if (p.kind === "agent_file") return p.op === "delete" ? undefined : agentFileLink(p.path);
+  if (p.kind.startsWith("knowledge_")) return "/knowledge";
+  if (p.kind.startsWith("saved_reply_") || p.kind.startsWith("tag_")) return "/settings/inbox";
+  if (p.kind.startsWith("topic_")) return "/dashboard/topics";
+  if (p.kind.startsWith("team_")) return "/settings/team";
+  return undefined;
+}
+
+/** What changes, as entity chips: the chat, then the tags, teammate, status, page or thing changed. */
 function ProposalChips({ action }: { action: ProposedAction }) {
   const p = action.proposal;
+  const { labels } = action;
   const chips: ReactNode[] = [];
-  if ("conversationId" in p) chips.push(<Chip key="chat" icon={<ChatIcon />} href={`/inbox/${p.conversationId}`}>{action.labels.conversation ?? "This chat"}</Chip>);
-  if (p.kind === "assign") chips.push(<Chip key="who" icon={<UsersIcon />}>{p.assigneeId ? (action.labels.assignee ?? "a teammate") : "Nobody"}</Chip>);
+  if ("conversationId" in p) chips.push(<Chip key="chat" icon={<ChatIcon />} href={`/inbox/${p.conversationId}`} title="Open this chat">{labels.conversation ?? "This chat"}</Chip>);
+  if (p.kind === "assign") chips.push(<Chip key="who" icon={<UsersIcon />}>{p.assigneeId ? (labels.assignee ?? "a teammate") : "Nobody"}</Chip>);
   if (p.kind === "status") chips.push(<Chip key="status" icon={<CheckIcon />}>{p.status}</Chip>);
+  if (p.kind === "handling") chips.push(<Chip key="handling" icon={p.handling === "ai" ? <BotIcon /> : <UsersIcon />}>{p.handling === "ai" ? "AI" : "Team"}</Chip>);
   if (p.kind === "tags") {
     for (const t of p.add) chips.push(<Chip key={`+${t}`} tone="add" icon={<TagIcon />}>+ {t}</Chip>);
     for (const t of p.remove) chips.push(<Chip key={`-${t}`} tone="remove" icon={<TagIcon />}>− {t}</Chip>);
   }
   if (p.kind === "knowledge_website") chips.push(<Chip key="url" icon={<GlobeIcon />}>{p.url}</Chip>, <Chip key="pages">{p.maxPages === 1 ? "1 page" : `up to ${p.maxPages} pages`}</Chip>);
-  if (p.kind === "knowledge_text") chips.push(<Chip key="title" icon={<FileIcon />}>{p.title}</Chip>);
+  if (p.kind === "knowledge_text" || p.kind === "saved_reply_create") chips.push(<Chip key="title" icon={<FileIcon />}>{p.title}</Chip>);
+  if (p.kind === "agent_file") chips.push(<Chip key="file" icon={<FileIcon />} href={targetHref(p)} title="Open on the Agent page">{p.path}</Chip>);
+  if (labels.target && p.kind !== "workspace_name") chips.push(<Chip key="target" icon={proposalIcon(p.kind)} href={targetHref(p)}>{labels.target}</Chip>);
+  if (p.kind === "tag_rename" || p.kind === "topic_rename") chips.push(<Chip key="name" tone="add" icon={<TagIcon />}>{p.name}</Chip>);
+  if (p.kind === "topic_merge" && labels.detail) chips.push(<Chip key="into" tone="add" icon={<TagIcon />}>into {labels.detail}</Chip>);
+  if ((p.kind === "knowledge_remove_page" || p.kind === "tag_delete") && labels.detail) chips.push(<Chip key="detail" tone={p.kind === "knowledge_remove_page" ? "remove" : undefined}>{labels.detail}</Chip>);
+  if (p.kind === "team_invite" || p.kind === "team_role") chips.push(<Chip key="role" icon={<UsersIcon />}>{p.role}</Chip>);
+  if (p.kind === "email_test") chips.push(<Chip key="to" icon={<MailIcon />}>{p.to ?? "your email"}</Chip>);
   return chips.length ? <div className="ask-chips">{chips}</div> : null;
+}
+
+/** Settings before → after, one row each. */
+function ChangeRows({ changes }: { changes: SettingChange[] }) {
+  return (
+    <dl className="approval-changes">
+      {changes.map((c) => (
+        <div key={c.key}>
+          <dt>{c.label}</dt>
+          <dd>
+            <span className="was">{c.before}</span>
+            <span aria-label="becomes"> → </span>
+            <span className="now">{c.after}</span>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** An agent file's change as diff lines: added and removed lines coloured, hunks marked. */
+function FileDiff({ path, before, after }: { path: string; before: string | null; after: string | null }) {
+  const lines = useMemo(() => unifiedDiff(path, before, after).split("\n").slice(2), [path, before, after]);
+  const added = lines.filter((l) => l.startsWith("+")).length;
+  const removed = lines.filter((l) => l.startsWith("-")).length;
+  return (
+    <div className="approval-diff-wrap">
+      <p className="approval-diff-count">
+        <span className="add">+{added}</span> <span className="del">−{removed}</span> {added + removed === 1 ? "line" : "lines"}
+      </p>
+      <pre className="approval-diff" aria-label={`Changes to ${path}`}>
+        {lines.map((line, i) => (
+          <span key={i} className={line.startsWith("@@") ? "hunk" : line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : undefined}>
+            {line.startsWith("@@") ? "⋯" : <><span className="sign" aria-hidden="true">{line[0] === " " ? "" : line[0] === "-" ? "−" : line[0]}</span>{line.slice(1)}</>}
+            {"\n"}
+          </span>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+const clipped = (text: string) => (text.length > 600 ? `${text.slice(0, 599)}…` : text);
+
+/** The card's body under its chips: the text that goes out, the settings that change, the file's diff. */
+function ProposalBody({ action }: { action: ProposedAction }) {
+  const p = action.proposal;
+  switch (p.kind) {
+    case "note":
+    case "reply_draft":
+    case "knowledge_text":
+    case "saved_reply_create":
+      return (
+        <>
+          <p className="approval-preview">{clipped(p.body)}</p>
+          {p.kind === "reply_draft" && <p className="approval-hint">Nothing is sent: the chat opens with this in the composer, for you to edit and send.</p>}
+        </>
+      );
+    case "invite_visitor":
+      return <p className="approval-preview">{clipped(p.body)}</p>;
+    case "agent_file":
+      return <FileDiff path={p.path} before={p.before} after={p.after} />;
+    case "contact":
+    case "desk_settings":
+    case "ai_settings":
+    case "knowledge_edit":
+    case "saved_reply_edit":
+    case "notifications":
+    case "email_settings":
+      return <ChangeRows changes={p.changes} />;
+    case "workspace_name":
+      return <ChangeRows changes={[{ key: "name", label: "Name", before: action.labels.target ?? "", after: p.name }]} />;
+    case "team_invite":
+      return <p className="approval-hint">The link shows here after Confirm, for you to copy and send. It works once, for one person.</p>;
+    default:
+      return null;
+  }
+}
+
+/** An invite link made by Confirm: shown here only (never sent to the assistant), with Copy. */
+function InviteLink({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="ask-invite-link">
+      <code>{url}</code>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          void navigator.clipboard?.writeText(url).then(() => setCopied(true), () => {});
+        }}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+        {copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  );
 }
 
 function ProposalCard({ ws, turn, running, blocked, latest }: { ws: string; turn: AssistantTurn; running: boolean; blocked: boolean; latest: boolean }) {
   const action = turn.proposal!;
   const p = action.proposal;
-  const body = p.kind === "note" || p.kind === "reply_draft" || p.kind === "knowledge_text" ? p.body : null;
-  if (turn.outcome) return <ApprovalOutcome status={turn.outcome.status}>{outcomeTitle(p, action.labels, turn.outcome)}</ApprovalOutcome>;
-  const [title, confirmLabel] = CARD_COPY[p.kind];
+  if (turn.outcome) {
+    return (
+      <>
+        <ApprovalOutcome status={turn.outcome.status}>{outcomeTitle(p, action.labels, turn.outcome)}</ApprovalOutcome>
+        {turn.outcome.link && <InviteLink url={turn.outcome.link} />}
+      </>
+    );
+  }
+  const { title, confirm } = proposalCard(p);
+  const risk = proposalRisk(p);
   return (
     <ApprovalCard
-      icon={PROPOSAL_ICONS[p.kind]()}
+      icon={proposalIcon(p.kind)}
       title={title}
-      confirmLabel={confirmLabel}
+      confirmLabel={confirm}
       running={running}
       disabled={blocked}
       autoFocus={latest}
+      tone={risk?.tone}
+      warning={risk?.line}
       onConfirm={() => settle(ws, turn.id, true)}
       onCancel={() => settle(ws, turn.id, false)}
     >
       <p className="approval-summary">{action.summary}</p>
       <ProposalChips action={action} />
-      {body && <p className="approval-preview">{body.length > 600 ? `${body.slice(0, 599)}…` : body}</p>}
-      {p.kind === "reply_draft" && <p className="approval-hint">Nothing is sent: the chat opens with this in the composer, for you to edit and send.</p>}
+      <ProposalBody action={action} />
     </ApprovalCard>
   );
 }

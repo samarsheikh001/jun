@@ -2642,6 +2642,30 @@ form.ask-bar { display: flex; align-items: flex-end; gap: 8px; margin: 12px; pad
 .approval-outcome.cancelled .approval-outcome-mark { background: var(--muted-foreground); }
 .approval-outcome.failed { background: color-mix(in oklch, var(--destructive) 12%, transparent); color: var(--destructive); }
 .approval-outcome.failed .approval-outcome-mark { background: var(--destructive); }
+/* D-133: a card that can't be undone or reaches someone outside the team: red edge, icon and warning line. */
+.approval-card.risky { box-shadow: var(--shadow-md), inset 0 0 0 1px color-mix(in oklch, var(--destructive) 35%, transparent); }
+.approval-card.risky .approval-icon { background: color-mix(in oklch, var(--destructive) 12%, transparent); color: var(--destructive); }
+.approval-warning { margin: 0; padding: 6px 10px; border-radius: 8px; background: color-mix(in oklch, var(--destructive) 9%, transparent); color: var(--destructive); font-size: 12.5px; line-height: 18px; font-weight: 500; text-wrap: pretty; }
+/* Settings before → after. */
+.approval-changes { display: grid; gap: 4px; margin: 0; font-size: 13px; line-height: 19px; }
+.approval-changes > div { display: grid; grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr); gap: 10px; }
+.approval-changes dt { color: var(--muted-foreground); overflow-wrap: anywhere; }
+.approval-changes dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.approval-changes .was { color: var(--muted-foreground); text-decoration: line-through; text-decoration-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent); }
+.approval-changes .now { font-weight: 500; }
+/* An agent file's diff. */
+.approval-diff-wrap { display: grid; gap: 4px; min-width: 0; }
+.approval-diff-count { margin: 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-foreground); }
+.approval-diff-count .add { color: var(--success); }
+.approval-diff-count .del { color: var(--destructive); }
+.approval-diff { margin: 0; padding: 6px 0; max-height: 240px; overflow: auto; border-radius: 8px; background: var(--muted); font-family: var(--font-mono); font-size: 11.5px; line-height: 17px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-diff > span { display: block; padding: 0 10px 0 22px; text-indent: -12px; }
+.approval-diff .sign { display: inline-block; width: 12px; text-indent: 0; color: var(--muted-foreground); }
+.approval-diff > .add { background: color-mix(in oklch, var(--success) 14%, transparent); }
+.approval-diff > .del { background: color-mix(in oklch, var(--destructive) 11%, transparent); }
+.approval-diff > .hunk { color: var(--muted-foreground); }
+.ask-invite-link { display: flex; align-items: center; gap: 8px; max-width: 440px; margin-top: 6px; padding: 6px 6px 6px 10px; border-radius: 10px; background: var(--muted); }
+.ask-invite-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .ask-word, .approval-card, .approval-outcome { animation: none; } }
 /* Entity chips: the chat (links to it), tags (+ / −), the teammate, the page. */
 .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }

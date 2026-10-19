@@ -3,6 +3,7 @@
 // action proposals (the model proposes, the person confirms, the browser calls the desk's own routes),
 // the chat history the page sends back each turn, the stream's events and the per-member rate limit.
 
+import { NOTIFICATION_PREF_KEYS, type NotificationPrefs } from "./notifications.ts";
 import type { ConversationStatus } from "./protocol.ts";
 
 export class AssistantInputError extends Error {}
@@ -242,29 +243,167 @@ export const iso = (t: number | null | undefined): string | null => (typeof t ==
 
 // ---------- actions: the model proposes, the person confirms ----------
 
-export const ACTION_TOOLS = ["propose_assign", "propose_status", "propose_tags", "propose_note", "propose_reply_draft", "propose_issue", "propose_knowledge"] as const;
+// D-133: one propose_* tool per area of the desk (a chat, the agent's files, the desk's settings,
+// knowledge, the inbox's setup, the team, …); each call is one card and one change. The Worker checks
+// a proposal against the desk's current state before the card is shown (prepareProposal), and the
+// browser runs it through the desk's own route on Confirm (web/home/actions.ts).
+export const ACTION_TOOLS = [
+  "propose_assign",
+  "propose_status",
+  "propose_handling",
+  "propose_tags",
+  "propose_note",
+  "propose_reply_draft",
+  "propose_issue",
+  "propose_invite_visitor",
+  "propose_contact",
+  "propose_agent_file",
+  "propose_desk_settings",
+  "propose_ai_settings",
+  "propose_knowledge",
+  "propose_saved_reply",
+  "propose_tag",
+  "propose_topic",
+  "propose_team",
+  "propose_notifications",
+  "propose_workspace",
+  "propose_email",
+  "propose_identity_off",
+] as const;
 export type ActionTool = (typeof ACTION_TOOLS)[number];
 export const isActionTool = (name: string): name is ActionTool => (ACTION_TOOLS as readonly string[]).includes(name);
-/** Only owners and admins may add knowledge (the route checks too). */
-export const ADMIN_ACTIONS: readonly ActionTool[] = ["propose_knowledge"];
+/** Only owners and admins may do these (the routes check too); agents aren't offered them. */
+export const ADMIN_ACTIONS: readonly ActionTool[] = [
+  "propose_knowledge",
+  "propose_agent_file",
+  "propose_desk_settings",
+  "propose_ai_settings",
+  "propose_tag",
+  "propose_topic",
+  "propose_team",
+  "propose_workspace",
+  "propose_email",
+  "propose_identity_off",
+];
 
 export const PROPOSAL_STATUSES = ["resolved", "open", "pending"] as const satisfies readonly ConversationStatus[];
 export const MAX_NOTE = 4000;
+export const MAX_AGENT_FILE = 60_000;
+
+/** One setting a card shows changing: its label, the value now and after (already readable text). */
+export interface SettingChange {
+  key: string;
+  label: string;
+  before: string;
+  after: string;
+}
+
+/** How the model asks to change one agent file; the Worker turns it into the file's text before and after. */
+export interface AgentFileEdit {
+  action: "write" | "edit" | "append" | "delete";
+  text?: string;
+  edits?: { find: string; replace: string }[];
+}
+
+/** The agent's files the assistant may write (desk.yaml goes through the settings proposals). */
+export const AGENT_FILE_PATH =
+  /^(?:instructions\.md|website-actions\.yaml|tasks\/[a-z0-9]+(?:-[a-z0-9]+)*\.md|actions\/[a-z][a-z0-9_]*\.yaml|widgets\/[a-z][a-z0-9_-]*\.widget|tests\/[a-zA-Z0-9_-]+\.yaml)$/;
+
+/** The widget inbox's settings the assistant may change (PATCH /inbox; desk.yaml follows). */
+export const DESK_SETTING_LABELS = {
+  greeting: "Greeting",
+  displayName: "Name shown",
+  replyTime: "Reply time",
+  placeholder: "Message box hint",
+  suggestions: "Suggested questions",
+  color: "Colour",
+  position: "Position",
+  mode: "Widget mode",
+  greetingCard: "Greeting card",
+  theme: "Widget theme",
+  radius: "Corner rounding",
+  buttonStyle: "Button shows",
+  islandSurface: "Island surface",
+  sound: "Sounds",
+  proactive: "Offer help when something breaks",
+  csat: "Ask for a rating",
+  pageControl: "Let the AI use your website",
+  pageControlConfirm: "Before the AI clicks, types or chooses",
+  hours: "Business hours",
+  assignment: "Assignment",
+  openers: "Page openers",
+  allowedDomains: "Allowed websites",
+} as const;
+export type DeskSettingKey = keyof typeof DESK_SETTING_LABELS;
+export const DESK_SETTING_KEYS = Object.keys(DESK_SETTING_LABELS) as DeskSettingKey[];
+
+export const AI_SETTING_LABELS = { enabled: "AI answers chats", provider: "Provider", model: "Model", monthlyReplyCap: "Monthly reply cap" } as const;
+export const EMAIL_SETTING_LABELS = { enabled: "Email replies", from: "From address", fromName: "Sender name", replyDomain: "Reply domain" } as const;
+export const NOTIFICATION_LABELS: Record<keyof NotificationPrefs, string> = {
+  needsPerson: "A chat needs a person",
+  assigned: "A chat is assigned to you",
+  visitorReply: "A customer replies",
+  mention: "Someone mentions you",
+  sound: "Sound",
+};
+export const KNOWLEDGE_EDIT_LABELS = { title: "Title", body: "Text", maxPages: "Pages to read", exclude: "Skipped pages" } as const;
 
 export type Proposal =
   | { kind: "assign"; conversationId: string; /** A user id, or null to unassign. "me" is resolved by the Worker. */ assigneeId: string | null }
   | { kind: "status"; conversationId: string; status: (typeof PROPOSAL_STATUSES)[number] }
+  | { kind: "handling"; conversationId: string; handling: "ai" | "human" }
   | { kind: "tags"; conversationId: string; add: string[]; remove: string[] }
   | { kind: "note"; conversationId: string; body: string }
   | { kind: "reply_draft"; conversationId: string; body: string }
   | { kind: "issue"; conversationId: string }
+  | { kind: "invite_visitor"; sessionId: string; body: string }
+  | { kind: "contact"; contactId: string; name?: string; email?: string; changes: SettingChange[] }
+  /** The file's whole text before (null: new) and after (null: deleted), worked out by the Worker; `edit` only until then. */
+  | { kind: "agent_file"; path: string; op: "create" | "edit" | "delete"; before: string | null; after: string | null; edit?: AgentFileEdit }
+  | { kind: "desk_settings"; patch: Record<string, unknown>; changes: SettingChange[] }
+  | { kind: "ai_settings"; patch: { enabled?: boolean; provider?: "workers-ai" | "openai"; model?: string | null; monthlyReplyCap?: number }; changes: SettingChange[] }
   | { kind: "knowledge_website"; url: string; maxPages: number }
-  | { kind: "knowledge_text"; title: string; body: string };
+  | { kind: "knowledge_text"; title: string; body: string }
+  | { kind: "knowledge_resync"; sourceId: string }
+  | { kind: "knowledge_edit"; sourceId: string; patch: { title?: string; body?: string; maxPages?: number; exclude?: string[] }; changes: SettingChange[] }
+  | { kind: "knowledge_remove_page"; sourceId: string; documentId: string }
+  | { kind: "knowledge_remove"; sourceId: string }
+  | { kind: "saved_reply_create"; title: string; body: string }
+  /** Both fields as they'll be saved (the route takes both); the Worker fills the one not asked for. */
+  | { kind: "saved_reply_edit"; replyId: string; title: string; body: string; changes: SettingChange[] }
+  | { kind: "saved_reply_delete"; replyId: string }
+  | { kind: "tag_rename"; tagId: string; name: string }
+  | { kind: "tag_delete"; tagId: string }
+  | { kind: "topic_rename"; topicId: string; name: string }
+  | { kind: "topic_merge"; topicId: string; into: string }
+  | { kind: "topic_delete"; topicId: string }
+  | { kind: "topic_label" }
+  | { kind: "team_invite"; role: "admin" | "agent" }
+  | { kind: "team_revoke_invite"; inviteId: string }
+  | { kind: "team_role"; userId: string; role: "admin" | "agent" }
+  | { kind: "team_remove"; userId: string }
+  | { kind: "notifications"; patch: Partial<NotificationPrefs>; changes: SettingChange[] }
+  | { kind: "workspace_name"; name: string }
+  | { kind: "email_settings"; patch: { enabled?: boolean; from?: string; fromName?: string; replyDomain?: string }; changes: SettingChange[] }
+  | { kind: "email_test"; to: string | null }
+  | { kind: "identity_off" };
 
-/** What the card names: the conversation's customer, the teammate. Filled in by the Worker. */
+export type ProposalKind = Proposal["kind"];
+export const PROPOSAL_KINDS: readonly ProposalKind[] = [
+  "assign", "status", "handling", "tags", "note", "reply_draft", "issue", "invite_visitor", "contact", "agent_file", "desk_settings", "ai_settings",
+  "knowledge_website", "knowledge_text", "knowledge_resync", "knowledge_edit", "knowledge_remove_page", "knowledge_remove",
+  "saved_reply_create", "saved_reply_edit", "saved_reply_delete", "tag_rename", "tag_delete", "topic_rename", "topic_merge", "topic_delete", "topic_label",
+  "team_invite", "team_revoke_invite", "team_role", "team_remove", "notifications", "workspace_name", "email_settings", "email_test", "identity_off",
+];
+
+/** What the card names, filled in by the Worker: the conversation's customer, the teammate, the thing changed. */
 export interface ProposalLabels {
   conversation?: string;
   assignee?: string;
+  /** The saved reply, tag, topic, knowledge source, teammate, visitor or contact by name. */
+  target?: string;
+  /** A second name: the topic merged into, the knowledge page, a teammate's role now. */
+  detail?: string;
 }
 
 /** A proposal as the page shows and runs it. */
@@ -277,10 +416,42 @@ export interface ProposedAction {
 }
 
 const TAG = /^[^\n]{1,40}$/;
+const SESSION = /^[\w-]{3,100}$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Text kept as written (file contents, find/replace), only checked for type and size. */
+function raw(input: Input, key: string, max: number, required = false): string | undefined {
+  const v = input[key];
+  if (v === undefined || v === null || (typeof v === "string" && !v.trim())) {
+    if (required) fail(`${key} is required.`);
+    return undefined;
+  }
+  if (typeof v !== "string") return fail(`${key} must be text.`);
+  if (v.length > max) fail(`${key} is at most ${max} characters.`);
+  return v;
+}
+
+function bool(input: Input, key: string): boolean | undefined {
+  const v = input[key];
+  if (v === undefined || v === null || v === "") return undefined;
+  if (v === true || v === "true") return true;
+  if (v === false || v === "false") return false;
+  return fail(`${key} must be true or false.`);
+}
+
+function object(input: Input, key: string): Input {
+  const v = callInput(input[key]);
+  if (!Object.keys(v).length) fail(`${key} must be an object with at least one setting.`);
+  return v;
+}
+
+const op = <T extends string>(input: Input, values: readonly T[]): T => oneOf(input, "op", values) ?? fail(`op is required (${values.join(", ")}).`);
+const someOf = <T extends Record<string, unknown>>(patch: T, what: string): T => (Object.keys(patch).length ? patch : fail(`Say which ${what} to change.`));
+const role = (input: Input): "admin" | "agent" => oneOf(input, "role", ["admin", "agent"] as const) ?? fail("role is required (admin or agent).");
 
 /** A proposal tool's input → a Proposal (assignee "me" becomes `me`'s id). Throws AssistantInputError. */
-export function readProposal(tool: ActionTool, raw: unknown, me: string): Proposal {
-  const input = callInput(raw);
+export function readProposal(tool: ActionTool, rawInput: unknown, me: string): Proposal {
+  const input = callInput(rawInput);
   switch (tool) {
     case "propose_assign": {
       const conversationId = id(input, "conversationId");
@@ -292,6 +463,8 @@ export function readProposal(tool: ActionTool, raw: unknown, me: string): Propos
     }
     case "propose_status":
       return { kind: "status", conversationId: id(input, "conversationId"), status: oneOf(input, "status", PROPOSAL_STATUSES) ?? fail("status is required (resolved, open or pending).") };
+    case "propose_handling":
+      return { kind: "handling", conversationId: id(input, "conversationId"), handling: oneOf(input, "handling", ["ai", "human"] as const) ?? fail("handling is required (ai or human).") };
     case "propose_tags": {
       const conversationId = id(input, "conversationId");
       const add = list(input, "add", 10, 40);
@@ -306,8 +479,63 @@ export function readProposal(tool: ActionTool, raw: unknown, me: string): Propos
       return { kind: "reply_draft", conversationId: id(input, "conversationId"), body: str(input, "body", MAX_NOTE, true)! };
     case "propose_issue":
       return { kind: "issue", conversationId: id(input, "conversationId") };
+    case "propose_invite_visitor": {
+      const sessionId = str(input, "sessionId", 100, true)!;
+      if (!SESSION.test(sessionId)) fail("sessionId must be a visitor's sessionId from live_visitors.");
+      const body = str(input, "body", 1000, true)!;
+      return { kind: "invite_visitor", sessionId, body };
+    }
+    case "propose_contact": {
+      const contactId = id(input, "contactId");
+      const name = str(input, "name", 200);
+      const email = str(input, "email", 320);
+      if (email && !EMAIL.test(email)) fail("email doesn't look like an email address.");
+      if (!name && !email) fail("Give a name or an email to set.");
+      return { kind: "contact", contactId, ...(name ? { name } : {}), ...(email ? { email } : {}), changes: [] };
+    }
+    case "propose_agent_file": {
+      const path = str(input, "path", 200, true)!;
+      if (path === "desk.yaml") fail("desk.yaml is the desk's settings: use propose_desk_settings or propose_ai_settings.");
+      if (!AGENT_FILE_PATH.test(path)) fail("path must be instructions.md, website-actions.yaml, tasks/<name>.md, actions/<name>.yaml, widgets/<name>.widget or tests/<name>.yaml (lowercase names).");
+      const action = oneOf(input, "action", ["write", "edit", "append", "delete"] as const) ?? fail("action is required (write, edit, append or delete).");
+      const edit: AgentFileEdit = { action };
+      if (action === "delete") {
+        if (path === "instructions.md") fail("instructions.md can't be deleted (the agent needs it).");
+      } else if (action === "edit") {
+        const v = input.edits;
+        if (!Array.isArray(v) || !v.length) fail("edits is required: a list of { find, replace }.");
+        if ((v as unknown[]).length > 20) fail("At most 20 edits at once.");
+        edit.edits = (v as unknown[]).map((e) => {
+          const one = callInput(e);
+          return { find: raw(one, "find", 5000, true)!, replace: raw(one, "replace", 20_000) ?? "" };
+        });
+      } else edit.text = raw(input, "text", MAX_AGENT_FILE, true)!;
+      return { kind: "agent_file", path, op: action === "delete" ? "delete" : "edit", before: null, after: null, edit };
+    }
+    case "propose_desk_settings": {
+      const changes = object(input, "changes");
+      for (const key of Object.keys(changes)) if (!(DESK_SETTING_KEYS as string[]).includes(key)) fail(`${key} isn't a setting here. These are: ${DESK_SETTING_KEYS.join(", ")}.`);
+      return { kind: "desk_settings", patch: changes, changes: [] };
+    }
+    case "propose_ai_settings": {
+      const provider = str(input, "provider", 40);
+      if (provider === "chatgpt") fail("Switching to ChatGPT needs a sign-in in Settings → AI; you can't do it.");
+      if (provider !== undefined && provider !== "workers-ai" && provider !== "openai") fail("provider must be workers-ai or openai.");
+      const patch: Extract<Proposal, { kind: "ai_settings" }>["patch"] = {};
+      const enabled = bool(input, "enabled");
+      if (enabled !== undefined) patch.enabled = enabled;
+      if (provider) patch.provider = provider as "workers-ai" | "openai";
+      const model = str(input, "model", 100);
+      if (model) patch.model = model === "default" ? null : model;
+      if (input.monthlyReplyCap !== undefined && input.monthlyReplyCap !== null && input.monthlyReplyCap !== "") {
+        const cap = Number(input.monthlyReplyCap);
+        if (!Number.isInteger(cap) || cap < 0 || cap > 1_000_000) fail("monthlyReplyCap is a whole number from 0 (no limit) to 1000000.");
+        patch.monthlyReplyCap = cap;
+      }
+      return { kind: "ai_settings", patch: someOf(patch, "AI setting"), changes: [] };
+    }
     case "propose_knowledge": {
-      const kind = oneOf(input, "kind", ["website", "text"] as const) ?? fail("kind is required (website or text).");
+      const kind = oneOf(input, "kind", ["website", "text", "resync", "edit", "remove_page", "remove"] as const) ?? fail("kind is required (website, text, resync, edit, remove_page or remove).");
       if (kind === "website") {
         const url = str(input, "url", 2000, true)!;
         let u: URL;
@@ -319,22 +547,160 @@ export function readProposal(tool: ActionTool, raw: unknown, me: string): Propos
         if (u.protocol !== "https:" && u.protocol !== "http:") fail("url must start with https://.");
         return { kind: "knowledge_website", url: u.toString(), maxPages: int(input, "maxPages", 1, 2000, 1) };
       }
-      return { kind: "knowledge_text", title: str(input, "title", 200, true)!, body: str(input, "body", 20_000, true)! };
+      if (kind === "text") return { kind: "knowledge_text", title: str(input, "title", 200, true)!, body: str(input, "body", 20_000, true)! };
+      const sourceId = id(input, "sourceId");
+      if (kind === "resync") return { kind: "knowledge_resync", sourceId };
+      if (kind === "remove") return { kind: "knowledge_remove", sourceId };
+      if (kind === "remove_page") return { kind: "knowledge_remove_page", sourceId, documentId: id(input, "documentId") };
+      const patch: Extract<Proposal, { kind: "knowledge_edit" }>["patch"] = {};
+      const title = str(input, "title", 200);
+      if (title) patch.title = title;
+      const body = str(input, "body", 20_000);
+      if (body) patch.body = body;
+      if (input.maxPages !== undefined && input.maxPages !== null && input.maxPages !== "") {
+        const n = Number(input.maxPages);
+        if (!Number.isInteger(n) || n < 1 || n > 2000) fail("maxPages is a whole number from 1 to 2000.");
+        patch.maxPages = n;
+      }
+      if (input.exclude !== undefined) {
+        const exclude = list(input, "exclude", 500, 300);
+        const bad = exclude.filter((s) => !s.startsWith("/") && !/^https?:\/\//.test(s));
+        if (bad.length) fail(`exclude takes paths like /blog/ or full URLs: ${bad.slice(0, 3).join(", ")}`);
+        patch.exclude = exclude;
+      }
+      return { kind: "knowledge_edit", sourceId, patch: someOf(patch, "field (title, body, maxPages or exclude)"), changes: [] };
     }
+    case "propose_saved_reply": {
+      const what = op(input, ["create", "edit", "delete"] as const);
+      if (what === "create") return { kind: "saved_reply_create", title: str(input, "title", 80, true)!, body: str(input, "body", 5000, true)! };
+      const replyId = id(input, "id");
+      if (what === "delete") return { kind: "saved_reply_delete", replyId };
+      const title = str(input, "title", 80) ?? "";
+      const body = str(input, "body", 5000) ?? "";
+      if (!title && !body) fail("Give a new title or body.");
+      return { kind: "saved_reply_edit", replyId, title, body, changes: [] };
+    }
+    case "propose_tag": {
+      const what = op(input, ["rename", "delete"] as const);
+      const tagId = id(input, "id");
+      if (what === "delete") return { kind: "tag_delete", tagId };
+      const name = str(input, "name", 40, true)!.replace(/^#/, "");
+      if (!TAG.test(name)) fail("Tag names are 1 to 40 characters on one line.");
+      return { kind: "tag_rename", tagId, name };
+    }
+    case "propose_topic": {
+      const what = op(input, ["rename", "merge", "delete", "label"] as const);
+      if (what === "label") return { kind: "topic_label" };
+      const topicId = id(input, "id");
+      if (what === "delete") return { kind: "topic_delete", topicId };
+      if (what === "merge") {
+        const into = id(input, "into");
+        if (into === topicId) fail("A topic can't be merged into itself.");
+        return { kind: "topic_merge", topicId, into };
+      }
+      const name = str(input, "name", 40, true)!;
+      if (!TAG.test(name)) fail("Topic names are 1 to 40 characters on one line.");
+      return { kind: "topic_rename", topicId, name };
+    }
+    case "propose_team": {
+      const what = op(input, ["invite", "revoke_invite", "role", "remove"] as const);
+      if (what === "invite") return { kind: "team_invite", role: role(input) };
+      if (what === "revoke_invite") return { kind: "team_revoke_invite", inviteId: id(input, "inviteId") };
+      const userId = id(input, "userId");
+      if (userId === me) fail("You can't change your own role or remove yourself here.");
+      return what === "role" ? { kind: "team_role", userId, role: role(input) } : { kind: "team_remove", userId };
+    }
+    case "propose_notifications": {
+      const patch: Partial<NotificationPrefs> = {};
+      for (const key of NOTIFICATION_PREF_KEYS) {
+        const v = bool(input, key);
+        if (v !== undefined) patch[key] = v;
+      }
+      return { kind: "notifications", patch: someOf(patch, "notification"), changes: [] };
+    }
+    case "propose_workspace":
+      return { kind: "workspace_name", name: str(input, "name", 100, true)! };
+    case "propose_email": {
+      const what = op(input, ["settings", "test"] as const);
+      if (what === "test") {
+        const to = str(input, "to", 320);
+        if (to && !EMAIL.test(to)) fail("to doesn't look like an email address.");
+        return { kind: "email_test", to: to ?? null };
+      }
+      const patch: Extract<Proposal, { kind: "email_settings" }>["patch"] = {};
+      const enabled = bool(input, "enabled");
+      if (enabled !== undefined) patch.enabled = enabled;
+      for (const key of ["from", "fromName", "replyDomain"] as const) {
+        const v = input[key];
+        if (typeof v === "string") patch[key] = v.trim().slice(0, 320);
+      }
+      return { kind: "email_settings", patch: someOf(patch, "email setting"), changes: [] };
+    }
+    case "propose_identity_off":
+      return { kind: "identity_off" };
   }
 }
 
 /** The conversation a proposal is about, if any (the Worker checks it's in the workspace). */
 export const proposalConversation = (p: Proposal): string | null => ("conversationId" in p ? p.conversationId : null);
 
+/**
+ * An agent file's text after an edit, or null when it's deleted. `edit` find texts must each be in
+ * the file exactly once. Throws AssistantInputError with what to fix.
+ */
+export function applyAgentFileEdit(path: string, current: string | null, edit: AgentFileEdit): string | null {
+  const ending = (s: string) => (s.endsWith("\n") ? s : `${s}\n`);
+  let next: string | null;
+  if (edit.action === "delete") {
+    if (current === null) fail(`There's no ${path} to delete.`);
+    next = null;
+  } else if (edit.action === "write") next = ending(edit.text ?? "");
+  else if (edit.action === "append") next = current === null ? ending(edit.text ?? "") : ending(`${current.replace(/\n+$/, "")}\n${edit.text ?? ""}`);
+  else {
+    if (current === null) fail(`There's no ${path} yet: use action write to create it.`);
+    let text = current!;
+    for (const e of edit.edits ?? []) {
+      const at = text.indexOf(e.find);
+      if (at < 0) fail(`This text isn't in ${path}: “${clip(e.find, 80)}”. Read the file again and copy the text exactly.`);
+      if (text.indexOf(e.find, at + 1) >= 0) fail(`This text is in ${path} more than once: “${clip(e.find, 80)}”. Include more of the lines around it.`);
+      text = text.slice(0, at) + e.replace + text.slice(at + e.find.length);
+    }
+    next = text;
+  }
+  if (next === current) fail(`That doesn't change ${path}.`);
+  return next;
+}
+
+/** A setting's value as the card shows it. */
+export function settingText(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "default";
+  if (value === true) return "on";
+  if (value === false) return "off";
+  if (typeof value === "string") return clip(value, 200)!;
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value.length ? clip(value.join(", "), 200)! : "none";
+  return clip(JSON.stringify(value), 200)!;
+}
+
+/** The settings that change, label and values before → after; settings left as they are are dropped. */
+export function settingChanges(labels: Record<string, string>, before: Record<string, unknown>, after: Record<string, unknown>, keys: string[]): SettingChange[] {
+  return keys
+    .map((key) => ({ key, label: labels[key] ?? key, before: settingText(before[key]), after: settingText(after[key]) }))
+    .filter((c) => c.before !== c.after);
+}
+
 /** The card's one-line summary, in the desk's words. */
 export function proposalSummary(p: Proposal, labels: ProposalLabels): string {
   const chat = labels.conversation ? `the chat with ${labels.conversation}` : "this chat";
+  const target = labels.target ? `“${labels.target}”` : "it";
+  const list = (changes: SettingChange[]) => changes.map((c) => c.label.toLowerCase()).join(", ");
   switch (p.kind) {
     case "assign":
       return p.assigneeId === null ? `Unassign ${chat}` : `Assign ${chat} to ${labels.assignee ?? "a teammate"}`;
     case "status":
       return p.status === "resolved" ? `Resolve ${chat}` : p.status === "open" ? `Reopen ${chat}` : `Mark ${chat} as pending`;
+    case "handling":
+      return p.handling === "ai" ? `Hand ${chat} back to the AI (it answers the customer's next message)` : `Take ${chat} over from the AI (the team answers it)`;
     case "tags": {
       const parts = [p.add.length ? `add ${p.add.map((t) => `“${t}”`).join(", ")}` : "", p.remove.length ? `remove ${p.remove.map((t) => `“${t}”`).join(", ")}` : ""].filter(Boolean);
       const text = parts.join(" and ");
@@ -346,11 +712,141 @@ export function proposalSummary(p: Proposal, labels: ProposalLabels): string {
       return `Open ${chat} with this reply in the composer (you send it)`;
     case "issue":
       return `Draft an issue from ${chat}`;
+    case "invite_visitor":
+      return `Send ${labels.target ?? "this visitor"} a chat invite on the page they're on`;
+    case "contact":
+      return `Change ${list(p.changes) || "the details"} of ${labels.target ?? "this contact"}`;
+    case "agent_file":
+      return p.op === "delete" ? `Delete ${p.path} from the support agent` : p.op === "create" ? `Add ${p.path} to the support agent` : `Change ${p.path} in the support agent`;
+    case "desk_settings":
+      return `Change the chat widget's ${list(p.changes)}`;
+    case "ai_settings":
+      return `Change the AI's ${list(p.changes)}`;
     case "knowledge_website":
       return p.maxPages === 1 ? `Add the page ${p.url} to the knowledge` : `Add ${p.url} (up to ${p.maxPages} pages) to the knowledge`;
     case "knowledge_text":
       return `Add the document “${p.title}” to the knowledge`;
+    case "knowledge_resync":
+      return `Read ${target} again so the knowledge is up to date`;
+    case "knowledge_edit":
+      return `Change the ${list(p.changes)} of ${target} in the knowledge`;
+    case "knowledge_remove_page":
+      return `Remove the page ${labels.detail ?? ""} from ${target} in the knowledge`.replace(/\s+/g, " ");
+    case "knowledge_remove":
+      return `Remove ${target} from the knowledge`;
+    case "saved_reply_create":
+      return `Add the saved reply “${p.title}” for the team`;
+    case "saved_reply_edit":
+      return `Change the ${list(p.changes)} of the saved reply ${target}`;
+    case "saved_reply_delete":
+      return `Delete the saved reply ${target}`;
+    case "tag_rename":
+      return `Rename the tag ${target} to “${p.name}” on every chat`;
+    case "tag_delete":
+      return `Delete the tag ${target} from every chat${labels.detail ? ` (${labels.detail})` : ""}`;
+    case "topic_rename":
+      return `Rename the topic ${target} to “${p.name}”`;
+    case "topic_merge":
+      return `Merge the topic ${target} into “${labels.detail ?? "the other topic"}”: its chats move and ${target} goes`;
+    case "topic_delete":
+      return `Delete the topic ${target} (its chats get labelled again later)`;
+    case "topic_label":
+      return "Label the chats that have no topic yet, now";
+    case "team_invite":
+      return `Make an invite link for a new ${p.role} (valid for a few days, for one person)`;
+    case "team_revoke_invite":
+      return "Revoke an invite link that hasn't been used";
+    case "team_role":
+      return `Make ${labels.target ?? "this teammate"} ${p.role === "admin" ? "an admin" : "an agent"}${labels.detail ? ` (now ${labels.detail})` : ""}`;
+    case "team_remove":
+      return `Remove ${labels.target ?? "this teammate"} from the workspace`;
+    case "notifications":
+      return `Change your notifications: ${p.changes.map((c) => `${c.label.toLowerCase()} ${c.after}`).join(", ")}`;
+    case "workspace_name":
+      return `Rename the workspace to “${p.name}”`;
+    case "email_settings":
+      return `Change the email replies' ${list(p.changes)}`;
+    case "email_test":
+      return `Send a test email to ${p.to ?? "your own address"}`;
+    case "identity_off":
+      return "Turn identity verification off";
   }
+}
+
+/** A card that can't be undone or that reaches someone outside the team: red, a plain line, and no Enter to confirm. */
+export function proposalRisk(p: Proposal): { tone: "destructive" | "external"; line: string } | null {
+  switch (p.kind) {
+    case "saved_reply_delete":
+    case "tag_delete":
+    case "topic_delete":
+    case "knowledge_remove_page":
+      return { tone: "destructive", line: "This can't be undone." };
+    case "topic_merge":
+      return { tone: "destructive", line: "This can't be undone: the chats move and the topic is deleted." };
+    case "knowledge_remove":
+      return { tone: "destructive", line: "This can't be undone: knowledge has no history to bring it back from." };
+    case "team_remove":
+      return { tone: "destructive", line: "This can't be undone: they lose access at once (and their account, if this was their only workspace)." };
+    case "identity_off":
+      return { tone: "destructive", line: "This can't be undone: the secret is deleted, signed-in customers become anonymous, and turning it on again makes a new secret." };
+    case "invite_visitor":
+      return { tone: "external", line: "The visitor sees this message on their screen." };
+    case "email_test":
+      return { tone: "external", line: "This sends a real email." };
+    case "email_settings":
+      return p.patch.enabled === true ? { tone: "external", line: "Customers who leave will get the team's replies by email." } : null;
+    default:
+      return null;
+  }
+}
+
+/** The card's question and its Confirm button. */
+export function proposalCard(p: Proposal): { title: string; confirm: string } {
+  const c = (title: string, confirm: string) => ({ title, confirm });
+  switch (p.kind) {
+    case "assign": return c("Assign this chat?", "Assign");
+    case "status": return c("Change this chat's status?", "Change status");
+    case "handling": return p.handling === "ai" ? c("Hand this chat back to the AI?", "Hand to AI") : c("Take this chat over from the AI?", "Take over");
+    case "tags": return c("Change this chat's tags?", "Update tags");
+    case "note": return c("Add an internal note?", "Add note");
+    case "reply_draft": return c("Open a reply draft?", "Open draft");
+    case "issue": return c("Draft an issue from this chat?", "Open issue dialog");
+    case "invite_visitor": return c("Invite this visitor to chat?", "Send invite");
+    case "contact": return c("Change this contact?", "Save contact");
+    case "agent_file": return p.op === "delete" ? c(`Delete ${p.path}?`, "Delete file") : p.op === "create" ? c(`Add ${p.path}?`, "Add file") : c(`Change ${p.path}?`, "Save change");
+    case "desk_settings": return c("Change the chat widget's settings?", "Save settings");
+    case "ai_settings": return c("Change the AI settings?", "Save settings");
+    case "knowledge_website": return c("Add this site to the knowledge?", "Add website");
+    case "knowledge_text": return c("Add this document to the knowledge?", "Add document");
+    case "knowledge_resync": return c("Read this source again?", "Re-sync");
+    case "knowledge_edit": return c("Change this knowledge source?", "Save source");
+    case "knowledge_remove_page": return c("Remove this page from the knowledge?", "Remove page");
+    case "knowledge_remove": return c("Remove this knowledge source?", "Remove source");
+    case "saved_reply_create": return c("Add a saved reply?", "Add saved reply");
+    case "saved_reply_edit": return c("Change this saved reply?", "Save reply");
+    case "saved_reply_delete": return c("Delete this saved reply?", "Delete reply");
+    case "tag_rename": return c("Rename this tag?", "Rename tag");
+    case "tag_delete": return c("Delete this tag?", "Delete tag");
+    case "topic_rename": return c("Rename this topic?", "Rename topic");
+    case "topic_merge": return c("Merge these topics?", "Merge topics");
+    case "topic_delete": return c("Delete this topic?", "Delete topic");
+    case "topic_label": return c("Label chats by topic now?", "Label now");
+    case "team_invite": return c(`Invite a new ${p.role}?`, "Make invite link");
+    case "team_revoke_invite": return c("Revoke this invite link?", "Revoke invite");
+    case "team_role": return c("Change this teammate's role?", "Change role");
+    case "team_remove": return c("Remove this teammate?", "Remove teammate");
+    case "notifications": return c("Change your notifications?", "Save notifications");
+    case "workspace_name": return c("Rename the workspace?", "Rename workspace");
+    case "email_settings": return c("Change the email settings?", "Save email settings");
+    case "email_test": return c("Send a test email?", "Send test email");
+    case "identity_off": return c("Turn identity verification off?", "Turn off");
+  }
+}
+
+/** A proposal as the model sees its own call in the history: file texts left out (they can be long). */
+export function proposalForModel(p: Proposal): Record<string, unknown> {
+  if (p && typeof p === "object" && p.kind === "agent_file") return { kind: p.kind, path: p.path, op: p.op };
+  return p as unknown as Record<string, unknown>;
 }
 
 /** A tag list after a proposal: the current tags minus `remove` plus `add` (case-insensitive, first spelling kept). */
@@ -361,7 +857,8 @@ export function nextTags(current: string[], add: string[], remove: string[]): st
   return out;
 }
 
-export type ProposalOutcome = { status: "done" | "cancelled" | "failed"; detail?: string };
+/** `link`: an invite link the card shows with Copy; it stays in the page and never goes back to the model. */
+export type ProposalOutcome = { status: "done" | "cancelled" | "failed"; detail?: string; link?: string };
 
 /** What the model is told after the person pressed Confirm or Cancel. */
 export function outcomeLine(outcome: ProposalOutcome): string {
@@ -456,6 +953,10 @@ export function stepLabel(tool: string, input: Record<string, unknown>, done: bo
     ai_audit: ["Reading the AI's action log", "Read the AI's action log"],
     list_issues: ["Listing filed issues", "Listed filed issues"],
     list_teammates: ["Listing teammates", "Listed teammates"],
+    read_settings: ["Reading the desk's settings", "Read the desk's settings"],
+    list_inbox_setup: ["Reading saved replies, tags and topics", "Read saved replies, tags and topics"],
+    read_knowledge_source: ["Reading a knowledge source", "Read a knowledge source"],
+    run_tests: ["Running the agent's tests", "Ran the agent's tests"],
   };
   const pair = map[tool];
   if (!pair) return done ? "Done" : "Working";
@@ -484,6 +985,9 @@ const RESULT_NOUNS: Record<string, [string, string]> = {
   topics: ["topic", "topics"],
   actions: ["action", "actions"],
   spots: ["spot", "spots"],
+  savedReplies: ["saved reply", "saved replies"],
+  documents: ["page", "pages"],
+  cases: ["test", "tests"],
 };
 
 /** D-129: a tool's result as one short line ("10 of 23 conversations", "3 matches", the error), or nothing when it has no list. */
@@ -517,11 +1021,14 @@ export function stepResult(output: unknown): string | undefined {
 export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: ProposalOutcome): string {
   if (outcome.status === "cancelled") return outcome.detail === "not confirmed" ? "Not confirmed" : outcome.detail === "expired" ? "Expired" : "Cancelled";
   if (outcome.status === "failed") return `Didn't work${outcome.detail ? `: ${outcome.detail}` : ""}`;
+  const named = (verb: string, name?: string) => (name ? `${verb} · ${name}` : verb);
   switch (p.kind) {
     case "assign":
       return p.assigneeId === null ? "Unassigned" : `Assigned · ${labels.assignee ?? "a teammate"}`;
     case "status":
       return p.status === "resolved" ? "Resolved" : p.status === "open" ? "Reopened" : "Marked pending";
+    case "handling":
+      return p.handling === "ai" ? "Handed back to the AI" : "Taken over from the AI";
     case "tags":
       return [p.add.length ? `Tagged · ${p.add.join(", ")}` : "", p.remove.length ? `Untagged · ${p.remove.join(", ")}` : ""].filter(Boolean).join(" · ");
     case "note":
@@ -530,10 +1037,64 @@ export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: Propo
       return "Draft opened in the chat";
     case "issue":
       return "Issue dialog opened";
+    case "invite_visitor":
+      return named("Invite sent", labels.target);
+    case "contact":
+      return named("Contact saved", labels.target);
+    case "agent_file":
+      return `${p.op === "delete" ? "Deleted" : p.op === "create" ? "Added" : "Saved"} · ${p.path}${outcome.detail?.startsWith("version ") ? ` · ${outcome.detail.split(";")[0]}` : ""}`;
+    case "desk_settings":
+      return "Widget settings saved";
+    case "ai_settings":
+      return "AI settings saved";
     case "knowledge_website":
       return "Adding to knowledge";
     case "knowledge_text":
       return `Added · ${p.title}`;
+    case "knowledge_resync":
+      return named("Re-syncing", labels.target);
+    case "knowledge_edit":
+      return named("Source saved", labels.target);
+    case "knowledge_remove_page":
+      return named("Page removed", labels.detail);
+    case "knowledge_remove":
+      return named("Source removed", labels.target);
+    case "saved_reply_create":
+      return `Saved reply added · ${p.title}`;
+    case "saved_reply_edit":
+      return `Saved reply changed · ${p.title}`;
+    case "saved_reply_delete":
+      return named("Saved reply deleted", labels.target);
+    case "tag_rename":
+      return `Tag renamed · ${p.name}`;
+    case "tag_delete":
+      return named("Tag deleted", labels.target);
+    case "topic_rename":
+      return `Topic renamed · ${p.name}`;
+    case "topic_merge":
+      return named("Topics merged", labels.detail);
+    case "topic_delete":
+      return named("Topic deleted", labels.target);
+    case "topic_label":
+      return "Topics labelled";
+    case "team_invite":
+      return `Invite link made · ${p.role}`;
+    case "team_revoke_invite":
+      return "Invite revoked";
+    case "team_role":
+      return `${labels.target ?? "Teammate"} is now ${p.role === "admin" ? "an admin" : "an agent"}`;
+    case "team_remove":
+      return named("Removed", labels.target);
+    case "notifications":
+      return "Notifications saved";
+    case "workspace_name":
+      return `Renamed · ${p.name}`;
+    case "email_settings":
+      return "Email settings saved";
+    case "email_test":
+      return named("Test email sent", outcome.detail?.replace(/^sent to /, ""));
+    case "identity_off":
+      return "Identity verification off";
   }
 }
 

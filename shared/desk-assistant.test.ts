@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   agentFileLink,
+  applyAgentFileEdit,
+  proposalCard,
+  proposalForModel,
+  proposalRisk,
+  settingChanges,
+  settingText,
   AssistantInputError,
   callInput,
   capResult,
@@ -157,4 +163,81 @@ test("assistant: a settled card's line (D-129)", () => {
   assert.equal(outcomeTitle({ kind: "note", conversationId: "cv_1", body: "x" }, {}, { status: "cancelled", detail: "expired" }), "Expired");
   assert.match(outcomeLine({ status: "cancelled", detail: "expired" }), /expired/);
   assert.equal(outcomeTitle({ kind: "issue", conversationId: "cv_1" }, {}, { status: "failed", detail: "no tracker" }), "Didn't work: no tracker");
+});
+
+test("assistant: D-133 proposals for the rest of the desk are read and checked", () => {
+  assert.deepEqual(readProposal("propose_handling", { conversationId: "cv_1", handling: "ai" }, "u"), { kind: "handling", conversationId: "cv_1", handling: "ai" });
+  assert.throws(() => readProposal("propose_handling", { conversationId: "cv_1", handling: "bot" }, "u"), /handling/);
+  assert.deepEqual(readProposal("propose_invite_visitor", { sessionId: "s_abc123", body: " Need a hand? " }, "u"), { kind: "invite_visitor", sessionId: "s_abc123", body: "Need a hand?" });
+  assert.throws(() => readProposal("propose_contact", { contactId: "ct_1", email: "nope" }, "u"), /email/);
+  assert.throws(() => readProposal("propose_contact", { contactId: "ct_1" }, "u"), /name or an email/);
+  // Agent files: allowed paths only; desk.yaml goes through the settings proposals.
+  assert.throws(() => readProposal("propose_agent_file", { path: "desk.yaml", action: "write", text: "x" }, "u"), /propose_desk_settings/);
+  assert.throws(() => readProposal("propose_agent_file", { path: "../x.md", action: "write", text: "x" }, "u"), /path must be/);
+  assert.throws(() => readProposal("propose_agent_file", { path: "instructions.md", action: "delete" }, "u"), /can't be deleted/);
+  assert.throws(() => readProposal("propose_agent_file", { path: "tasks/refunds.md", action: "edit" }, "u"), /edits is required/);
+  const edit = readProposal("propose_agent_file", { path: "instructions.md", action: "edit", edits: [{ find: "  Be kind.", replace: "  Be kind and brief." }] }, "u");
+  assert.deepEqual(edit, { kind: "agent_file", path: "instructions.md", op: "edit", before: null, after: null, edit: { action: "edit", edits: [{ find: "  Be kind.", replace: "  Be kind and brief." }] } });
+  // Settings: only known keys; ChatGPT never.
+  assert.deepEqual(readProposal("propose_desk_settings", { changes: { greeting: "Hi!" } }, "u"), { kind: "desk_settings", patch: { greeting: "Hi!" }, changes: [] });
+  assert.throws(() => readProposal("propose_desk_settings", { changes: { logoKey: "x" } }, "u"), /isn't a setting/);
+  assert.throws(() => readProposal("propose_desk_settings", { changes: {} }, "u"), /at least one/);
+  assert.throws(() => readProposal("propose_ai_settings", { provider: "chatgpt" }, "u"), /sign-in/);
+  assert.deepEqual(readProposal("propose_ai_settings", { enabled: "false", model: "default" }, "u"), { kind: "ai_settings", patch: { enabled: false, model: null }, changes: [] });
+  assert.throws(() => readProposal("propose_ai_settings", {}, "u"), /Say which/);
+  // Knowledge, inbox setup, team.
+  assert.deepEqual(readProposal("propose_knowledge", { kind: "remove_page", sourceId: "src_1", documentId: "doc_1" }, "u"), { kind: "knowledge_remove_page", sourceId: "src_1", documentId: "doc_1" });
+  assert.throws(() => readProposal("propose_knowledge", { kind: "edit", sourceId: "src_1", exclude: ["blog"] }, "u"), /paths like/);
+  assert.deepEqual(readProposal("propose_saved_reply", { op: "edit", id: "sr_1", title: "Refunds" }, "u"), { kind: "saved_reply_edit", replyId: "sr_1", title: "Refunds", body: "", changes: [] });
+  assert.throws(() => readProposal("propose_saved_reply", { op: "create", title: "x" }, "u"), /body is required/);
+  assert.deepEqual(readProposal("propose_tag", { op: "rename", id: "tag_1", name: "#billing" }, "u"), { kind: "tag_rename", tagId: "tag_1", name: "billing" });
+  assert.throws(() => readProposal("propose_topic", { op: "merge", id: "tp_1", into: "tp_1" }, "u"), /itself/);
+  assert.deepEqual(readProposal("propose_topic", { op: "label" }, "u"), { kind: "topic_label" });
+  assert.deepEqual(readProposal("propose_team", { op: "invite", role: "agent" }, "u"), { kind: "team_invite", role: "agent" });
+  assert.throws(() => readProposal("propose_team", { op: "invite", role: "owner" }, "u"), /role/);
+  assert.throws(() => readProposal("propose_team", { op: "remove", userId: "usr_me" }, "usr_me"), /yourself/);
+  assert.deepEqual(readProposal("propose_notifications", { sound: false, bogus: true }, "u"), { kind: "notifications", patch: { sound: false }, changes: [] });
+  assert.deepEqual(readProposal("propose_email", { op: "test" }, "u"), { kind: "email_test", to: null });
+  assert.deepEqual(readProposal("propose_identity_off", {}, "u"), { kind: "identity_off" });
+});
+
+test("assistant: an agent file edit becomes the file's new text (D-133)", () => {
+  const file = "# Persona\n\nBe kind.\nBe kind.\nKeep it short.\n";
+  assert.equal(applyAgentFileEdit("instructions.md", file, { action: "edit", edits: [{ find: "Keep it short.", replace: "Keep it short and plain." }] }), "# Persona\n\nBe kind.\nBe kind.\nKeep it short and plain.\n");
+  assert.throws(() => applyAgentFileEdit("instructions.md", file, { action: "edit", edits: [{ find: "Be kind.", replace: "x" }] }), /more than once/);
+  assert.throws(() => applyAgentFileEdit("instructions.md", file, { action: "edit", edits: [{ find: "Be rude.", replace: "x" }] }), /isn't in/);
+  assert.equal(applyAgentFileEdit("instructions.md", file, { action: "append", text: "Sign off with the team's name." }), `${file}Sign off with the team's name.\n`);
+  assert.equal(applyAgentFileEdit("tasks/refunds.md", null, { action: "write", text: "---\ndescription: x\n---\nSteps" }), "---\ndescription: x\n---\nSteps\n");
+  assert.equal(applyAgentFileEdit("tasks/refunds.md", "x\n", { action: "delete" }), null);
+  assert.throws(() => applyAgentFileEdit("tasks/refunds.md", null, { action: "delete" }), /no tasks\/refunds.md/);
+  assert.throws(() => applyAgentFileEdit("instructions.md", file, { action: "write", text: file }), /doesn't change/);
+  assert.throws(() => applyAgentFileEdit("tasks/new.md", null, { action: "edit", edits: [{ find: "a", replace: "b" }] }), /use action write/);
+});
+
+test("assistant: settings changes, risk and the card's words (D-133)", () => {
+  assert.equal(settingText(undefined), "default");
+  assert.equal(settingText(false), "off");
+  assert.equal(settingText(["acme.com", "*.acme.com"]), "acme.com, *.acme.com");
+  assert.equal(settingText({ mode: "manual", capacity: 0 }), '{"mode":"manual","capacity":0}');
+  assert.deepEqual(settingChanges({ greeting: "Greeting", sound: "Sounds" }, { greeting: "Hi", sound: true }, { greeting: "Hello", sound: true }, ["greeting", "sound"]), [{ key: "greeting", label: "Greeting", before: "Hi", after: "Hello" }]);
+  const changes = [{ key: "greeting", label: "Greeting", before: "Hi", after: "Hello" }];
+  assert.equal(proposalSummary({ kind: "desk_settings", patch: { greeting: "Hello" }, changes }, {}), "Change the chat widget's greeting");
+  assert.equal(proposalSummary({ kind: "agent_file", path: "instructions.md", op: "edit", before: "a", after: "b" }, {}), "Change instructions.md in the support agent");
+  assert.equal(proposalSummary({ kind: "tag_delete", tagId: "t" }, { target: "old", detail: "3 chats" }), "Delete the tag “old” from every chat (3 chats)");
+  for (const p of [{ kind: "tag_delete", tagId: "t" }, { kind: "knowledge_remove", sourceId: "s" }, { kind: "team_remove", userId: "u" }, { kind: "identity_off" }, { kind: "topic_merge", topicId: "a", into: "b" }] as const) assert.equal(proposalRisk(p)?.tone, "destructive", p.kind);
+  assert.equal(proposalRisk({ kind: "invite_visitor", sessionId: "s_1", body: "Hi" })?.tone, "external");
+  assert.equal(proposalRisk({ kind: "email_test", to: null })?.line, "This sends a real email.");
+  assert.equal(proposalRisk({ kind: "email_settings", patch: { enabled: true }, changes: [] })?.tone, "external");
+  assert.equal(proposalRisk({ kind: "email_settings", patch: { fromName: "Acme" }, changes: [] }), null);
+  assert.equal(proposalRisk({ kind: "agent_file", path: "tasks/x.md", op: "delete", before: "x", after: null }), null, "versioned: History undoes it");
+  assert.deepEqual(proposalCard({ kind: "agent_file", path: "tasks/x.md", op: "create", before: null, after: "x" }), { title: "Add tasks/x.md?", confirm: "Add file" });
+  assert.deepEqual(proposalCard({ kind: "team_remove", userId: "u" }), { title: "Remove this teammate?", confirm: "Remove teammate" });
+  // The model's own call in the history leaves the file texts out.
+  assert.deepEqual(proposalForModel({ kind: "agent_file", path: "instructions.md", op: "edit", before: "long", after: "longer" }), { kind: "agent_file", path: "instructions.md", op: "edit" });
+  const done = { status: "done" as const, detail: "version 12; it's live now" };
+  assert.equal(outcomeTitle({ kind: "agent_file", path: "instructions.md", op: "edit", before: "a", after: "b" }, {}, done), "Saved · instructions.md · version 12");
+  assert.equal(outcomeTitle({ kind: "team_invite", role: "agent" }, {}, { status: "done", detail: "made", link: "https://x/invite/abc" }), "Invite link made · agent");
+  assert.equal(outcomeTitle({ kind: "saved_reply_delete", replyId: "sr_1" }, { target: "Refunds" }, { status: "done" }), "Saved reply deleted · Refunds");
+  // An invite link never reaches the model.
+  assert.doesNotMatch(outcomeLine({ status: "done", detail: "made an invite link for an agent", link: "https://x/invite/secret" }), /secret/);
 });

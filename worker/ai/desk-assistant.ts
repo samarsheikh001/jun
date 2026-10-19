@@ -3,8 +3,17 @@ import { describeTarget, type DebugEvent } from "../../shared/debug.ts";
 import {
   ACTION_TOOLS,
   ADMIN_ACTIONS,
+  AI_SETTING_LABELS,
+  applyAgentFileEdit,
   AssistantInputError,
   agentFileLink,
+  DESK_SETTING_KEYS,
+  DESK_SETTING_LABELS,
+  EMAIL_SETTING_LABELS,
+  KNOWLEDGE_EDIT_LABELS,
+  NOTIFICATION_LABELS,
+  proposalForModel,
+  settingChanges,
   callInput,
   capResult,
   clip,
@@ -27,22 +36,34 @@ import {
   stepLabel,
   stepResult,
   type ActionTool,
+  type DeskSettingKey,
+  type Proposal,
   type AskEvent,
   type AskTurn,
   type ProposalLabels,
   type ProposedAction,
 } from "../../shared/desk-assistant.ts";
 import { likePattern } from "../../shared/contacts.ts";
+import { applyEmailPatch, emailOn, emailProblems } from "../../shared/email.ts";
+import { normalizeTag } from "../../shared/inbox.ts";
 import { addDays, formatDuration, startOfDay, type MetricsReport } from "../../shared/metrics.ts";
-import { contactLabel } from "../../shared/notifications.ts";
+import { contactLabel, readNotificationPrefs } from "../../shared/notifications.ts";
 import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
+import { loadIdentitySecret } from "../lib/contacts.ts";
+import { newId } from "../lib/crypto.ts";
+import { canSendEmail, loadEmailSettings } from "../lib/email.ts";
+import { applyInboxPatch } from "../lib/inbox-settings.ts";
 import { secretScrubber } from "../lib/tool-secrets.ts";
 import { COMPANY_COLUMNS, companyRow, KNOWN, PERSON_COLUMNS, personRow, type CompanyDbRow, type PersonDbRow } from "../routes/contacts.ts";
 import { loadReport } from "../routes/metrics.ts";
 import type { Role } from "../types.ts";
+import { parseConfig, type ConfigFiles } from "./config.ts";
 import { loadConfigFiles } from "./config-store.ts";
+import { readModel, readReplyCap } from "./desk-file.ts";
+import { runEval, type EvalEvent } from "./eval.ts";
+import { DEFAULT_MAX_PAGES, type SourceSettings } from "./knowledge.ts";
 import { listSources } from "./knowledge-sources.ts";
-import type { AgentModel } from "./providers.ts";
+import { AiUnavailableError, createModel, loadAiSettings, type AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge } from "./search.ts";
 
@@ -353,6 +374,7 @@ export function readTools(ctx: AssistantContext): ToolSet {
         link: "/visitors",
         online: list.length,
         visitors: list.slice(0, 30).map((v) => ({
+          sessionId: v.sessionId,
           page: clip(v.page.url, 160),
           title: clip(v.page.title, 80),
           country: v.country,
@@ -579,7 +601,7 @@ export function readTools(ctx: AssistantContext): ToolSet {
   });
 
   tools.list_teammates = tool({
-    description: "The team: each member's id (for assigning), name, role, whether their desk is open now and how many open chats they have.",
+    description: "The team: each member's id (for assigning), name, role, whether their desk is open now and how many open chats they have; for owners and admins also the unused invite links (their ids and roles, never the links).",
     inputSchema: obj({}),
     execute: run(async () => {
       const [rows, online] = await Promise.all([
@@ -592,7 +614,122 @@ export function readTools(ctx: AssistantContext): ToolSet {
           .all<{ id: string; name: string; role: string; open: number }>(),
         env.WORKSPACE_HUB.getByName(workspaceId).onlineAgentIds(),
       ]);
-      return { teammates: rows.results.map((r) => ({ id: r.id, name: r.name, role: r.role, you: r.id === ctx.user.id || undefined, online: online.includes(r.id), openChats: r.open })) };
+      const invites =
+        ctx.role === "agent"
+          ? undefined
+          : (await db.prepare("SELECT token_hash AS id, role, expires_at AS expiresAt FROM invites WHERE workspace_id = ? AND used_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 20").bind(workspaceId, ctx.now).all<{ id: string; role: string; expiresAt: number }>()).results.map((i) => ({ id: i.id, role: i.role, expires: iso(i.expiresAt) }));
+      return { link: "/settings/team", teammates: rows.results.map((r) => ({ id: r.id, name: r.name, role: r.role, you: r.id === ctx.user.id || undefined, online: online.includes(r.id), openChats: r.open })), ...(invites ? { invites } : {}) };
+    }),
+  });
+
+
+  // D-133: what the settings, inbox setup and knowledge proposals need to be filled in well.
+  tools.read_settings = tool({
+    description:
+      "The desk's settings now: the chat widget's (texts, look, behaviour, hours, assignment, page openers, allowed websites), the AI's (on/off, provider, model, monthly reply cap and use), email replies, whether identity verification is on, the workspace's name and the reader's own notifications. Read it before proposing a settings change.",
+    inputSchema: obj({}),
+    execute: run(async () => {
+      const month = new Date(ctx.now).toISOString().slice(0, 7);
+      const [inbox, ai, usage, email, identity, prefs] = await Promise.all([
+        db.prepare("SELECT settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ settings: string }>(),
+        loadAiSettings(env, workspaceId),
+        db.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(workspaceId, month).first<{ replies: number }>(),
+        loadEmailSettings(db, workspaceId),
+        loadIdentitySecret(db, workspaceId),
+        db.prepare("SELECT notification_prefs FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, ctx.user.id).first<{ notification_prefs: string }>(),
+      ]);
+      const settings = inbox ? (JSON.parse(inbox.settings) as Record<string, unknown>) : {};
+      const canSend = canSendEmail(env);
+      return {
+        workspace: { name: ctx.workspaceName, link: "/settings/general" },
+        widget: { link: "/playground", settings: Object.fromEntries(DESK_SETTING_KEYS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]])), unsetMeansDefault: true },
+        ai: {
+          link: "/settings/ai",
+          enabled: ai.enabled,
+          provider: ai.provider,
+          model: ai.model ?? "default",
+          monthlyReplyCap: ai.monthlyReplyCap,
+          repliesThisMonth: usage?.replies ?? 0,
+          openaiKeySet: Boolean((env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY),
+        },
+        email: email ? { link: "/channels/email", ...email.settings, on: emailOn(email.settings, canSend), problems: emailProblems(email.settings, canSend) } : null,
+        identityVerification: { on: identity !== null, link: "/playground/behaviour" },
+        yourNotifications: { link: "/settings/notifications", ...readNotificationPrefs(prefs?.notification_prefs) },
+      };
+    }),
+  });
+
+  tools.list_inbox_setup = tool({
+    description: "The team's saved replies (id, title, text), tags (id, name, chats) and topics (id, name, chats), for proposing changes to them.",
+    inputSchema: obj({}),
+    execute: run(async () => {
+      const [replies, tags, topics] = await db.batch([
+        db.prepare("SELECT id, title, body FROM saved_replies WHERE workspace_id = ? ORDER BY title COLLATE NOCASE LIMIT 100").bind(workspaceId),
+        db.prepare("SELECT t.id, t.name, (SELECT COUNT(*) FROM conversation_tags ct WHERE ct.tag_id = t.id) AS chats FROM tags t WHERE t.workspace_id = ? ORDER BY t.name LIMIT 200").bind(workspaceId),
+        db.prepare("SELECT t.id, t.name, (SELECT COUNT(*) FROM conversations c WHERE c.workspace_id = t.workspace_id AND c.topic_id = t.id) AS chats FROM topics t WHERE t.workspace_id = ? ORDER BY t.name LIMIT 100").bind(workspaceId),
+      ]);
+      return {
+        savedReplies: (replies!.results as { id: string; title: string; body: string }[]).map((r) => ({ id: r.id, title: r.title, text: clip(r.body, 400) })),
+        tags: tags!.results,
+        topics: topics!.results,
+        links: { savedReplies: "/settings/inbox", topics: "/dashboard/topics" },
+      };
+    }),
+  });
+
+  tools.read_knowledge_source = tool({
+    description: "One knowledge source (id from list_knowledge): its settings (a website's page cap and skipped pages, a document's text) and its pages with their ids.",
+    inputSchema: obj({ id: s("The source id (src_…).") }, ["id"]),
+    execute: run(async (raw) => {
+      const { id } = readConversationId(raw);
+      const source = await db.prepare("SELECT id, kind, url, title, body, settings FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(id, workspaceId).first<{ id: string; kind: string; url: string | null; title: string; body: string | null; settings: string }>();
+      if (!source) throw new AssistantInputError(`No knowledge source ${id}. Use list_knowledge.`);
+      const settings = JSON.parse(source.settings) as SourceSettings;
+      const docs = await db.prepare("SELECT id, url, title FROM kb_documents WHERE source_id = ? AND content_hash IS NOT NULL ORDER BY url LIMIT 200").bind(id).all<{ id: string; url: string | null; title: string | null }>();
+      return {
+        link: "/knowledge",
+        id: source.id,
+        kind: source.kind,
+        title: source.title,
+        url: source.url,
+        ...(source.kind === "snippet" ? { text: clip(source.body, 4000) } : {}),
+        ...(source.kind === "website" ? { maxPages: settings.maxPages ?? DEFAULT_MAX_PAGES, exclude: settings.exclude ?? [] } : {}),
+        documents: docs.results.map((d) => ({ id: d.id, url: d.url, title: clip(d.title, 120) })),
+      };
+    }),
+  });
+
+  tools.run_tests = tool({
+    description: "Runs the support agent's test cases (tests/*.yaml) against its live version with the real AI; actions answer with their mock (nothing is called). Slow: a few seconds per case. Returns pass or fail per case with the reply.",
+    inputSchema: obj({ cases: { type: "array", items: { type: "string" }, description: "Only the cases with these names (default: all, at most 10)." } }),
+    execute: run(async (raw) => {
+      const only = new Set(Array.isArray(callInput(raw).cases) ? (callInput(raw).cases as unknown[]).map(String) : []);
+      const stored = await loadConfigFiles(env, workspaceId);
+      const parsed = parseConfig(stored.files, stored.version);
+      const evals = parsed.config.evals.filter((c) => !only.size || only.has(c.name));
+      if (!evals.length) return { cases: [], note: only.size ? "No case has those names." : "There are no test cases yet (tests/*.yaml)." };
+      const settings = await loadAiSettings(env, workspaceId);
+      let model, judgeModel;
+      try {
+        model = createModel(env, workspaceId, settings, "answer");
+        judgeModel = createModel(env, workspaceId, settings, "judge");
+      } catch (error) {
+        if (error instanceof AiUnavailableError) throw new AssistantInputError(error.message);
+        throw error;
+      }
+      const events: EvalEvent[] = [];
+      await runEval(
+        { env, workspaceId, workspaceName: ctx.workspaceName, model, judgeModel, live: parsed.config, candidate: { ...parsed.config, evals: evals.slice(0, 10) }, sample: 0, mockTools: true },
+        (e) => events.push(e),
+        { cases: true, replay: false },
+      );
+      return {
+        link: "/agent/tests",
+        ...(evals.length > 10 ? { note: `Ran the first 10 of ${evals.length} cases.` } : {}),
+        cases: events.flatMap((e): Record<string, unknown>[] =>
+          e.type === "case" ? [{ name: e.name, file: e.file, pass: e.pass, ...(e.pass ? {} : { failures: e.failures.slice(0, 5) }), reply: clip(e.result.reply, 300) }] : e.type === "error" ? [{ error: clip(e.message, 200) }] : [],
+        ),
+      };
     }),
   });
 
@@ -602,12 +739,40 @@ export function readTools(ctx: AssistantContext): ToolSet {
 /** The propose_* tools: no execute, so calling one ends the turn and the page asks the person. */
 export function actionTools(role: Role): ToolSet {
   const conv = s("The conversation id (cv_…) from a tool result.");
+  const b = (description: string): Schema => ({ type: "boolean", description });
+  const strings = (description: string): Schema => ({ type: "array", items: { type: "string" }, description });
+  const opOf = (values: string[], description: string) => s(description, { enum: values });
+  const desk: Record<DeskSettingKey, Schema> = {
+    greeting: s("The widget's welcome line (≤ 200 characters)."),
+    displayName: s("The name the widget shows (≤ 80; empty = the workspace's name)."),
+    replyTime: s("The reply-time line, e.g. 'Replies in a few minutes' (≤ 80)."),
+    placeholder: s("The message box's hint (≤ 60)."),
+    suggestions: strings("Suggested questions shown to visitors (the whole list)."),
+    color: s("The brand colour, like #2f5bea."),
+    position: s("left or right.", { enum: ["left", "right"] }),
+    mode: s("island (a pill at the bottom centre) or window (a chat window).", { enum: ["island", "window"] }),
+    greetingCard: b("window mode: show the greeting card before the chat opens."),
+    theme: s("The widget's theme.", { enum: ["auto", "light", "dark"] }),
+    radius: n("Corner rounding in px, a whole number."),
+    buttonStyle: s("The button shows the logo or text.", { enum: ["logo", "text"] }),
+    islandSurface: s("The island's colour.", { enum: ["auto", "dark", "page"] }),
+    sound: b("Interaction sounds."),
+    proactive: b("Offer help when something breaks on the page."),
+    csat: b("Ask visitors to rate resolved chats."),
+    pageControl: b("Let the AI use the customer's website (read, click, type)."),
+    pageControlConfirm: s("Before the AI clicks, types or chooses.", { enum: ["allow-always", "every-time", "never"] }),
+    hours: { type: "object", description: "Business hours, the whole object: { enabled, timezone (IANA), days: [{ day: 0–6 (0 = Sunday), start: '09:00', end: '17:30' }], awayMessage ({when} = next opening) }." },
+    assignment: { type: "object", description: "{ mode: manual | round_robin, capacity: open chats per teammate (0 = no limit) }." },
+    openers: { type: "array", items: { type: "object" }, description: "Page openers, the whole list: [{ path: '/pricing*', delay: seconds, text: fixed text or null (the AI writes it), hint }]." },
+    allowedDomains: strings("Websites the widget may run on, e.g. acme.com, *.acme.com (the whole list; empty = any)."),
+  };
   const defs: Record<ActionTool, { description: string; input: ReturnType<typeof obj> }> = {
     propose_assign: { description: "Propose assigning a conversation to a teammate (id from list_teammates), to me (the reader), or to nobody.", input: obj({ conversationId: conv, assignee: s("A teammate's id, me, or nobody.") }, ["conversationId", "assignee"]) },
     propose_status: { description: "Propose resolving, reopening or marking a conversation pending.", input: obj({ conversationId: conv, status: s("resolved, open or pending.", { enum: ["resolved", "open", "pending"] }) }, ["conversationId", "status"]) },
+    propose_handling: { description: "Propose handing a conversation back to the AI (it answers the customer's next message) or taking it over from the AI for the team.", input: obj({ conversationId: conv, handling: s("ai or human.", { enum: ["ai", "human"] }) }, ["conversationId", "handling"]) },
     propose_tags: {
       description: "Propose adding or removing tags on a conversation (agents only see tags).",
-      input: obj({ conversationId: conv, add: { type: "array", items: { type: "string" }, description: "Tags to add." }, remove: { type: "array", items: { type: "string" }, description: "Tags to remove." } }, ["conversationId"]),
+      input: obj({ conversationId: conv, add: strings("Tags to add."), remove: strings("Tags to remove.") }, ["conversationId"]),
     },
     propose_note: { description: "Propose adding an internal note to a conversation: only the team sees it, never the customer or the support AI.", input: obj({ conversationId: conv, body: s("The note, in Markdown.") }, ["conversationId", "body"]) },
     propose_reply_draft: {
@@ -615,10 +780,75 @@ export function actionTools(role: Role): ToolSet {
       input: obj({ conversationId: conv, body: s("The reply, written to the customer.") }, ["conversationId", "body"]),
     },
     propose_issue: { description: "Propose filing a GitHub or Linear issue from a conversation: it opens the desk's issue dialog for it, which drafts the issue for the person to check and file.", input: obj({ conversationId: conv }, ["conversationId"]) },
-    propose_knowledge: {
-      description: "Propose adding knowledge the support AI answers from: a website (url; maxPages 1 for one page) or a text document (title and body).",
-      input: obj({ kind: s("website or text.", { enum: ["website", "text"] }), url: s("website: the address."), maxPages: n("website: pages to read, 1–2000 (default 1)."), title: s("text: the document's title."), body: s("text: the document, in Markdown.") }, ["kind"]),
+    propose_invite_visitor: {
+      description: "Propose inviting a visitor who is on the website now (sessionId from live_visitors) to chat: the message pops up on their page as from the reader. The visitor sees it.",
+      input: obj({ sessionId: s("The visitor's sessionId from live_visitors."), body: s("The message the visitor sees (≤ 1000 characters).") }, ["sessionId", "body"]),
     },
+    propose_contact: { description: "Propose setting an anonymous or unverified contact's name or email (verified customers' details come from their app and can't be edited).", input: obj({ contactId: s("The contact id (ct_…)."), name: s("Their name."), email: s("Their email.") }, ["contactId"]) },
+    propose_agent_file: {
+      description:
+        "Propose a change to one of the support agent's files (it answers customers): instructions.md, tasks/<name>.md, actions/<name>.yaml, widgets/<name>.widget, tests/<name>.yaml or website-actions.yaml. Read the file first (read_agent_file). action write: the whole new file (also to create one); edit: exact find → replace pairs, each find copied from the file and found once; append: text added at the end; delete: remove the file. Saved as a new version (History can undo it) and live at once; the change is checked first.",
+      input: obj(
+        {
+          path: s("The file's path, e.g. instructions.md or tasks/refunds.md."),
+          action: s("write, edit, append or delete.", { enum: ["write", "edit", "append", "delete"] }),
+          text: s("write: the whole file; append: the lines to add."),
+          edits: { type: "array", items: { type: "object", properties: { find: s("Text copied exactly from the file."), replace: s("What it becomes.") }, required: ["find", "replace"], additionalProperties: false }, description: "edit: the changes." },
+        },
+        ["path", "action"],
+      ),
+    },
+    propose_desk_settings: {
+      description: "Propose changing the chat widget's settings (texts, look, behaviour, hours, assignment, page openers, allowed websites). Only the keys given change; read_settings shows them now. Saved into desk.yaml as a new version.",
+      input: obj({ changes: { type: "object", properties: desk, additionalProperties: false, description: "The settings to change and their new values." } }, ["changes"]),
+    },
+    propose_ai_settings: {
+      description: "Propose changing the AI settings: turn the AI on or off, the model, the monthly reply cap, or the provider (workers-ai, or openai when its key is set). Never ChatGPT (that needs a sign-in in Settings → AI).",
+      input: obj({ enabled: b("The AI answers chats."), provider: s("workers-ai or openai.", { enum: ["workers-ai", "openai"] }), model: s("A model id, or default."), monthlyReplyCap: n("AI replies a month, 0 = no limit.") }),
+    },
+    propose_knowledge: {
+      description:
+        "Propose a change to the knowledge the support AI answers from: add a website (url; maxPages 1 for one page) or a text document (title, body); resync a source (read it again); edit a source (title; a text document's body; a website's maxPages or exclude); remove_page (sourceId, documentId from read_knowledge_source); remove a source. Removing can't be undone.",
+      input: obj(
+        {
+          kind: opOf(["website", "text", "resync", "edit", "remove_page", "remove"], "What to do."),
+          sourceId: s("resync, edit, remove_page, remove: the source id from list_knowledge."),
+          documentId: s("remove_page: the page's id from read_knowledge_source."),
+          url: s("website: the address."),
+          maxPages: n("website or edit: pages to read, 1–2000 (default 1)."),
+          title: s("text or edit: the title."),
+          body: s("text or edit (text documents): the text, in Markdown."),
+          exclude: strings("edit (websites): pages to skip, like /blog/ or a full URL (the whole list)."),
+        },
+        ["kind"],
+      ),
+    },
+    propose_saved_reply: {
+      description: "Propose adding, changing or deleting one of the team's saved replies (ids from list_inbox_setup). Deleting can't be undone.",
+      input: obj({ op: opOf(["create", "edit", "delete"], "What to do."), id: s("edit, delete: the saved reply's id."), title: s("create, edit: the title (≤ 80)."), body: s("create, edit: the text (≤ 5000; {placeholders} as in the desk).") }, ["op"]),
+    },
+    propose_tag: {
+      description: "Propose renaming or deleting a tag everywhere (ids from list_inbox_setup). Deleting removes it from every chat and can't be undone. To tag one chat, use propose_tags.",
+      input: obj({ op: opOf(["rename", "delete"], "What to do."), id: s("The tag's id."), name: s("rename: the new name.") }, ["op", "id"]),
+    },
+    propose_topic: {
+      description: "Propose renaming, merging (its chats move into another topic, then it's deleted) or deleting a topic (ids from list_inbox_setup), or labelling the chats that have no topic now (op label). Merge and delete can't be undone.",
+      input: obj({ op: opOf(["rename", "merge", "delete", "label"], "What to do."), id: s("rename, merge, delete: the topic's id."), name: s("rename: the new name."), into: s("merge: the id of the topic it goes into.") }, ["op"]),
+    },
+    propose_team: {
+      description: "Propose a team change: make an invite link for a new admin or agent (the link is shown to the reader only), revoke an unused invite (inviteId from list_teammates), change a teammate's role, or remove a teammate (can't be undone). You can only manage people with a lower role than the reader's.",
+      input: obj({ op: opOf(["invite", "revoke_invite", "role", "remove"], "What to do."), role: s("invite, role: admin or agent.", { enum: ["admin", "agent"] }), userId: s("role, remove: the teammate's id."), inviteId: s("revoke_invite: the invite's id.") }, ["op"]),
+    },
+    propose_notifications: {
+      description: "Propose changing the reader's own notifications (read_settings shows them now).",
+      input: obj({ needsPerson: b("A chat needs a person."), assigned: b("A chat is assigned to them."), visitorReply: b("A customer replies in their chat."), mention: b("Someone mentions them in a note."), sound: b("Play a sound.") }),
+    },
+    propose_workspace: { description: "Propose renaming the workspace.", input: obj({ name: s("The new name (≤ 100).") }, ["name"]) },
+    propose_email: {
+      description: "Propose changing the email replies' settings (op settings: enabled, from, fromName, replyDomain) or sending a test email from them (op test, to: an address or the reader's own). A test sends a real email.",
+      input: obj({ op: opOf(["settings", "test"], "What to do."), enabled: b("settings: email replies on or off."), from: s("settings: the address replies come from."), fromName: s("settings: the sender's name."), replyDomain: s("settings: the domain customers' replies go to."), to: s("test: where to send it (default: the reader).") }, ["op"]),
+    },
+    propose_identity_off: { description: "Propose turning identity verification off: the secret is deleted and signed-in customers become anonymous. Can't be undone (turning it on again needs a new secret, in the desk).", input: obj({}) },
   };
   const out: ToolSet = {};
   for (const name of ACTION_TOOLS) {
@@ -647,9 +877,13 @@ How you work:
 - The reader is on the team, so internal notes and debug context are fine to use here.
 
 Changing things:
-- You can't change anything yourself. To change something, call one propose_ tool: the person sees a card and presses Confirm or Cancel, and you're told which. Write one short sentence saying what it will do, then call it. One proposal per reply.
-- Propose only what they asked for or clearly agreed to, and never say it's done until you're told it was.
-- You never message a customer. A reply is a draft (propose_reply_draft): the chat opens with it in the composer and the person sends it.${ctx.role === "agent" ? "\n- They're an agent, so they can't add knowledge or change settings: say an admin can." : ""}`;
+- You can't change anything yourself. To change something, call one propose_ tool: the person sees a card and presses Confirm or Cancel, and you're told which. Write one short sentence saying what it will do, then call it. One proposal per reply; after an outcome you may propose the next step.
+- You can propose most of what a person does in the desk: a chat's status, assignee, tags, notes, a reply draft, handing it to or from the AI, an issue; inviting a live visitor; a contact's name or email; the support agent's files (instructions.md, tasks, actions, widgets, tests); the chat widget's settings; the AI settings; knowledge; saved replies, tags and topics; the team; your notifications; the workspace's name; email replies.
+- Read before you change: read_agent_file before propose_agent_file (copy find texts exactly), read_settings before a settings proposal, list_inbox_setup, read_knowledge_source or list_teammates for ids. If a proposal comes back with problems, fix them and propose again, or tell the person.
+- Propose only what they asked for or clearly agreed to, and never say it's done until you're told it was. Removing or deleting can't be undone: say so in your sentence.
+- You never message a customer yourself. A reply is a draft (propose_reply_draft): the chat opens with it in the composer and the person sends it. A live visitor invite shows them exactly the card's text, only after Confirm.
+- You can't do these, so say where in the desk they're done instead (with a link): anything that takes a key, token or password (an action's keys on its page under /agent/actions, GitHub or Linear in /settings/integrations, the Cloudflare token in /channels/email, API tokens in /connect/tokens, the identity secret in /playground/behaviour, ChatGPT sign-in in /settings/ai); deleting the workspace (/settings/general); uploading files or logos (/knowledge, /playground); running an action for real or a test chat (the action's or task's page); the desk's light or dark theme (/settings/account).
+- If someone pastes a key, token or password here, don't repeat it or put it in any proposal; tell them to paste it on the right page instead.${ctx.role === "agent" ? "\n- They're an agent, so they can't change the agent, knowledge, settings, tags, topics or the team: say an admin can." : ""}`;
 }
 
 /** The page's chat → the model's messages; a proposal is its tool call, the outcome its result. */
@@ -665,7 +899,7 @@ export function toModelMessages(turns: AskTurn[]): ModelMessage[] {
       continue;
     }
     const { callId, tool: toolName, proposal } = t.proposal;
-    out.push({ role: "assistant", content: [...(t.text.trim() ? [{ type: "text" as const, text: t.text }] : []), { type: "tool-call" as const, toolCallId: callId, toolName, input: proposal }] });
+    out.push({ role: "assistant", content: [...(t.text.trim() ? [{ type: "text" as const, text: t.text }] : []), { type: "tool-call" as const, toolCallId: callId, toolName, input: proposalForModel(proposal) }] });
     const result = t.outcome ? outcomeLine(t.outcome) : "The person didn't press Confirm or Cancel; nothing was changed.";
     out.push({ role: "tool", content: [{ type: "tool-result", toolCallId: callId, toolName, output: { type: "text", value: result } }] });
   }
@@ -674,72 +908,314 @@ export function toModelMessages(turns: AskTurn[]): ModelMessage[] {
   return out;
 }
 
+const RANK: Record<Role, number> = { owner: 3, admin: 2, agent: 1 };
+/** As the team routes: you manage only people (and roles) ranked below you. */
+const canManage = (actor: Role, target: Role) => RANK[actor] > RANK[target];
+
 /** Checks a proposal and names what it's about for the card; a string when it can't be proposed. */
 async function prepareProposal(ctx: AssistantContext, tool: ActionTool, input: unknown, callId: string): Promise<ProposedAction | string> {
-  let proposal;
+  let proposal: Proposal;
   try {
     proposal = readProposal(tool, input, ctx.user.id);
   } catch (e) {
     return e instanceof AssistantInputError ? e.message : "That proposal didn't make sense.";
   }
-  if (ctx.role === "agent" && ADMIN_ACTIONS.includes(tool)) return "Only owners and admins can add knowledge.";
+  if (ctx.role === "agent" && ADMIN_ACTIONS.includes(tool)) return "Only owners and admins can do that: say an admin can.";
   const labels: ProposalLabels = {};
-  const db = ctx.env.DB;
-  const conversationId = proposalConversation(proposal);
-  if (conversationId) {
-    const row = await db
-      .prepare("SELECT ct.id, ct.name, ct.email FROM conversations c JOIN contacts ct ON ct.id = c.contact_id WHERE c.id = ? AND c.workspace_id = ?")
-      .bind(conversationId, ctx.workspaceId)
-      .first<{ id: string; name: string | null; email: string | null }>();
-    if (!row) return `No conversation ${conversationId} in this workspace.`;
-    labels.conversation = contactLabel(row);
-  }
-  if (proposal.kind === "assign" && proposal.assigneeId) {
-    const who = await db.prepare("SELECT u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.id = ?").bind(ctx.workspaceId, proposal.assigneeId).first<{ name: string }>();
-    if (!who) return "The assignee must be a teammate's id from list_teammates.";
-    labels.assignee = proposal.assigneeId === ctx.user.id ? "you" : who.name;
+  try {
+    const problem = await resolveProposal(ctx, proposal, labels);
+    if (problem) return problem;
+  } catch (e) {
+    if (e instanceof AssistantInputError) return e.message;
+    throw e;
   }
   return { callId, tool, proposal, labels, summary: proposalSummary(proposal, labels) };
 }
 
-/** One answer: streams text, tool steps and at most one proposal; resolves with the tokens used. */
+/**
+ * Fills in what the card shows (names, settings before → after, a file's text before and after) from
+ * the desk as it is now, and checks the change the way its route will, so the card only offers what
+ * would work. Returns why not, else null.
+ */
+async function resolveProposal(ctx: AssistantContext, p: Proposal, labels: ProposalLabels): Promise<string | null> {
+  const { env, workspaceId } = ctx;
+  const db = env.DB;
+  const conversationId = proposalConversation(p);
+  if (conversationId) {
+    const row = await db
+      .prepare("SELECT ct.id, ct.name, ct.email, c.handling FROM conversations c JOIN contacts ct ON ct.id = c.contact_id WHERE c.id = ? AND c.workspace_id = ?")
+      .bind(conversationId, workspaceId)
+      .first<{ id: string; name: string | null; email: string | null; handling: string }>();
+    if (!row) return `No conversation ${conversationId} in this workspace.`;
+    labels.conversation = contactLabel(row);
+    if (p.kind === "handling" && row.handling === p.handling) return p.handling === "ai" ? "The AI already has this chat." : "The team already has this chat.";
+  }
+  const inboxSettings = async () => {
+    const inbox = await db.prepare("SELECT settings FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1").bind(workspaceId).first<{ settings: string }>();
+    if (!inbox) throw new AssistantInputError("This workspace has no chat widget inbox.");
+    return JSON.parse(inbox.settings) as Record<string, unknown>;
+  };
+  const nothing = "Those are already the settings: nothing would change.";
+  switch (p.kind) {
+    case "assign": {
+      if (!p.assigneeId) return null;
+      const who = await db.prepare("SELECT u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND u.id = ?").bind(workspaceId, p.assigneeId).first<{ name: string }>();
+      if (!who) return "The assignee must be a teammate's id from list_teammates.";
+      labels.assignee = p.assigneeId === ctx.user.id ? "you" : who.name;
+      return null;
+    }
+    case "invite_visitor": {
+      const visitor = (await env.WORKSPACE_HUB.getByName(workspaceId).liveVisitors()).find((v) => v.sessionId === p.sessionId);
+      if (!visitor) return "That visitor isn't on the site any more (live_visitors lists who is).";
+      if (visitor.inChat) return "That visitor is already in a chat: reply there instead.";
+      let path = visitor.page.url;
+      try {
+        path = new URL(visitor.page.url).pathname;
+      } catch {
+        // keep the address as sent
+      }
+      labels.target = visitor.contact ? contactLabel(visitor.contact) : `the visitor on ${clip(path, 60)}`;
+      return null;
+    }
+    case "contact": {
+      const row = await db.prepare("SELECT id, name, email, verified_at FROM contacts WHERE id = ? AND workspace_id = ?").bind(p.contactId, workspaceId).first<{ id: string; name: string | null; email: string | null; verified_at: number | null }>();
+      if (!row) return `No contact ${p.contactId} in this workspace.`;
+      if (row.verified_at !== null) return "This customer is verified: their name and email come from your app (identity verification), so they can't be edited here.";
+      labels.target = contactLabel(row);
+      p.changes = settingChanges({ name: "Name", email: "Email" }, row, { ...row, ...p }, ["name", "email"]);
+      return p.changes.length ? null : "The contact already has those details.";
+    }
+    case "agent_file": {
+      const stored = await loadConfigFiles(env, workspaceId);
+      const before = stored.files[p.path] ?? null;
+      const after = applyAgentFileEdit(p.path, before, p.edit!);
+      const next: ConfigFiles = { ...stored.files };
+      if (after === null) delete next[p.path];
+      else next[p.path] = after;
+      const { issues } = parseConfig(next);
+      if (issues.length) {
+        const shown = issues.slice(0, 8).map((i) => `- ${i.path || "config"}: ${i.message}`).join("\n");
+        return `Nothing to propose: the agent's files would have problems, so it couldn't be saved. Fix these and propose it again:\n${shown}`;
+      }
+      delete p.edit;
+      p.before = before;
+      p.after = after;
+      p.op = after === null ? "delete" : before === null ? "create" : "edit";
+      return null;
+    }
+    case "desk_settings": {
+      const settings = await inboxSettings();
+      const next = structuredClone(settings);
+      try {
+        applyInboxPatch(next, p.patch, () => newId("op"));
+      } catch (e) {
+        return `That wouldn't save: ${(e as Error).message}`;
+      }
+      p.changes = settingChanges(DESK_SETTING_LABELS, settings, next, Object.keys(p.patch).flatMap((k) => (k === "mode" || k === "greetingCard" ? ["mode", "greetingCard"] : [k])).filter((k, i, a) => a.indexOf(k) === i));
+      return p.changes.length ? null : nothing;
+    }
+    case "ai_settings": {
+      const ai = await loadAiSettings(env, workspaceId);
+      try {
+        if (p.patch.model !== undefined) p.patch.model = readModel(p.patch.model);
+        if (p.patch.monthlyReplyCap !== undefined) readReplyCap(p.patch.monthlyReplyCap);
+      } catch (e) {
+        return `That wouldn't save: ${(e as Error).message}`;
+      }
+      if (p.patch.provider === "openai" && !(env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY) return "OpenAI needs its API key set on the desk first (the Worker secret OPENAI_API_KEY); point them to Settings → AI.";
+      // A new provider starts on its default model unless one is named.
+      if (p.patch.provider && p.patch.provider !== ai.provider && p.patch.model === undefined) p.patch.model = null;
+      p.changes = settingChanges(AI_SETTING_LABELS, { ...ai, model: ai.model ?? "default" }, { ...ai, ...p.patch, model: (p.patch.model === undefined ? ai.model : p.patch.model) ?? "default" }, ["enabled", "provider", "model", "monthlyReplyCap"]);
+      return p.changes.length ? null : nothing;
+    }
+    case "knowledge_resync":
+    case "knowledge_edit":
+    case "knowledge_remove_page":
+    case "knowledge_remove": {
+      const source = await db.prepare("SELECT kind, title, url, body, settings FROM kb_sources WHERE id = ? AND workspace_id = ?").bind(p.sourceId, workspaceId).first<{ kind: string; title: string; url: string | null; body: string | null; settings: string }>();
+      if (!source) return `No knowledge source ${p.sourceId}. Use list_knowledge.`;
+      labels.target = source.title || source.url || "this source";
+      if (p.kind === "knowledge_resync" && source.kind === "snippet") return "A text document is indexed when it's saved: there's nothing to re-sync.";
+      if (p.kind === "knowledge_remove_page") {
+        const doc = await db.prepare("SELECT url, title FROM kb_documents WHERE id = ? AND source_id = ?").bind(p.documentId, p.sourceId).first<{ url: string | null; title: string | null }>();
+        if (!doc) return `No page ${p.documentId} in that source. Use read_knowledge_source.`;
+        labels.detail = doc.url ?? doc.title ?? "this page";
+      }
+      if (p.kind === "knowledge_edit") {
+        if (p.patch.body !== undefined && source.kind !== "snippet") return "Only a text document's body can be edited; a website or file is read from its source.";
+        if ((p.patch.maxPages !== undefined || p.patch.exclude !== undefined) && source.kind !== "website") return "maxPages and exclude are for websites only.";
+        const settings = JSON.parse(source.settings) as SourceSettings;
+        const now = { title: source.title, body: source.body, maxPages: settings.maxPages ?? DEFAULT_MAX_PAGES, exclude: settings.exclude ?? [] };
+        p.changes = settingChanges(KNOWLEDGE_EDIT_LABELS, now, { ...now, ...p.patch }, Object.keys(p.patch));
+        if (!p.changes.length) return "The source already has those settings.";
+      }
+      return null;
+    }
+    case "saved_reply_edit":
+    case "saved_reply_delete": {
+      const row = await db.prepare("SELECT title, body FROM saved_replies WHERE id = ? AND workspace_id = ?").bind(p.replyId, workspaceId).first<{ title: string; body: string }>();
+      if (!row) return `No saved reply ${p.replyId}. Use list_inbox_setup.`;
+      labels.target = row.title;
+      if (p.kind === "saved_reply_edit") {
+        p.title ||= row.title;
+        p.body ||= row.body;
+        p.changes = settingChanges({ title: "Title", body: "Text" }, row, p, ["title", "body"]);
+        if (!p.changes.length) return "The saved reply already says that.";
+      }
+      return null;
+    }
+    case "tag_rename":
+    case "tag_delete": {
+      const tag = await db.prepare("SELECT name, (SELECT COUNT(*) FROM conversation_tags ct WHERE ct.tag_id = tags.id) AS chats FROM tags WHERE id = ? AND workspace_id = ?").bind(p.tagId, workspaceId).first<{ name: string; chats: number }>();
+      if (!tag) return `No tag ${p.tagId}. Use list_inbox_setup.`;
+      labels.target = tag.name;
+      labels.detail = `${tag.chats} chat${tag.chats === 1 ? "" : "s"}`;
+      if (p.kind === "tag_rename") {
+        const name = normalizeTag(p.name);
+        if (!name) return "Tag names are 1 to 40 characters.";
+        p.name = name;
+        if (name === tag.name) return "The tag already has that name.";
+        const clash = await db.prepare("SELECT 1 FROM tags WHERE workspace_id = ? AND name = ? AND id <> ?").bind(workspaceId, name, p.tagId).first();
+        if (clash) return `There's already a tag called "${name}".`;
+      }
+      return null;
+    }
+    case "topic_rename":
+    case "topic_merge":
+    case "topic_delete": {
+      const topic = await db.prepare("SELECT name FROM topics WHERE id = ? AND workspace_id = ?").bind(p.topicId, workspaceId).first<{ name: string }>();
+      if (!topic) return `No topic ${p.topicId}. Use list_inbox_setup.`;
+      labels.target = topic.name;
+      if (p.kind === "topic_merge") {
+        const into = await db.prepare("SELECT name FROM topics WHERE id = ? AND workspace_id = ?").bind(p.into, workspaceId).first<{ name: string }>();
+        if (!into) return `No topic ${p.into} to merge into. Use list_inbox_setup.`;
+        labels.detail = into.name;
+      }
+      if (p.kind === "topic_rename") {
+        const name = normalizeTag(p.name);
+        if (!name) return "Topic names are 1 to 40 characters.";
+        p.name = name;
+        if (name === topic.name) return "The topic already has that name.";
+        const clash = await db.prepare("SELECT 1 FROM topics WHERE workspace_id = ? AND name = ? AND id <> ?").bind(workspaceId, name, p.topicId).first();
+        if (clash) return `There's already a topic called "${name}": merge them instead.`;
+      }
+      return null;
+    }
+    case "team_invite":
+      return canManage(ctx.role, p.role) ? null : "Admins can only invite agents.";
+    case "team_revoke_invite": {
+      const invite = await db.prepare("SELECT role FROM invites WHERE token_hash = ? AND workspace_id = ? AND used_at IS NULL AND expires_at > ?").bind(p.inviteId, workspaceId, ctx.now).first<{ role: string }>();
+      if (!invite) return "No unused invite with that id (list_teammates lists them).";
+      labels.target = `an invite for an ${invite.role}`;
+      return null;
+    }
+    case "team_role":
+    case "team_remove": {
+      const member = await db.prepare("SELECT u.name, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? AND m.user_id = ?").bind(workspaceId, p.userId).first<{ name: string; role: Role }>();
+      if (!member) return "That isn't a teammate's id (list_teammates).";
+      labels.target = member.name;
+      labels.detail = member.role;
+      if (!canManage(ctx.role, member.role) || (p.kind === "team_role" && !canManage(ctx.role, p.role))) return "You can only manage people with a lower role than yours.";
+      if (p.kind === "team_role" && member.role === p.role) return `${member.name} is already ${p.role === "admin" ? "an admin" : "an agent"}.`;
+      return null;
+    }
+    case "notifications": {
+      const row = await db.prepare("SELECT notification_prefs FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, ctx.user.id).first<{ notification_prefs: string }>();
+      const now = readNotificationPrefs(row?.notification_prefs);
+      p.changes = settingChanges(NOTIFICATION_LABELS, { ...now }, { ...now, ...p.patch }, Object.keys(p.patch));
+      return p.changes.length ? null : nothing;
+    }
+    case "workspace_name":
+      return p.name === ctx.workspaceName ? "The workspace already has that name." : ((labels.target = ctx.workspaceName), null);
+    case "email_settings": {
+      const loaded = await loadEmailSettings(db, workspaceId);
+      if (!loaded) return "This workspace has no chat widget inbox.";
+      let next;
+      try {
+        next = applyEmailPatch(loaded.settings, p.patch);
+      } catch (e) {
+        return `That wouldn't save: ${(e as Error).message}`;
+      }
+      p.changes = settingChanges(EMAIL_SETTING_LABELS, loaded.settings as unknown as Record<string, unknown>, next as unknown as Record<string, unknown>, ["enabled", "from", "fromName", "replyDomain"]);
+      return p.changes.length ? null : nothing;
+    }
+    case "email_test": {
+      const loaded = await loadEmailSettings(db, workspaceId);
+      return loaded?.settings.from ? null : "Email has no from address yet: set it first (propose_email with op settings, or Channels → Email).";
+    }
+    case "identity_off":
+      return (await loadIdentitySecret(db, workspaceId)) === null ? "Identity verification is already off." : null;
+    default:
+      return null;
+  }
+}
+
+/** Times a proposal that didn't pass the checks goes back to the model to fix, within one answer. */
+const MAX_PROPOSAL_RETRIES = 2;
+
+/**
+ * One answer: streams text, tool steps and at most one proposal; resolves with the tokens used. A
+ * proposal that doesn't pass the checks (a file with problems, a setting that wouldn't save) goes back
+ * to the model as that call's result, so it can fix it and propose again in the same answer.
+ */
 export async function runAssistant(ctx: AssistantContext, model: AgentModel, turns: AskTurn[], emit: (event: AskEvent) => void): Promise<{ inputTokens: number; outputTokens: number }> {
   const tools: ToolSet = { ...readTools(ctx), ...actionTools(ctx.role) };
-  const result = streamText({
-    model: model.model,
-    ...model.prompt(assistantPrompt(ctx)),
-    messages: toModelMessages(turns),
-    tools,
-    stopWhen: isStepCount(MAX_ASSISTANT_STEPS),
-    maxOutputTokens: 1500,
-  });
+  const messages = toModelMessages(turns);
   const reply = new ReplyText();
-  let proposed = false;
-  for await (const part of result.fullStream) {
-    if (part.type === "start-step") reply.startStep();
-    else if (part.type === "text-start") reply.startItem(part.id);
-    else if (part.type === "text-delta") emit({ type: "text", text: reply.delta(part.id, part.text) });
-    else if (part.type === "tool-call") {
-      const input = callInput(part.input);
-      if (isActionTool(part.toolName)) {
-        // One proposal per answer: the turn ends at the first one anyway.
-        if (proposed) continue;
-        proposed = true;
-        const prepared = await prepareProposal(ctx, part.toolName, input, newCallId());
-        emit(typeof prepared === "string" ? { type: "rejected", tool: part.toolName, message: prepared } : { type: "proposal", proposal: prepared });
-      } else {
-        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, false), status: "running", input: stepInput(input) } });
+  const used = { inputTokens: 0, outputTokens: 0 };
+  for (let attempt = 0; ; attempt++) {
+    const result = streamText({
+      model: model.model,
+      ...model.prompt(assistantPrompt(ctx)),
+      messages,
+      tools,
+      stopWhen: isStepCount(MAX_ASSISTANT_STEPS),
+      maxOutputTokens: 1500,
+    });
+    let proposed = false;
+    let rejected: { toolCallId: string; toolName: string; message: string } | null = null;
+    const extra: { toolCallId: string; toolName: string }[] = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "start-step") reply.startStep();
+      else if (part.type === "text-start") reply.startItem(part.id);
+      else if (part.type === "text-delta") emit({ type: "text", text: reply.delta(part.id, part.text) });
+      else if (part.type === "tool-call") {
+        const input = callInput(part.input);
+        if (isActionTool(part.toolName)) {
+          // One proposal per answer: the turn ends at the first one anyway.
+          if (proposed) {
+            extra.push({ toolCallId: part.toolCallId, toolName: part.toolName });
+            continue;
+          }
+          proposed = true;
+          const prepared = await prepareProposal(ctx, part.toolName, input, newCallId());
+          if (typeof prepared === "string") rejected = { toolCallId: part.toolCallId, toolName: part.toolName, message: prepared };
+          emit(typeof prepared === "string" ? { type: "rejected", tool: part.toolName, message: prepared } : { type: "proposal", proposal: prepared });
+        } else {
+          emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, false), status: "running", input: stepInput(input) } });
+        }
+      } else if (part.type === "tool-result") {
+        const input = callInput(part.input);
+        const failed = typeof part.output === "string" && part.output.startsWith('{"error"');
+        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output) } });
+      } else if (part.type === "tool-error") {
+        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
+      } else if (part.type === "error") {
+        throw part.error instanceof Error ? part.error : new Error(String(part.error));
       }
-    } else if (part.type === "tool-result") {
-      const input = callInput(part.input);
-      const failed = typeof part.output === "string" && part.output.startsWith('{"error"');
-      emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output) } });
-    } else if (part.type === "tool-error") {
-      emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
-    } else if (part.type === "error") {
-      throw part.error instanceof Error ? part.error : new Error(String(part.error));
     }
+    const usage = await result.totalUsage;
+    used.inputTokens += usage.inputTokens ?? 0;
+    used.outputTokens += usage.outputTokens ?? 0;
+    if (!rejected || attempt >= MAX_PROPOSAL_RETRIES) return used;
+    // The calls so far (the proposal's included), then the checks' answer as its result.
+    messages.push(...(await result.response).messages);
+    messages.push({
+      role: "tool",
+      content: [
+        { type: "tool-result", toolCallId: rejected.toolCallId, toolName: rejected.toolName, output: { type: "text", value: `Not proposed, nothing shown to the person: ${rejected.message}` } },
+        ...extra.map((x) => ({ type: "tool-result" as const, ...x, output: { type: "text" as const, value: "Not proposed: one proposal per answer." } })),
+      ],
+    });
   }
-  const usage = await result.totalUsage;
-  return { inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0 };
 }

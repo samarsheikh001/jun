@@ -7,7 +7,9 @@ import { cn } from "cn";
 // and Recommendation Card (patterns and measures, our own code and tokens): the question as the
 // heading, what changes and where as entity chips, then a footer with Cancel / Confirm pills. Enter
 // confirms and Escape cancels while focus is in the card; it takes focus when it arrives (`autoFocus`).
-// Once settled it shrinks to one pill: done (a green tick), cancelled or failed.
+// Once settled it shrinks to one pill: done (a green tick), cancelled or failed. D-133: a `tone` card
+// (destructive: can't be undone; external: reaches someone outside the team) is red with its `warning`
+// line, focuses Cancel and never confirms on Enter: only a click, or Tab to the button and Enter.
 
 export function ApprovalCard({
   icon,
@@ -17,6 +19,8 @@ export function ApprovalCard({
   running = false,
   disabled = false,
   autoFocus = false,
+  tone,
+  warning,
   onConfirm,
   onCancel,
 }: {
@@ -27,17 +31,20 @@ export function ApprovalCard({
   running?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
+  tone?: "destructive" | "external";
+  warning?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const confirm = useRef<HTMLButtonElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (autoFocus) confirm.current?.focus({ preventScroll: true });
-  }, [autoFocus]);
+    if (autoFocus) (tone ? cancel : confirm).current?.focus({ preventScroll: true });
+  }, [autoFocus, tone]);
   const off = running || disabled;
   return (
     <div
-      className="approval-card"
+      className={cn("approval-card", tone && `risky ${tone}`)}
       role="group"
       aria-label={title}
       onKeyDown={(e) => {
@@ -45,7 +52,7 @@ export function ApprovalCard({
         if (e.key === "Escape") {
           e.preventDefault();
           onCancel();
-        } else if (e.key === "Enter" && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLAnchorElement)) {
+        } else if (!tone && e.key === "Enter" && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLAnchorElement)) {
           e.preventDefault();
           onConfirm();
         }
@@ -57,16 +64,17 @@ export function ApprovalCard({
           <span>{title}</span>
         </p>
         {children}
+        {warning && <p className="approval-warning">{warning}</p>}
       </div>
       <div className="approval-foot">
         <span className="approval-keys" aria-hidden="true">
-          <kbd>↵</kbd> confirm <kbd>Esc</kbd> cancel
+          {tone ? <><kbd>Esc</kbd> cancel</> : <><kbd>↵</kbd> confirm <kbd>Esc</kbd> cancel</>}
         </span>
         <div className="approval-actions">
-          <Button size="sm" variant="ghost" disabled={off} onClick={onCancel}>
+          <Button ref={cancel} size="sm" variant="ghost" disabled={off} onClick={onCancel}>
             Cancel
           </Button>
-          <Button ref={confirm} size="sm" disabled={off} onClick={onConfirm}>
+          <Button ref={confirm} size="sm" variant={tone ? "destructive" : "default"} disabled={off} onClick={onConfirm}>
             {running ? "Working…" : confirmLabel}
           </Button>
         </div>
