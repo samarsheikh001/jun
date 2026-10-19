@@ -80,6 +80,9 @@ export interface BriefInput {
   members: { userId: string; name: string }[];
 }
 
+/** What the needs points are counted from (they're served live, without the rest of the brief). */
+export type NeedsInput = Pick<BriefInput, "now" | "timezone" | "userId" | "ratings" | "waiting">;
+
 export type BriefSection = "yesterday" | "needs" | "unusual";
 
 export interface BriefLink {
@@ -112,6 +115,15 @@ export interface Brief {
   points: (BriefPoint & { text: string })[];
   /** Who each linked chat is with (the chips' labels), filled in by the Worker. */
   chatNames?: Record<string, string>;
+  /** D-131: each linked chat's contact id, so a person with two chats gets one chip (briefs cached before it have none). */
+  chatContacts?: Record<string, string>;
+}
+
+/** GET …/home/needs (D-131): "What needs you" counted now, since the brief is cached once a day. */
+export interface LiveNeeds {
+  points: (BriefPoint & { text: string })[];
+  chatNames: Record<string, string>;
+  chatContacts: Record<string, string>;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
@@ -168,6 +180,57 @@ export function issuesByChat(snapshots: SnapshotEvents[]): Map<string, Set<strin
 }
 
 const KIND_WORDS: Record<StruggleKind, string> = { rage_click: "rage clicks", dead_click: "clicks that did nothing", stuck: "visitors stuck" };
+
+/** What needs you: the open chats with nobody on them, your chats waiting for your reply and bad ratings since yesterday (else all clear). D-131: also served live by GET …/home/needs. */
+export function needsPoints(input: NeedsInput): BriefPoint[] {
+  const w = briefWindows(input.now, input.timezone);
+  const points: BriefPoint[] = [];
+  const team = input.waiting.filter((c) => c.lastAuthor === "visitor" || c.assigneeId === null);
+  const oldestFirst = (rows: WaitingChat[]) => [...rows].sort((a, b) => a.lastMessageAt - b.lastMessageAt);
+  const unassigned = oldestFirst(team.filter((c) => c.assigneeId === null));
+  const mine = oldestFirst(team.filter((c) => c.assigneeId === input.userId && c.lastAuthor === "visitor"));
+  const waited = (c: WaitingChat | undefined) => (c ? formatDuration(input.now - c.lastMessageAt) : null);
+  if (unassigned.length) {
+    const oldest = waited(unassigned[0]);
+    points.push({
+      id: "unassigned",
+      section: "needs",
+      plain: `${plural(unassigned.length, "chat")} with the team ${unassigned.length === 1 ? "has" : "have"} nobody assigned; the longest has waited ${oldest}.`,
+      facts: { unassignedChats: unassigned.length, longestWait: oldest, oldestCustomer: unassigned[0]!.contact },
+      link: { label: "Unassigned chats", path: "/inbox?assignee=unassigned" },
+      chats: unassigned.slice(0, MAX_POINT_CHATS).map((c) => c.id),
+      tone: "warn",
+    });
+  }
+  if (mine.length) {
+    points.push({
+      id: "mine",
+      section: "needs",
+      plain: `${plural(mine.length, "of your chats", "of your chats")} ${mine.length === 1 ? "waits" : "wait"} for your reply; the longest for ${waited(mine[0])}.`,
+      facts: { yourChatsWaiting: mine.length, longestWait: waited(mine[0]) },
+      link: { label: "Your chats", path: "/inbox?assignee=me" },
+      chats: mine.slice(0, MAX_POINT_CHATS).map((c) => c.id),
+      tone: "warn",
+    });
+  }
+  const bad = [...input.ratings].filter((r) => r.rating === "bad" && r.createdAt >= w.since).sort((a, b) => b.createdAt - a.createdAt);
+  if (bad.length) {
+    const comment = bad.find((r) => r.comment?.trim())?.comment?.trim().slice(0, 140);
+    points.push({
+      id: "bad_csat",
+      section: "needs",
+      plain: `${plural(bad.length, "bad rating")} since yesterday${comment ? `, one saying ${quote(comment)}` : ""}.`,
+      facts: { badRatings: bad.length, goodRatings: input.ratings.filter((r) => r.rating === "good" && r.createdAt >= w.since).length, ...(comment ? { comment } : {}) },
+      link: { label: "Bad ratings", path: "/inbox?rating=bad" },
+      chats: [...new Set(bad.map((r) => r.conversationId))].slice(0, MAX_POINT_CHATS),
+      tone: "warn",
+    });
+  }
+  if (!unassigned.length && !mine.length && !bad.length) {
+    points.push({ id: "clear", section: "needs", plain: "Nothing is waiting on you: no unassigned chats, none of yours waiting and no bad ratings since yesterday.", facts: { unassignedChats: 0, yourChatsWaiting: 0, badRatings: 0 }, link: null, chats: [], tone: "ok" });
+  }
+  return points;
+}
 
 /** The brief's points from the rows, every number worked out here. */
 export function briefPoints(input: BriefInput): BriefPoint[] {
@@ -226,51 +289,7 @@ export function briefPoints(input: BriefInput): BriefPoint[] {
     });
   }
 
-  // ---- What needs you ----
-  const team = input.waiting.filter((c) => c.lastAuthor === "visitor" || c.assigneeId === null);
-  const oldestFirst = (rows: WaitingChat[]) => [...rows].sort((a, b) => a.lastMessageAt - b.lastMessageAt);
-  const unassigned = oldestFirst(team.filter((c) => c.assigneeId === null));
-  const mine = oldestFirst(team.filter((c) => c.assigneeId === input.userId && c.lastAuthor === "visitor"));
-  const waited = (c: WaitingChat | undefined) => (c ? formatDuration(input.now - c.lastMessageAt) : null);
-  if (unassigned.length) {
-    const oldest = waited(unassigned[0]);
-    points.push({
-      id: "unassigned",
-      section: "needs",
-      plain: `${plural(unassigned.length, "chat")} with the team ${unassigned.length === 1 ? "has" : "have"} nobody assigned; the longest has waited ${oldest}.`,
-      facts: { unassignedChats: unassigned.length, longestWait: oldest, oldestCustomer: unassigned[0]!.contact },
-      link: { label: "Unassigned chats", path: "/inbox?assignee=unassigned" },
-      chats: unassigned.slice(0, MAX_POINT_CHATS).map((c) => c.id),
-      tone: "warn",
-    });
-  }
-  if (mine.length) {
-    points.push({
-      id: "mine",
-      section: "needs",
-      plain: `${plural(mine.length, "of your chats", "of your chats")} ${mine.length === 1 ? "waits" : "wait"} for your reply; the longest for ${waited(mine[0])}.`,
-      facts: { yourChatsWaiting: mine.length, longestWait: waited(mine[0]) },
-      link: { label: "Your chats", path: "/inbox?assignee=me" },
-      chats: mine.slice(0, MAX_POINT_CHATS).map((c) => c.id),
-      tone: "warn",
-    });
-  }
-  const bad = [...input.ratings].filter((r) => r.rating === "bad" && r.createdAt >= w.since).sort((a, b) => b.createdAt - a.createdAt);
-  if (bad.length) {
-    const comment = bad.find((r) => r.comment?.trim())?.comment?.trim().slice(0, 140);
-    points.push({
-      id: "bad_csat",
-      section: "needs",
-      plain: `${plural(bad.length, "bad rating")} since yesterday${comment ? `, one saying ${quote(comment)}` : ""}.`,
-      facts: { badRatings: bad.length, goodRatings: input.ratings.filter((r) => r.rating === "good" && r.createdAt >= w.since).length, ...(comment ? { comment } : {}) },
-      link: { label: "Bad ratings", path: "/inbox?rating=bad" },
-      chats: [...new Set(bad.map((r) => r.conversationId))].slice(0, MAX_POINT_CHATS),
-      tone: "warn",
-    });
-  }
-  if (!unassigned.length && !mine.length && !bad.length) {
-    points.push({ id: "clear", section: "needs", plain: "Nothing is waiting on you: no unassigned chats, none of yours waiting and no bad ratings since yesterday.", facts: { unassignedChats: 0, yourChatsWaiting: 0, badRatings: 0 }, link: null, chats: [], tone: "ok" });
-  }
+  points.push(...needsPoints(input));
 
   // ---- What's unusual ----
   const unusual: (BriefPoint & { weight: number })[] = [];
@@ -398,15 +417,53 @@ export function briefPoints(input: BriefInput): BriefPoint[] {
   return points;
 }
 
-/** The headline written in code: the day in one line. */
+/** D-131: the headline's counts: chats since yesterday, chats waiting on a person, unusual things to check. */
+export function headlineCounts(points: BriefPoint[]): { chats: number; waiting: number; unusual: number } {
+  const n = (id: string, key: string) => (points.find((p) => p.id === id)?.facts[key] as number | undefined) ?? 0;
+  return { chats: n("chats", "chats"), waiting: n("unassigned", "unassignedChats") + n("mine", "yourChatsWaiting"), unusual: points.filter((p) => p.section === "unusual" && p.tone === "warn").length };
+}
+
+/** The headline written in code: the day in one line, each count a number with its noun ("7 chats", "2 waiting", "4 things"). */
 export function plainHeadline(points: BriefPoint[]): string {
-  const chats = points.find((p) => p.id === "chats")?.facts.chats as number | undefined;
-  const waiting = ((points.find((p) => p.id === "unassigned")?.facts.unassignedChats as number | undefined) ?? 0) + ((points.find((p) => p.id === "mine")?.facts.yourChatsWaiting as number | undefined) ?? 0);
-  const odd = points.filter((p) => p.section === "unusual" && p.tone === "warn").length;
-  const parts = [chats ? `${plural(chats, "chat")} since yesterday` : "A quiet day so far"];
-  parts.push(waiting ? `${waiting} waiting on a person` : "nothing waiting on a person");
-  if (odd) parts.push(`${plural(odd, "thing")} to look at`);
+  const { chats, waiting, unusual } = headlineCounts(points);
+  const parts = [chats ? `${plural(chats, "chat")} since yesterday` : "No new chats since yesterday"];
+  parts.push(waiting ? `${waiting.toLocaleString("en-US")} waiting on you` : "nothing waiting on you");
+  if (unusual) parts.push(`${plural(unusual, "thing")} to check`);
   return `${parts.join(", ")}.`;
+}
+
+/** The AI's headline passes when every count above zero is in it as digits (and its other numbers are the facts'). */
+export function checkHeadline(text: unknown, points: BriefPoint[]): string | null {
+  const counts = Object.values(headlineCounts(points));
+  const s = checkSentence(text, new Set([...points.flatMap((p) => [...allowedNumbers(p)]), ...counts]));
+  if (!s) return null;
+  const said = new Set(numbersIn(s));
+  return counts.every((n) => n === 0 || said.has(n)) && (said.size > 0 || counts.every((n) => n === 0)) ? s : null;
+}
+
+/** D-131: a "since yesterday" point as one short line from its facts (the digest's bottom list; the sentence goes in its title). */
+export function shortLine(point: Pick<BriefPoint, "id" | "facts"> & { text?: string; plain: string }): string {
+  const f = point.facts;
+  const num = (k: string) => (typeof f[k] === "number" ? (f[k] as number) : 0);
+  if (point.id === "chats") {
+    if (!num("chats")) return "No new chats";
+    const parts = [plural(num("chats"), "chat")];
+    if (num("aiChats")) parts.push(`${num("aiResolved").toLocaleString("en-US")} resolved by AI`, `${num("handedOff").toLocaleString("en-US")} to team`);
+    else parts.push(f.aiOn === false ? "AI off" : "none for the AI");
+    return parts.join(" · ");
+  }
+  if (point.id === "reasons" && Array.isArray(f.reasons)) {
+    // Grouped again: a brief cached before D-131 has each wording of "asked for a person" apart.
+    const grouped = new Map<string, number>();
+    for (const r of f.reasons as { reason?: unknown; chats?: unknown }[]) {
+      if (typeof r.reason !== "string") continue;
+      const label = handoffReasonLabel(r.reason);
+      grouped.set(label, (grouped.get(label) ?? 0) + (typeof r.chats === "number" ? r.chats : 0));
+    }
+    const reasons = [...grouped].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (reasons.length) return `Handed off: ${reasons.map(([reason, n]) => `${reason} (${n})`).join(", ")}`;
+  }
+  return point.text ?? point.plain;
 }
 
 /** The whole brief written in code (the AI off, no provider, or its answer unusable). */
@@ -440,6 +497,7 @@ export function checkSentence(text: unknown, allowed: Set<number>): string | nul
 export const BRIEF_SYSTEM = `You write a support team's daily brief on their desk's home page.
 You get a JSON list of points. Each has an id, a section (yesterday, needs, unusual), its facts and a plain sentence written by code.
 Rewrite each point as one short, friendly, specific sentence (at most 30 words) for the teammate reading it, and write one headline sentence (at most 20 words) for the whole day.
+The headline must state the "headline" counts as digits, each number followed by its noun: chats since yesterday, how many wait on a person, how many unusual things to check (leave out a count that is 0, or say "nothing"). For example: "7 chats since yesterday, 2 waiting on you, 4 things to check."
 Rules:
 - Use only the facts given. Every number you write must appear in that point's facts or plain sentence. Never add, subtract, average or estimate numbers.
 - No links, Markdown, emoji or greetings. Don't invent causes; you may say what someone could check.
@@ -448,7 +506,7 @@ Answer with JSON only: {"headline": "…", "points": {"<id>": "…"}}.`;
 
 /** The model's input: the points without their links and chat ids. */
 export function briefPrompt(points: BriefPoint[], who: { name: string; workspaceName: string }): string {
-  return JSON.stringify({ reader: who.name, workspace: who.workspaceName, points: points.map((p) => ({ id: p.id, section: p.section, facts: p.facts, plain: p.plain })) });
+  return JSON.stringify({ reader: who.name, workspace: who.workspaceName, headline: { ...headlineCounts(points), plain: plainHeadline(points) }, points: points.map((p) => ({ id: p.id, section: p.section, facts: p.facts, plain: p.plain })) });
 }
 
 /** The AI's answer → a brief: each sentence that passes `checkSentence`, else the plain one. Null when it isn't usable at all. */
@@ -468,8 +526,7 @@ export function readBriefAnswer(raw: string, points: BriefPoint[], meta: { day: 
     return { ...p, text: text ?? p.plain };
   });
   if (!used) return null;
-  const all = new Set(points.flatMap((p) => [...allowedNumbers(p)]));
-  const headline = checkSentence(parsed.headline, all) ?? plainHeadline(points);
+  const headline = checkHeadline(parsed.headline, points) ?? plainHeadline(points);
   return { ...meta, source: "ai", headline, points: out };
 }
 

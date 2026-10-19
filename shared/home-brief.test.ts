@@ -4,13 +4,17 @@ import {
   allowedNumbers,
   briefPoints,
   briefWindows,
+  checkHeadline,
   checkSentence,
   freshBrief,
   isKnowledgeGap,
   issueSignature,
+  needsPoints,
   numbersIn,
   plainBrief,
+  plainHeadline,
   readBriefAnswer,
+  shortLine,
   type BriefInput,
 } from "./home-brief.ts";
 import type { ConversationFacts } from "./metrics.ts";
@@ -62,7 +66,7 @@ test("brief: since yesterday counts chats, the AI's share and the top reasons", 
   assert.equal(chats.link?.path, "/dashboard");
   assert.equal(chats.chats.length, 4);
   const reasons = points.find((p) => p.id === "reasons")!;
-  assert.equal(reasons.plain, "Top handoff reason: “Customer asked for a person” (2).");
+  assert.equal(reasons.plain, "Top handoff reason: “Asked for a person” (2).");
   assert.equal(reasons.chats.length, 2);
 });
 
@@ -153,10 +157,58 @@ test("brief: plain brief and the cache's day", () => {
   const points = briefPoints(base({ facts: [conv(NOW - H)] }));
   const brief = plainBrief(points, { day: "2026-10-20", timezone: "UTC", generatedAt: NOW });
   assert.equal(brief.source, "plain");
-  assert.equal(brief.headline, "1 chat since yesterday, nothing waiting on a person.");
+  assert.equal(brief.headline, "1 chat since yesterday, nothing waiting on you.");
   const json = JSON.stringify(brief);
   assert.ok(freshBrief(json, "2026-10-20", "UTC"));
   assert.equal(freshBrief(json, "2026-10-21", "UTC"), null);
   assert.equal(freshBrief(json, "2026-10-20", "Europe/Berlin"), null);
   assert.equal(freshBrief("{", "2026-10-20", "UTC"), null);
+});
+
+test("brief: the headline states its counts as digits, each with its noun", () => {
+  const points = briefPoints(base({
+    facts: [conv(NOW - H), conv(NOW - 2 * H), conv(NOW - 3 * H), conv(NOW - 4 * H, { topicId: "t1", topicName: "Billing" }), conv(NOW - 5 * H, { topicId: "t1", topicName: "Billing" }), conv(NOW - 6 * H, { topicId: "t1", topicName: "Billing" })],
+    waiting: [{ id: "cv_a", contact: "Ana", assigneeId: null, lastMessageAt: NOW - H, lastAuthor: "visitor" }, { id: "cv_b", contact: "Bo", assigneeId: "usr_me", lastMessageAt: NOW - H, lastAuthor: "visitor" }],
+  }));
+  assert.equal(plainHeadline(points), "6 chats since yesterday, 2 waiting on you, 2 things to check.");
+  assert.equal(checkHeadline("6 chats since yesterday, 2 waiting on you and 2 things to check.", points), "6 chats since yesterday, 2 waiting on you and 2 things to check.");
+  assert.equal(checkHeadline("A busy day: 6 chats and a Billing spike.", points), null, "the waiting and unusual counts are missing");
+  assert.equal(checkHeadline("A busy day with people waiting.", points), null, "no digits");
+  assert.equal(checkHeadline("9 chats, 2 waiting, 2 things to check.", points), null, "an invented number");
+  const meta = { day: "2026-10-20", timezone: "UTC", generatedAt: NOW };
+  const brief = readBriefAnswer(JSON.stringify({ headline: "Lots going on today.", points: { chats: "6 chats came in." } }), points, meta)!;
+  assert.equal(brief.headline, plainHeadline(points), "falls back to the plain headline");
+  const quiet = briefPoints(base());
+  assert.equal(plainHeadline(quiet), "No new chats since yesterday, nothing waiting on you.");
+  assert.equal(checkHeadline("A quiet start: nothing waiting on you.", quiet), "A quiet start: nothing waiting on you.", "all counts zero: no digits needed");
+});
+
+test("brief: the needs points on their own match the brief's", () => {
+  const input = base({
+    waiting: [{ id: "cv_a", contact: "Ana", assigneeId: null, lastMessageAt: NOW - 3 * H, lastAuthor: "visitor" }],
+    ratings: [{ conversationId: "cv_x", rating: "bad", comment: null, createdAt: NOW - H }],
+  });
+  const live = needsPoints(input);
+  assert.deepEqual(live.map((p) => p.id), ["unassigned", "bad_csat"]);
+  assert.deepEqual(live, briefPoints(input).filter((p) => p.section === "needs"));
+  assert.deepEqual(needsPoints(base()).map((p) => p.id), ["clear"]);
+});
+
+test("brief: short lines for since yesterday", () => {
+  const points = briefPoints(base({
+    facts: [
+      conv(NOW - 2 * H),
+      conv(NOW - 3 * H, { handoffReason: "The customer asked for a person.", handoffAt: NOW - 3 * H }),
+      conv(NOW - 4 * H, { handoffReason: "Customer requested a person for D-128 test", handoffAt: NOW - 4 * H }),
+      conv(NOW - 5 * H, { handoffReason: "Billing dispute", handoffAt: NOW - 5 * H }),
+    ],
+  }));
+  const chats = points.find((p) => p.id === "chats")!;
+  assert.equal(shortLine(chats), "4 chats · 1 resolved by AI · 3 to team");
+  assert.equal(shortLine(points.find((p) => p.id === "reasons")!), "Handed off: Asked for a person (2), Billing dispute (1)");
+  assert.equal(shortLine(briefPoints(base()).find((p) => p.id === "chats")!), "No new chats");
+  const cached = { id: "reasons", plain: "", facts: { reasons: [{ reason: "Billing", chats: 1 }, { reason: "Asked for a person", chats: 1 }, { reason: "The customer asked for a person", chats: 1 }] } };
+  assert.equal(shortLine(cached), "Handed off: Asked for a person (2), Billing (1)", "a brief cached before the grouping");
+  const off = briefPoints(base({ aiEnabled: false, facts: [conv(NOW - H, { firstAiAt: null })] })).find((p) => p.id === "chats")!;
+  assert.equal(shortLine(off), "1 chat · AI off");
 });

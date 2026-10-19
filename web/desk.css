@@ -2513,6 +2513,15 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 /* On a pointer, Ask shows on the row's hover (or keyboard focus); touch screens always show it. */
 @media (hover: hover) { .digest-row:not(:hover, :focus-within) .brief-ask { opacity: 0; } }
 .brief-more { color: var(--muted-foreground); font-size: 12px; }
+.brief-chat-count { flex: none; color: var(--muted-foreground); }
+/* D-131: Done hides a row (kept in localStorage); like Ask, on hover with a pointer, always on touch. */
+.digest-done { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--muted-foreground); cursor: pointer; transition: background-color 150ms, color 150ms, opacity 150ms; }
+.digest-done > svg { width: 14px; height: 14px; }
+.digest-done:hover, .digest-done:focus-visible { background: var(--muted); color: var(--foreground); }
+@media (hover: hover) { .digest-row:not(:hover, :focus-within) .digest-done { opacity: 0; } }
+.digest-done-line { display: flex; align-items: center; gap: 6px; padding: 0 4px; color: var(--muted-foreground); font-size: 12.5px; line-height: 20px; }
+.digest-done-line > svg { width: 13px; height: 13px; }
+.digest-done-line > button { padding: 0; border: 0; background: none; color: var(--foreground); font: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in oklch, currentColor 35%, transparent); cursor: pointer; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

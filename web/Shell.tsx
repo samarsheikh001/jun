@@ -635,7 +635,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
       <PageErrorBoundary key={section}>
       {section === "home" ? (
-        <HomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} role={workspace.role} />
+        <HomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} role={workspace.role} hub={hub} />
       ) : section === "knowledge" ? (
         <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : section === "welcome" ? (

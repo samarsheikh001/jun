@@ -1,6 +1,6 @@
-import { BRIEF_SYSTEM, briefPoints, briefPrompt, briefWindows, plainBrief, readBriefAnswer, type Brief, type BriefInput, type WaitingChat } from "../../shared/home-brief.ts";
+import { BRIEF_SYSTEM, briefPoints, briefPrompt, briefWindows, plainBrief, readBriefAnswer, type Brief, type BriefInput, type BriefPoint, type NeedsInput, type WaitingChat } from "../../shared/home-brief.ts";
 import type { AuthorType } from "../../shared/protocol.ts";
-import type { SnapshotEvents } from "../../shared/metrics.ts";
+import type { RatingRow, SnapshotEvents } from "../../shared/metrics.ts";
 import { contactLabel } from "../../shared/notifications.ts";
 import { loadMetricRows } from "../lib/metrics-data.ts";
 import { editorSettings } from "./edit-stream.ts";
@@ -33,6 +33,32 @@ export async function assistantModel(env: Env, workspaceId: string): Promise<Ass
   }
 }
 
+const waitingQuery = (db: D1Database, workspaceId: string) =>
+  db.prepare(
+    `SELECT c.id, c.assignee_id, c.last_message_at, c.last_message_author, ct.id AS contact_id, ct.name, ct.email
+     FROM conversations c JOIN contacts ct ON ct.id = c.contact_id
+     WHERE c.workspace_id = ? AND c.status = 'open' AND c.handling = 'human' ORDER BY c.last_message_at LIMIT ?`,
+  ).bind(workspaceId, MAX_WAITING);
+
+const waitingChats = (rows: unknown[]): WaitingChat[] =>
+  (rows as { id: string; assignee_id: string | null; last_message_at: number; last_message_author: AuthorType | null; contact_id: string; name: string | null; email: string | null }[]).map(
+    (r) => ({ id: r.id, contact: contactLabel({ id: r.contact_id, name: r.name, email: r.email }), assigneeId: r.assignee_id, lastMessageAt: r.last_message_at, lastAuthor: r.last_message_author }),
+  );
+
+/** D-131: what the live "What needs you" counts: the open chats with the team and the ratings since yesterday. */
+export async function loadNeedsInput(env: Env, workspaceId: string, userId: string, timezone: string, now: number): Promise<NeedsInput> {
+  const w = briefWindows(now, timezone);
+  const db = env.DB;
+  const [ratings, waiting] = await db.batch([
+    db.prepare(
+      `SELECT conversation_id AS conversationId, rating, CASE WHEN rating = 'bad' THEN comment END AS comment, created_at AS createdAt
+       FROM csat_ratings WHERE workspace_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT 500`,
+    ).bind(workspaceId, w.since, w.until),
+    waitingQuery(db, workspaceId),
+  ]);
+  return { now, timezone, userId, ratings: ratings!.results as unknown as RatingRow[], waiting: waitingChats(waiting!.results) };
+}
+
 /** Everything the brief counts, for one member, read in one batch plus the Reports queries. */
 export async function loadBriefInput(env: Env, workspaceId: string, userId: string, timezone: string, now: number, aiEnabled: boolean): Promise<BriefInput> {
   const w = briefWindows(now, timezone);
@@ -46,11 +72,7 @@ export async function loadBriefInput(env: Env, workspaceId: string, userId: stri
          WHERE d.workspace_id = ? AND c.workspace_id = d.workspace_id AND c.created_at >= ? AND c.created_at < ? AND c.debug_issue_count > 0
          ORDER BY d.created_at DESC LIMIT ?`,
       ).bind(workspaceId, w.baselineSince, w.until, MAX_ISSUE_SNAPSHOTS),
-      db.prepare(
-        `SELECT c.id, c.assignee_id, c.last_message_at, c.last_message_author, ct.id AS contact_id, ct.name, ct.email
-         FROM conversations c JOIN contacts ct ON ct.id = c.contact_id
-         WHERE c.workspace_id = ? AND c.status = 'open' AND c.handling = 'human' ORDER BY c.last_message_at LIMIT ?`,
-      ).bind(workspaceId, MAX_WAITING),
+      waitingQuery(db, workspaceId),
     ]),
   ]);
   return {
@@ -62,24 +84,27 @@ export async function loadBriefInput(env: Env, workspaceId: string, userId: stri
     ratings: rows.ratings,
     struggles: rows.snapshots,
     issues: issues!.results as unknown as SnapshotEvents[],
-    waiting: (waiting!.results as { id: string; assignee_id: string | null; last_message_at: number; last_message_author: AuthorType | null; contact_id: string; name: string | null; email: string | null }[]).map(
-      (r): WaitingChat => ({ id: r.id, contact: contactLabel({ id: r.contact_id, name: r.name, email: r.email }), assigneeId: r.assignee_id, lastMessageAt: r.last_message_at, lastAuthor: r.last_message_author }),
-    ),
+    waiting: waitingChats(waiting!.results),
     members: rows.members,
   };
 }
 
-/** The brief with the customer's name for each chat it links to. */
-async function withChatNames(env: Env, workspaceId: string, brief: Brief): Promise<Brief> {
-  const ids = [...new Set(brief.points.flatMap((p) => p.chats))];
-  if (!ids.length) return brief;
+/** The customer's name (and contact id, D-131: one chip per person) for each chat the points link to. */
+export async function chatNames(env: Env, workspaceId: string, points: BriefPoint[]): Promise<{ chatNames: Record<string, string>; chatContacts: Record<string, string> }> {
+  const ids = [...new Set(points.flatMap((p) => p.chats))];
+  if (!ids.length) return { chatNames: {}, chatContacts: {} };
   const rows = await env.DB.prepare(
     `SELECT c.id, ct.id AS contact_id, ct.name, ct.email FROM conversations c JOIN contacts ct ON ct.id = c.contact_id WHERE c.workspace_id = ? AND c.id IN (${ids.map(() => "?").join(",")})`,
   )
     .bind(workspaceId, ...ids)
     .all<{ id: string; contact_id: string; name: string | null; email: string | null }>();
-  return { ...brief, chatNames: Object.fromEntries(rows.results.map((r) => [r.id, contactLabel({ id: r.contact_id, name: r.name, email: r.email })])) };
+  return {
+    chatNames: Object.fromEntries(rows.results.map((r) => [r.id, contactLabel({ id: r.contact_id, name: r.name, email: r.email })])),
+    chatContacts: Object.fromEntries(rows.results.map((r) => [r.id, r.contact_id])),
+  };
 }
+
+const withChatNames = async (env: Env, workspaceId: string, brief: Brief): Promise<Brief> => ({ ...brief, ...(await chatNames(env, workspaceId, brief.points)) });
 
 /** The points worded by the AI (sentences that fail the check keep the plain words), or the plain brief; with the chats' names. */
 export async function wordBrief(

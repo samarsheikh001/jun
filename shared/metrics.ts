@@ -513,12 +513,22 @@ export function durationStat(values: number[]): DurationStat {
   return { count: n, median, p90: sorted[Math.ceil(0.9 * n) - 1]! };
 }
 
+/** D-131: the ways a reason says the customer wanted a person ("The customer asked for a person.", "Customer requested a human agent for …"): one group. */
+export const ASKED_FOR_PERSON = "Asked for a person";
+const ASKS_FOR_PERSON = new RegExp(
+  String.raw`^(?:talk to a person|(?:(?:the )?(?:customer|visitor|user|client|they|he|she) )?(?:explicitly |directly )?(?:asked|asks|asking|requested|requests|requesting|wants|wanted|would like|demanded|insisted on|prefers|preferred) (?:for |to (?:talk|speak|chat) (?:to|with) |to be (?:transferred|connected) to )?(?:a |an |the |to |some )?(?:real |live |actual |human |support )?(?:person|human|people|agent|someone|somebody|staff|team member|representative|rep|operator|teammate)\b)`,
+  "i",
+);
+export const asksForPerson = (reason: string): boolean => ASKS_FOR_PERSON.test(reason.trim().replace(/\s+/g, " "));
+
 /**
  * Groups handoff reasons that differ only in details: "AI error: <message>" and "Bug flagged by
- * the AI: <what broke>" become one line each, as does the reply cap's number.
+ * the AI: <what broke>" become one line each, as does the reply cap's number, and every way of
+ * asking for a person is "Asked for a person".
  */
 export function handoffReasonLabel(reason: string): string {
   const text = reason.trim().replace(/\s+/g, " ");
+  if (asksForPerson(text)) return ASKED_FOR_PERSON;
   const prefix = /^(Bug flagged by the AI|AI error|AI unavailable):/i.exec(text);
   if (prefix) return prefix[1]!;
   if (/^Monthly AI reply cap \(\d+\) reached/i.test(text)) return "Monthly AI reply cap reached";

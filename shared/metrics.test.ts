@@ -15,6 +15,7 @@ import {
   dayKey,
   durationStat,
   formatDuration,
+  ASKED_FOR_PERSON,
   handoffReasonLabel,
   MAX_HANDOFF_REASONS,
   MAX_REASON_CHATS,
@@ -200,7 +201,7 @@ test("AI off: passed to the team isn't a handoff; 'AI is off' when it's off now 
   assert.equal(mixed.ai.resolved, 1);
   assert.equal(mixed.ai.handedOff, 2);
   assert.equal(mixed.ai.passedWhileOff, 4);
-  assert.deepEqual(mixed.ai.reasons.map((r) => r.reason).sort(), ["Refund request", "The customer asked for a person"]);
+  assert.deepEqual(mixed.ai.reasons.map((r) => r.reason).sort(), ["Asked for a person", "Refund request"]);
   assert.equal(isAiOffHandoff(" AI replies are turned off. "), true);
   assert.equal(isAiOffHandoff("AI error: off"), false);
   assert.equal(isAiOffHandoff(null), false);
@@ -303,13 +304,16 @@ test("handoff reasons: grouped, most first, each with its share", () => {
   assert.equal(handoffReasonLabel("AI error: fetch failed (502)"), "AI error");
   assert.equal(handoffReasonLabel("Bug flagged by the AI: POST /api/billing returns 500"), "Bug flagged by the AI");
   assert.equal(handoffReasonLabel("Monthly AI reply cap (2000) reached."), "Monthly AI reply cap reached");
-  assert.equal(handoffReasonLabel("  The customer asked   for a person. "), "The customer asked for a person");
+  assert.equal(handoffReasonLabel("  The customer asked   for a person. "), "Asked for a person");
+  for (const r of ["Asked for a person", "Customer requested a person for D-128 test", "The visitor wants to talk to a human.", "User asked to speak with an agent", "customer requested a live agent", "Talk to a person"]) assert.equal(handoffReasonLabel(r), ASKED_FOR_PERSON, r);
+  for (const r of ["Wants to cancel", "Customer asked for a refund", "The customer asked about personal data", "Customer requested an invoice"]) assert.notEqual(handoffReasonLabel(r), ASKED_FOR_PERSON, r);
   assert.equal(handoffReasonLabel(""), "No reason given");
   assert.equal(handoffReasonLabel("x".repeat(200)).length, 120);
 
-  const reasons = ["Refund request", "refund request.", "Refund request", "AI error: a", "AI error: b", "Wants to cancel", "Angry", "Data deletion", "Zebra"];
+  const reasons = ["Refund request", "refund request.", "Refund request", "AI error: a", "AI error: b", "Wants to cancel", "Angry", "Data deletion", "Zebra", "Asked for a person", "The customer asked for a person.", "Customer requested a person for D-128 test"];
   const r = computeMetrics(input({ conversations: reasons.map((reason) => conv(NOW, { handoffReason: reason })) }));
   assert.deepEqual(r.ai.reasons.map((x) => [x.reason, x.count]), [
+    ["Asked for a person", 3],
     ["Refund request", 3],
     ["AI error", 2],
     ["Angry", 1],
@@ -317,8 +321,8 @@ test("handoff reasons: grouped, most first, each with its share", () => {
     ["Wants to cancel", 1],
     ["Zebra", 1],
   ]);
-  assert.equal(r.ai.reasons[0]!.share, 3 / 9);
-  assert.equal(r.ai.handedOff, 9);
+  assert.equal(r.ai.reasons[0]!.share, 3 / 12);
+  assert.equal(r.ai.handedOff, 12);
 
   // Capped at MAX_HANDOFF_REASONS.
   const many = computeMetrics(input({ conversations: Array.from({ length: MAX_HANDOFF_REASONS + 5 }, (_, i) => conv(NOW, { handoffReason: `Reason ${i}` })) }));

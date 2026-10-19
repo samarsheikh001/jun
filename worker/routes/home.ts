@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { readAskTurns, AssistantInputError, type AskEvent } from "../../shared/desk-assistant.ts";
-import { briefWindows, freshBrief } from "../../shared/home-brief.ts";
+import { briefWindows, freshBrief, needsPoints, type LiveNeeds } from "../../shared/home-brief.ts";
 import { validTimezone } from "../../shared/hours.ts";
 import { runAssistant } from "../ai/desk-assistant.ts";
-import { assistantModel, loadBriefInput, storeBrief, wordBrief } from "../ai/home-brief.ts";
+import { assistantModel, chatNames, loadBriefInput, loadNeedsInput, storeBrief, wordBrief } from "../ai/home-brief.ts";
 import { loadAiSettings } from "../ai/providers.ts";
 import { recordUsage } from "../ai/topics.ts";
 import { requireUser } from "../auth/session.ts";
@@ -12,7 +12,8 @@ import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts"
 
 // I-19 (D-127): Home. GET …/home/brief answers at once with today's cached brief, or the plain one
 // written in code while the AI words it (`writing`: the page then POSTs …/home/brief); POST also
-// refreshes. POST …/home/ask streams one answer of the desk assistant as NDJSON (AskEvent).
+// refreshes; GET …/home/needs (D-131) counts "What needs you" now. POST …/home/ask streams one
+// answer of the desk assistant as NDJSON (AskEvent).
 // Members only; the brief and the assistant see what any member of the workspace can see.
 
 export const home = new Hono<AppEnv>();
@@ -56,6 +57,15 @@ home.get("/workspaces/:id/home/brief", async (c) => {
   const brief = await wordBrief(c.env, workspaceId, input, { name: user.name, workspaceName: "" }, null);
   if (!ai.available) await storeBrief(c.env, workspaceId, user.id, brief);
   return c.json({ brief, writing: ai.available, ai });
+});
+
+// D-131: "What needs you" counted now (the brief is cached once a day), plain words, no AI.
+home.get("/workspaces/:id/home/needs", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const timezone = timezoneOf(c.req.query("tz"));
+  const points = needsPoints(await loadNeedsInput(c.env, workspaceId, c.get("user").id, timezone, Date.now())).map((p) => ({ ...p, text: p.plain }));
+  return c.json({ points, ...(await chatNames(c.env, workspaceId, points)) } satisfies LiveNeeds);
 });
 
 home.post("/workspaces/:id/home/brief", async (c) => {
