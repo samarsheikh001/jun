@@ -212,11 +212,14 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
 
   return (
     <div className="content wide home">
-      <div className="row reports-head home-head">
-        <h1>Home</h1>
-        <span className="home-greeting">{greeting(me.name)}</span>
+      {/* The brief on the left, the assistant docked on the right (stacked under it on narrow screens). */}
+      <div className="home-main-col">
+        <div className="row reports-head home-head">
+          <h1>Home</h1>
+          <span className="home-greeting">{greeting(me.name)}</span>
+        </div>
+        {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
       </div>
-      {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
       <section className="dash-card home-ask" aria-labelledby="ask-title">
         <div className="dash-card-head">
           <h2 id="ask-title">Ask about your desk</h2>

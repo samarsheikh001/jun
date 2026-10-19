@@ -2500,6 +2500,15 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
    D-129, after beautifului.dev's primitives (patterns and measures, our tokens): source chips, copy and
    "N sources" under an answer, approval cards for proposals, a pill prompt bar. */
 .home-chat { display: flex; flex-direction: column; height: min(640px, 72vh); margin-top: 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); overflow: hidden; }
+/* Wide screens: the assistant is a panel docked on the right, as tall as the window, beside the brief. */
+@media (min-width: 1180px) {
+  .content.home { display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 32vw, 480px); gap: 0 32px; align-items: start; }
+  .home-main-col { min-width: 0; }
+  .home-ask { position: sticky; top: 16px; display: flex; flex-direction: column; height: calc(100dvh - 32px); margin: 0; }
+  .home-ask .home-chat, .home-ask .home-chat.empty { flex: 1; height: auto; min-height: 0; }
+  /* An empty thread keeps its starters and composer at the bottom, where the conversation will be. */
+  .home-ask .home-chat.empty { justify-content: flex-end; }
+}
 .home-chat.empty { height: auto; }
 .home-chat .wchat-rows { padding: 16px 16px 12px; gap: 16px; }
 .ask-off { margin: 0; padding: 16px 16px 4px; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
