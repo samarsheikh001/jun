@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
-import { ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight, ArrowUpIcon as ArrowUp, ThumbsDownIcon, ThumbsUpIcon } from "@/components/icons";
-import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport } from "../../shared/metrics.ts";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight, ArrowUpIcon as ArrowUp, BotIcon, ChatIcon, HandoffIcon, TagIcon, ThumbsDownIcon, ThumbsUpIcon } from "@/components/icons";
+import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport, type TopicCount } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
 import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
-import { mapTopics, MIN_MAP_TOPICS, hueShades, topicHues, type MapTopic } from "../lib/topic-map.ts";
+import { mapTopics, MIN_MAP_TOPICS, type MapTopic } from "../lib/topic-map.ts";
 import { topicInsight, type InsightPart } from "../lib/topic-insight.ts";
 import DayChart from "./DayChart.tsx";
 import { StartPages, Struggles } from "./PageSections.tsx";
@@ -105,47 +105,105 @@ const goTo = (path: string) => (e: MouseEvent) => {
   navigate(path);
 };
 
-/** Topics Top topics names in its bar and legend; the rest are one Other (never an Other of one topic). */
+/** Topics Top topics names as bars; the rest are one Other row (never an Other of one topic). */
 const MAX_TOPICS_SHOWN = 7;
 
 /** The Manage topics sheet's address (D-120); Settings → Inbox and the command palette link here. */
 const TOPICS_SHEET_PATH = "/dashboard/topics";
 const openTopics = () => navigate(TOPICS_SHEET_PATH, { replace: true });
 
-/** The written line over the bar (D-123): topic names and numbers emphasised, the top topic in its colour. */
-function Insight({ parts, hues }: { parts: InsightPart[]; hues: Map<string, number> }) {
+/** The written line beside the bars (D-123): topic names and numbers emphasised, the top topic in its bar's strong blue. */
+function Insight({ parts }: { parts: InsightPart[] }) {
   return (
     <p className="tt-insight">
       {parts.map((p, i) =>
         typeof p === "string" ? p
           : "strong" in p ? <span key={i} className="tt-em">{p.strong}</span>
-            : <span key={i} className={p.lead ? "tt-em tt-lead" : "tt-em"} style={{ "--h": hues.get(p.id) ?? 0 } as CSSProperties}>{p.lead && <i aria-hidden="true" />}{p.topic}</span>,
+            : <span key={i} className={p.lead ? "tt-em tt-lead" : "tt-em"}>{p.lead && <i aria-hidden="true" />}{p.topic}</span>,
       )}
     </p>
   );
 }
 
+/** One of the left column's stats: a faint icon, the number in mono, a muted label. */
+function TopicStat({ icon: Icon, value, label, hint }: { icon: typeof TagIcon; value: string; label: string; hint?: string }) {
+  return (
+    <div className="tt-stat" title={hint}>
+      <Icon className="tt-stat-icon" />
+      <dd>{value}</dd>
+      <dt>{label}</dt>
+    </div>
+  );
+}
+
+/** A bar row: a topic, or Other (`rest` set). */
+type TopicRow = { id: string; name: string; count: number; topic: TopicCount | null; rest?: TopicCount[] };
+
+/** The hovered or focused row's card: its numbers, kept inside the bars' box (right of the count, else under or over the row). */
+function TopicCard({ row, labeled, showAi, box, active }: { row: TopicRow; labeled: number; showAi: boolean; box: HTMLDivElement | null; active: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const card = ref.current;
+    const li = box?.querySelector<HTMLElement>(`[data-row="${CSS.escape(active)}"]`);
+    const end = li?.querySelector<HTMLElement>(".tt-value");
+    const fill = li?.querySelector<HTMLElement>(".tt-fill");
+    if (!box || !card || !end || !fill) return;
+    const b = box.getBoundingClientRect();
+    const e = end.getBoundingClientRect();
+    const f = fill.getBoundingClientRect();
+    const w = card.offsetWidth;
+    const h = card.offsetHeight;
+    const right = e.right - b.left + 12;
+    if (right + w <= b.width) {
+      const mid = f.top + f.height / 2 - b.top;
+      setAt({ left: right, top: Math.max(0, Math.min(mid - h / 2, b.height - h)) });
+      return;
+    }
+    // No room beside the bar: under the row (over it near the box's bottom), ending at the count.
+    const below = f.bottom - b.top + 12;
+    const above = f.top - b.top - 12 - h;
+    setAt({ left: Math.max(0, Math.min(e.right - b.left - w, b.width - w)), top: below + h <= b.height || above < 0 ? below : above });
+  }, [box, active]);
+  const t = row.topic;
+  const share = (n: number, of: number) => `${n.toLocaleString()} (${percent(of > 0 ? n / of : null)})`;
+  return (
+    <div ref={ref} className="tt-card" role="tooltip" style={at ? { left: at.left, top: at.top } : { visibility: "hidden" }}>
+      <span className="tt-card-name">{row.name}</span>
+      <span className="tt-card-row"><span>Chats</span><b>{share(row.count, labeled)}</b></span>
+      {t && showAi && (t.ai > 0 ? (
+        <>
+          <span className="tt-card-row"><span>Resolved by AI</span><b>{share(t.aiResolved, t.ai)}</b></span>
+          <span className="tt-card-row"><span>Handed off</span><b>{share(t.handedOff, t.ai)}</b></span>
+        </>
+      ) : <span className="tt-card-foot">No AI chats in this topic</span>)}
+      {row.rest ? (
+        <span className="tt-card-foot">{row.rest.map((r) => r.name).join(", ")}</span>
+      ) : (
+        <span className="tt-card-foot open">Open in inbox <ArrowRight /></span>
+      )}
+    </div>
+  );
+}
+
 /**
- * A-02: what visitors ask about, from the AI's topic labels (D-123, after a reference card): a written
- * line, one segmented bar (each topic in its map dot's colour, the rest as Other) and a legend grid.
- * Hovering a segment or an item lights the pair; either opens the inbox filtered by the topic.
- * `manage`: the Manage topics button sits here when there's no topic map above.
+ * A-02: what visitors ask about, from the AI's topic labels (D-125, after a ranked-bar reference): the
+ * written line and a few stats on the left, one bar per topic on the right in one blue (the top topic
+ * and the hovered or focused row strong, the rest soft, Other grey). Hovering or focusing a row shows
+ * its card; a row opens the inbox filtered by the topic. `manage`: the Manage topics button sits here
+ * when there's no topic map above.
  */
 function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: MetricsReport["topics"]; showAi: boolean; aiEnabled: boolean; manage: boolean; mapNote: string | null }) {
   const [active, setActive] = useState<string | null>(null);
-  const hues = useMemo(() => topicHues(topics.list), [topics.list]);
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
   const shown = topics.list.length <= MAX_TOPICS_SHOWN + 1 ? topics.list.length : MAX_TOPICS_SHOWN;
-  const top = topics.list.slice(0, shown);
   const rest = topics.list.slice(shown);
-  const other = rest.reduce((s, t) => s + t.count, 0);
-  // Topics sharing a hue on the map step in lightness, so neighbours in the bar and legend stay apart.
-  const shades = useMemo(() => hueShades(top.map((t) => t.id), hues), [top, hues]);
-  const tone = (id: string) => ({ "--h": hues.get(id) ?? 0, "--dl": shades.get(id) ?? 0 });
+  const rows: TopicRow[] = topics.list.slice(0, shown).map((t) => ({ id: t.id, name: t.name, count: t.count, topic: t }));
+  if (rest.length > 0) rows.push({ id: "other", name: `Other · ${rest.length} topics`, count: rest.reduce((s, t) => s + t.count, 0), topic: null, rest });
+  const max = Math.max(1, ...rows.map((r) => r.count));
   const insight = topicInsight(topics.list, topics.labeled, showAi);
-  // The AI's rate per topic shows on each item only when it differs between topics; one rate for all is a line.
-  const rates = new Set(top.flatMap((t) => (t.aiResolutionRate === null ? [] : [percent(t.aiResolutionRate)])));
-  const rateEach = showAi && rates.size > 1;
-  const oneRate = showAi && rates.size === 1 ? [...rates][0] : null;
+  // The AI's numbers across the labelled topics it answered in (the headline counts every AI chat).
+  const ai = topics.list.reduce((s, t) => ({ chats: s.chats + t.ai, resolved: s.resolved + t.aiResolved, handedOff: s.handedOff + t.handedOff }), { chats: 0, resolved: 0, handedOff: 0 });
   const href = (id: string) => `/inbox?topic=${encodeURIComponent(id)}`;
   const hover = (id: string) => ({
     onPointerEnter: () => setActive(id),
@@ -153,14 +211,14 @@ function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: Met
     onFocus: () => setActive(id),
     onBlur: () => setActive((a) => (a === id ? null : a)),
   });
-  const on = (id: string) => (active === null ? "" : active === id ? "on" : "off");
+  const activeRow = rows.find((r) => r.id === active) ?? null;
   return (
     <section className="dash-card top-topics">
       <div className="dash-card-head">
         <h2>Top topics</h2>
         {manage && <Button variant="outline" size="sm" onClick={openTopics}>Manage topics</Button>}
       </div>
-      {top.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="muted small">
           {!aiEnabled ? (
             <>
@@ -173,72 +231,83 @@ function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: Met
         </p>
       ) : (
         <>
-          <div className="tt-total">
-            <span className="tt-total-label">Labelled chats</span>
-            <span className="tt-total-n">{topics.labeled.toLocaleString()}</span>
+          <div className="tt-layout">
+            <div className="tt-side">
+              {insight && <Insight parts={insight} />}
+              <dl className="tt-stats">
+                <TopicStat icon={TagIcon} value={topics.list.length.toLocaleString()} label={topics.list.length === 1 ? "Topic" : "Topics"} />
+                <TopicStat icon={ChatIcon} value={topics.labeled.toLocaleString()} label="Labelled chats" />
+                {showAi && ai.chats > 0 && (
+                  <>
+                    <TopicStat icon={BotIcon} value={percent(ai.resolved / ai.chats)} label="Resolved by the AI" hint={`${ai.resolved} of the ${ai.chats} AI chats in these topics, resolved alone`} />
+                    <TopicStat icon={HandoffIcon} value={ai.handedOff.toLocaleString()} label="Handed off" hint={`${percent(ai.handedOff / ai.chats)} of the ${ai.chats} AI chats in these topics went to the team`} />
+                  </>
+                )}
+              </dl>
+            </div>
+            <div className="tt-bars" ref={setBox}>
+              <ol className="tt-rows">
+                {rows.map((r, i) => {
+                  const cls = `tt-row${i === 0 && r.topic ? " lead" : ""}${r.rest ? " other" : ""}${active === r.id ? " on" : ""}`;
+                  const inner = (
+                    <>
+                      <span className="tt-label" title={r.rest ? r.rest.map((x) => x.name).join(", ") : r.name}>{r.name}</span>
+                      <span className="tt-track">
+                        <span className="tt-fill"><span className="tt-share">{percent(r.count / topics.labeled)}</span></span>
+                        <span className="tt-value">{r.count.toLocaleString()}</span>
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={r.id} data-row={r.id} style={{ "--w": r.count / max } as CSSProperties}>
+                      {r.topic ? (
+                        <a className={cls} href={deskHref(href(r.id))} onClick={goTo(href(r.id))} aria-label={`${r.name}: ${r.count.toLocaleString()} chats, ${percent(r.count / topics.labeled)} of labelled chats. Open in inbox`} {...hover(r.id)}>{inner}</a>
+                      ) : (
+                        <div className={cls} {...hover(r.id)}>{inner}</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+              {activeRow && <TopicCard key={activeRow.id} row={activeRow} labeled={topics.labeled} showAi={showAi} box={box} active={activeRow.id} />}
+            </div>
           </div>
-          {insight && <Insight parts={insight} hues={hues} />}
-          <div
-            className={`tt-bar${active ? " has-on" : ""}`}
-            role="img"
-            aria-label={`Share of labelled chats: ${top.map((t) => `${t.name} ${percent(t.share)}`).join(", ")}${other > 0 ? `, other ${percent(other / topics.labeled)}` : ""}`}
-          >
-            {top.map((t) => (
-              <a
-                key={t.id}
-                href={deskHref(href(t.id))}
-                onClick={goTo(href(t.id))}
-                tabIndex={-1}
-                aria-hidden="true"
-                className={`tt-seg ${on(t.id)}`}
-                style={{ ...tone(t.id), flexGrow: t.count } as CSSProperties}
-                title={`${t.name}: ${t.count.toLocaleString()} chats, ${percent(t.share)}`}
-                {...hover(t.id)}
-              />
-            ))}
-            {other > 0 && (
-              <span className={`tt-seg other ${on("other")}`} style={{ flexGrow: other }} title={`Other: ${other.toLocaleString()} chats in ${rest.length} topics`} {...hover("other")} />
-            )}
-          </div>
-          <ul className="tt-legend">
-            {top.map((t) => (
-              <li key={t.id} className={on(t.id)} style={tone(t.id) as CSSProperties}>
-                <a href={deskHref(href(t.id))} onClick={goTo(href(t.id))} title={`Open the ${t.name} conversations in the inbox`} {...hover(t.id)}>
-                  <span className="tt-tick" aria-hidden="true" />
-                  <span className="tt-item">
-                    <span className="tt-name">{t.name}</span>
-                    <span className="tt-count">
-                      {t.count.toLocaleString()}
-                      {rateEach && t.aiResolutionRate !== null && <span className="tt-ai" title="Resolved by the AI alone, of this topic's AI chats">AI {percent(t.aiResolutionRate)}</span>}
-                    </span>
-                  </span>
-                  <span className="tt-pill">{percent(t.share)}</span>
-                </a>
-              </li>
-            ))}
-            {other > 0 && (
-              <li className={`other ${on("other")}`}>
-                <div {...hover("other")} title={rest.map((t) => t.name).join(", ")}>
-                  <span className="tt-tick" aria-hidden="true" />
-                  <span className="tt-item">
-                    <span className="tt-name">Other</span>
-                    <span className="tt-count">{other.toLocaleString()}</span>
-                  </span>
-                  <span className="tt-pill">{percent(other / topics.labeled)}</span>
-                </div>
-              </li>
-            )}
-          </ul>
           <p className="dash-foot">
-            Share of the {topics.labeled.toLocaleString()} labelled chats{rest.length > 0 ? ` (Other is ${rest.length} more topic${rest.length === 1 ? "" : "s"})` : ""}.
-            {rateEach && " AI % is how many of the topic's AI chats the AI resolved alone."}
-            {oneRate && ` The AI resolved ${oneRate} of each topic's AI chats alone.`}
+            Bars are chats per topic; the pill is the topic's share of the {topics.labeled.toLocaleString()} labelled chats. Hover or focus a topic for its numbers.
             {!aiEnabled && " New chats aren't labelled while AI replies are off."}
             {aiEnabled && topics.unlabeled > 0 && ` ${topics.unlabeled} chat${topics.unlabeled === 1 ? " isn't" : "s aren't"} labelled yet (still going, or quiet for less than a few minutes).`}
           </p>
           {mapNote && <p className="dash-foot">{mapNote}</p>}
         </>
       )}
+    </section>
+  );
+}
+
+/** Top topics while the report loads: the same columns and rows, the bars as skeletons. */
+function TopTopicsSkeleton() {
+  return (
+    <section className="dash-card top-topics" aria-hidden="true">
+      <div className="dash-card-head"><h2>Top topics</h2></div>
+      <div className="tt-layout">
+        <div className="tt-side">
+          <p className="tt-insight"><SkelText width="100%" /><br /><SkelText width="60%" /></p>
+          <dl className="tt-stats">
+            {["Topics", "Labelled chats"].map((label) => (
+              <div key={label} className="tt-stat"><span className="tt-stat-icon" /><dd><SkelText width="3ch" /></dd><dt>{label}</dt></div>
+            ))}
+          </dl>
+        </div>
+        <div className="tt-bars">
+          <ol className="tt-rows">
+            {[1, 0.72, 0.55, 0.4, 0.3].map((w, i) => (
+              <li key={i} style={{ "--w": w } as CSSProperties}>
+                <div className="tt-row"><span className="tt-label"><SkelText width={90} /></span><span className="tt-track"><span className="tt-fill skel" /></span></div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
     </section>
   );
 }
@@ -384,6 +453,7 @@ function DashboardSkeleton({ aiOff }: { aiOff: boolean }) {
           ))}
         </div>
       </section>
+      <TopTopicsSkeleton />
       <div className="dash-grid" aria-hidden="true">
         {[0, 1].map((i) => (
           <section key={i} className="dash-card">

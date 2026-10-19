@@ -5,7 +5,7 @@ import { chatScale, FIELD_BLOBS, labelWidth, mapHues, placeLabels, shortLabel, s
 // D-120: the topic map. One dot per topic: x = its chats (log when they spread widely), y = the share
 // of its AI chats the AI resolved alone (computeMetrics' rate). Behind the dots a grainy rainbow field
 // (blurred blobs + feTurbulence grain), laid out by meaning (web/lib/topic-map.ts FIELD_BLOBS); each
-// dot takes the hue under it (mapHues, shared with Top topics). Plain SVG at the measured width. A dot opens the inbox on its topic.
+// dot takes the hue under it (mapHues). Plain SVG at the measured width. A dot opens the inbox on its topic.
 
 const pct = (r: number) => `${Math.round(r * 100)}%`;
 
@@ -58,7 +58,7 @@ export default function TopicMap({ topics }: { topics: MapTopic[] }) {
   const ph = height - M.top - M.bottom;
   const scale = useMemo(() => chatScale(topics.map((t) => t.count), narrow ? 3 : 7), [topics, narrow]);
 
-  // Colours from the plot position on the wide scale (mapHues), so Top topics' bar matches them (D-123).
+  // Colours from the plot position on the wide scale (mapHues), so a dot's colour never changes with the screen.
   const hues = useMemo(() => mapHues(topics), [topics]);
   const dots = useMemo(() => {
     // Biggest first: they get the first pick of label places.

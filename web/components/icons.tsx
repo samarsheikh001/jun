@@ -51,6 +51,7 @@ import {
   SidebarLeft01Icon,
   SourceCodeIcon,
   SparklesIcon,
+  Tag01Icon,
   Sun03Icon,
   TextIcon as HugeTextIcon,
   ThumbsDownIcon as HugeThumbsDownIcon,
@@ -58,6 +59,7 @@ import {
   Tick02Icon,
   Upload04Icon,
   UserMultipleIcon,
+  UserSwitchIcon,
   Wrench01Icon,
 } from "@hugeicons/core-free-icons";
 import type { ComponentProps } from "react";
@@ -128,3 +130,6 @@ export const RageClickIcon = make(MousePointerClickIcon);
 export const DeadClickIcon = make(CursorDisabled01Icon);
 export const StuckIcon = make(HourglassIcon);
 export const ThumbsDownIcon = make(HugeThumbsDownIcon);
+// Reports' Top topics stats (D-125): topics, and chats handed to the team.
+export const TagIcon = make(Tag01Icon);
+export const HandoffIcon = make(UserSwitchIcon);

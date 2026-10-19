@@ -106,65 +106,15 @@ export function fieldHue(x: number, y: number): number {
 export const HUE_TICKS = 7;
 
 /**
- * Each mapped topic's dot colour (D-120, D-123): the field's hue at its plot position (chats on the
- * wide map's scale, the AI's rate). The map's dots and Top topics' bar both read their colours here.
+ * Each mapped topic's dot colour (D-120): the field's hue at its plot position (chats on the wide
+ * map's scale, the AI's rate). Only the map uses these; Top topics is one blue (D-125).
  */
 export function mapHues(topics: { id: string; count: number; rate: number }[]): Map<string, number> {
   const scale = chatScale(topics.map((t) => t.count), HUE_TICKS);
   return new Map(topics.map((t) => [t.id, fieldHue(scale.at(t.count), t.rate)]));
 }
 
-/** Hues closer than this (degrees) read as the same colour. */
-export const MIN_HUE_GAP = 24;
-
-const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
-const hashHue = (id: string) => {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return (h % 24) * 15;
-};
-
-/**
- * Every topic's hue (D-123): a mapped topic's dot colour; a topic with no AI chats (no map position)
- * gets a stable hue from its id, moved round the wheel to the first one at least MIN_HUE_GAP from the
- * hues already used (the closest it can get when none is free).
- */
-export function topicHues(list: TopicCount[]): Map<string, number> {
-  const out = mapHues(mapTopics(list));
-  for (const t of list) {
-    if (out.has(t.id)) continue;
-    const used = [...out.values()];
-    const start = hashHue(t.id);
-    let best = start;
-    let bestGap = -1;
-    for (let i = 0; i < 24; i++) {
-      const h = (start + i * 15) % 360;
-      const gap = used.length ? Math.min(...used.map((u) => hueGap(u, h))) : 360;
-      if (gap >= MIN_HUE_GAP) { best = h; break; }
-      if (gap > bestGap) { best = h; bestGap = gap; }
-    }
-    out.set(t.id, best);
-  }
-  return out;
-}
-
-export type LabelSide ="right" | "left" | "above" | "below";
-/** Lightness steps for topics sharing a hue (darker first, then lighter), so neighbours in a bar stay apart. */
-const SHADE_STEPS = [0, -0.14, 0.1, -0.24, 0.16, -0.32];
-
-/**
- * D-123: a lightness offset per topic, in the order given (biggest first): 0 for the first of each hue,
- * then SHADE_STEPS for each later topic within MIN_HUE_GAP of earlier ones. The hue itself never changes.
- */
-export function hueShades(ids: string[], hues: Map<string, number>): Map<string, number> {
-  const out = new Map<string, number>();
-  ids.forEach((id, i) => {
-    const h = hues.get(id) ?? 0;
-    const same = ids.slice(0, i).filter((o) => hueGap(hues.get(o) ?? 0, h) < MIN_HUE_GAP).length;
-    out.set(id, SHADE_STEPS[same % SHADE_STEPS.length]!);
-  });
-  return out;
-}
+export type LabelSide = "right" | "left" | "above" | "below";
 
 export interface LabelPoint {
   id: string;

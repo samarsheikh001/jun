@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { boxesMeet, chatScale, fieldHue, HUE_TICKS, hueShades, LABEL_GAP, mapHues, MIN_HUE_GAP, topicHues, labelBox, labelWidth, mapTopics, placeLabels, shortLabel, spreadDots } from "./topic-map.ts";
+import { boxesMeet, chatScale, fieldHue, HUE_TICKS, LABEL_GAP, mapHues, labelBox, labelWidth, mapTopics, placeLabels, shortLabel, spreadDots } from "./topic-map.ts";
 
 test("mapTopics: only topics with AI chats, with their rate", () => {
   const t = (id: string, rate: number | null) => ({ id, name: id, count: 4, share: 0.5, aiResolutionRate: rate, aiResolved: 1, ai: 2, handedOff: 1 });
@@ -78,23 +78,9 @@ test("spreadDots and shortLabel", () => {
   assert.equal(shortLabel("A very long topic name that goes on").length, 24);
 });
 
-test("mapHues / topicHues: the map's dot colour, and distinct stable hues for topics off the map", () => {
-  const t = (id: string, count: number, rate: number | null) => ({ id, name: id, count, share: 0.1, aiResolutionRate: rate, aiResolved: 1, ai: rate === null ? 0 : 2, handedOff: 1 });
-  const list = [t("a", 40, 0.2), t("b", 12, 0.9), t("c", 9, null), t("d", 5, null)];
+test("mapHues: the map's dot colour is the field's hue at its plot position", () => {
   const scale = chatScale([40, 12], HUE_TICKS);
-  const hues = topicHues(list);
+  const hues = mapHues([{ id: "a", count: 40, rate: 0.2 }, { id: "b", count: 12, rate: 0.9 }]);
   assert.equal(hues.get("a"), fieldHue(scale.at(40), 0.2));
-  assert.equal(hues.get("b"), mapHues([{ id: "b", count: 12, rate: 0.9 }, { id: "a", count: 40, rate: 0.2 }]).get("b"));
-  const gap = (x: number, y: number) => Math.min(Math.abs(x - y), 360 - Math.abs(x - y));
-  for (const id of ["c", "d"]) for (const other of ["a", "b", "c", "d"]) if (other !== id) assert.ok(gap(hues.get(id)!, hues.get(other)!) >= MIN_HUE_GAP, `${id} vs ${other}`);
-  assert.deepEqual(topicHues(list), hues);
-});
-
-test("hueShades: the first of each hue keeps its lightness, later ones of the same hue step away", () => {
-  const hues = new Map([["a", 150], ["b", 222], ["c", 152], ["d", 160]]);
-  const s = hueShades(["a", "b", "c", "d"], hues);
-  assert.equal(s.get("a"), 0);
-  assert.equal(s.get("b"), 0);
-  assert.notEqual(s.get("c"), 0);
-  assert.notEqual(s.get("d"), s.get("c"));
+  assert.equal(hues.get("b"), fieldHue(scale.at(12), 0.9));
 });

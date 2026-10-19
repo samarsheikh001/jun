@@ -1,12 +1,12 @@
 import type { TopicCount } from "../../shared/metrics.ts";
 
-// D-123: the sentence over Top topics' bar, written from the numbers (no AI call). Pure: a list of
-// parts the page draws, topic names and numbers emphasised, the top topic in its own colour.
+// D-123: the sentence beside Top topics' bars (D-125), written from the numbers (no AI call). Pure: a
+// list of parts the page draws, topic names and numbers emphasised, the top topic in its bar's blue.
 
 export type InsightPart =
   | string
   | { strong: string }
-  /** A topic's name; `lead` marks the top topic, drawn in its colour with a dot. */
+  /** A topic's name; `lead` marks the top topic, drawn in its bar's strong blue with a dot. */
   | { topic: string; id: string; lead?: boolean };
 
 /** A topic needs this many AI chats before the sentence says how well the AI does on it. */

@@ -1899,39 +1899,79 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .tm-tip-foot { margin-top: 2px; font-size: 11px; color: var(--muted-foreground); }
 @keyframes tm-in { from { transform: scale(0); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .tm-mark { animation: none; transition: none; } }
-/* Top topics (D-123): a written line, one segmented bar and a legend grid; each topic in its map dot's
-   colour (--h through the --tm-dot-* tokens), Other a neutral grey. */
-:root { --tt-text-l: 0.52; --tt-pill: var(--background); }
-:root[data-theme="dark"] { --tt-text-l: 0.8; --tt-pill: color-mix(in oklch, var(--foreground) 8%, transparent); }
-/* The map dot's colour; --dl steps the lightness of topics that share a hue (hueShades). */
-.tt-seg, .tt-legend li { --tt-c: oklch(clamp(0.3, calc(var(--tm-dot-l) + var(--dl, 0)), 0.9) var(--tm-dot-c) var(--h)); }
-.tt-total { display: grid; gap: 2px; margin-top: 6px; }
-.tt-total-label { font-size: 13px; color: var(--muted-foreground); }
-.tt-total-n { font: 500 32px/1.1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-.tt-insight { max-width: 64ch; margin: 12px 0 18px; font-size: 15px; line-height: 1.55; color: var(--muted-foreground); text-wrap: pretty; }
+/* Top topics (D-125, after a ranked-bar reference): the written line and stats on the left, a bar per topic
+   on the right in the AI blue (--stream-*): soft at rest, strong for the top topic and the hovered or
+   focused row, Other a neutral grey. Each bar's share is a pill on its bottom-left edge. */
+:root {
+  --tt-pill: var(--background);
+  --tt-soft: linear-gradient(90deg, color-mix(in oklch, var(--stream-0) 38%, var(--background)), color-mix(in oklch, var(--stream-0) 78%, var(--background)));
+  --tt-strong: linear-gradient(90deg, var(--stream-1), var(--stream-2));
+  --tt-other: color-mix(in oklch, var(--muted-foreground) 20%, transparent);
+  --tt-other-on: color-mix(in oklch, var(--muted-foreground) 42%, transparent);
+  --tt-bar-pill: var(--popover);
+}
+:root[data-theme="dark"] {
+  --tt-pill: color-mix(in oklch, var(--foreground) 8%, transparent);
+  --tt-soft: linear-gradient(90deg, color-mix(in oklch, var(--stream-0) 40%, var(--background)), color-mix(in oklch, var(--stream-0) 85%, var(--background)));
+  --tt-strong: linear-gradient(90deg, var(--stream-1), var(--stream-2));
+  --tt-other: color-mix(in oklch, var(--muted-foreground) 18%, transparent);
+  --tt-other-on: color-mix(in oklch, var(--muted-foreground) 34%, transparent);
+  --tt-bar-pill: hsl(70 6% 16%);
+}
+.tt-layout { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); align-items: start; gap: 24px 48px; margin-top: 10px; }
+.tt-side { min-width: 0; }
+.tt-insight { max-width: 64ch; margin: 0 0 20px; font-size: 15px; line-height: 1.55; color: var(--muted-foreground); text-wrap: pretty; }
 .tt-em { color: var(--foreground); font-weight: 560; }
-.tt-lead { color: oklch(var(--tt-text-l) var(--tm-dot-c) var(--h)); white-space: nowrap; }
-.tt-lead i { display: inline-block; width: 8px; height: 8px; margin: 0 5px 0 1px; border-radius: 50%; vertical-align: 0.05em; background: oklch(var(--tm-dot-l) var(--tm-dot-c) var(--h)); }
-.tt-bar { display: flex; gap: 3px; height: 20px; padding: 3px; border-radius: 10px; background: color-mix(in oklch, var(--foreground) 6%, transparent); }
-.tt-seg { flex: 1 1 0; min-width: 6px; border-radius: 6px; background: var(--tt-c); transition: opacity 0.15s; cursor: pointer; }
-.tt-seg.other { cursor: default; background: color-mix(in oklch, var(--muted-foreground) 45%, transparent); }
-.tt-seg.off, .tt-legend li.off { opacity: 0.32; }
-.tt-legend { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; margin: 14px 0 0; padding: 6px; border-radius: 16px; background: var(--muted); }
-.tt-legend li { min-width: 0; transition: opacity 0.15s; }
-.tt-legend li > * { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: 11px; color: var(--foreground); text-decoration: none; transition: background-color 0.15s; }
-.tt-legend a:hover, .tt-legend li.on > a { background: var(--tt-pill); }
-.tt-legend a:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-.tt-tick { flex: none; align-self: stretch; width: 3px; min-height: 32px; border-radius: 2px; background: var(--tt-c); }
-.tt-legend li.other .tt-tick { background: color-mix(in oklch, var(--muted-foreground) 45%, transparent); }
-.tt-item { flex: 1; display: grid; gap: 1px; min-width: 0; }
-.tt-name { overflow: hidden; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
-.tt-count { display: flex; align-items: baseline; gap: 8px; font: 500 15px/20px var(--font-mono); font-variant-numeric: tabular-nums; }
-.tt-ai { font: 11px var(--font-mono); color: var(--muted-foreground); white-space: nowrap; }
+.tt-lead { color: var(--stream-2); white-space: nowrap; }
+.tt-lead i { display: inline-block; width: 8px; height: 8px; margin: 0 5px 0 1px; border-radius: 50%; vertical-align: 0.05em; background: var(--tt-strong); }
+.tt-stats { display: grid; gap: 12px; margin: 0; }
+.tt-stat { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tt-stat-icon { flex: none; display: inline-block; width: 16px; height: 16px; color: var(--muted-foreground); opacity: 0.6; }
+.tt-stat dd { margin: 0; font: 600 15px/20px var(--font-mono); font-variant-numeric: tabular-nums; }
+.tt-stat dt { overflow: hidden; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
+.tt-bars { position: relative; min-width: 0; }
+.tt-rows { list-style: none; display: grid; gap: 14px; margin: 0; padding: 0; }
+.tt-row { display: grid; grid-template-columns: 148px minmax(0, 1fr); align-items: center; gap: 14px; border-radius: 8px; color: var(--foreground); text-decoration: none; }
+.tt-row:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+.tt-label { overflow: hidden; font-size: 13px; color: var(--muted-foreground); text-align: right; white-space: nowrap; text-overflow: ellipsis; transition: color 0.15s; }
+.tt-row.lead .tt-label, .tt-row.on .tt-label { color: var(--foreground); }
+.tt-track { display: flex; align-items: center; min-width: 0; height: 26px; }
+/* A pill, as Pages' and Struggles' AI rates use it. */
 .tt-pill { flex: none; padding: 3px 8px; border-radius: 999px; font: 500 12px/16px var(--font-mono); font-variant-numeric: tabular-nums; background: var(--tt-pill); }
-.tt-legend a:hover .tt-pill, .tt-legend li.on .tt-pill { background: var(--muted); }
-@media (max-width: 560px) { .tt-legend { grid-template-columns: minmax(0, 1fr); } }
-@media (prefers-reduced-motion: reduce) { .tt-seg, .tt-legend li, .tt-legend li > * { transition: none; } }
-/* Pages where chats start (D-124): Top topics' soft panel; a row is the path, a sparkline of chats per day
+/* The bar leaves 64px for the count; the count moves right of the pill when the bar is shorter than it. */
+.tt-fill { position: relative; flex: none; width: calc(var(--w) * (100% - 64px)); min-width: 4px; height: 26px; border-radius: 6px; background: var(--tt-soft); }
+.tt-fill::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--tt-strong); opacity: 0; transition: opacity 0.15s; }
+.tt-row.lead .tt-fill::before, .tt-row.on .tt-fill::before { opacity: 1; }
+.tt-row.other .tt-fill { background: var(--tt-other); }
+.tt-row.other .tt-fill::before { background: var(--tt-other-on); }
+.tt-fill.skel { background: var(--muted); animation: skel-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.tt-fill.skel::before { content: none; }
+.tt-share {
+  position: absolute; z-index: 1; left: 6px; bottom: -8px; padding: 0 6px; border-radius: 999px; background: var(--tt-bar-pill); color: var(--foreground);
+  font: 500 10px/16px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 0 0 1px color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.tt-value { flex: none; margin-left: max(8px, calc(52px - var(--w) * (100% - 64px))); font: 500 12px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.tt-row.lead .tt-value, .tt-row.on .tt-value { color: var(--foreground); }
+.tt-card {
+  position: absolute; z-index: 3; display: grid; gap: 4px; min-width: 210px; padding: 10px 12px; border-radius: 10px;
+  background: var(--popover); color: var(--popover-foreground); pointer-events: none; font-size: 13px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.tt-card-name { overflow: hidden; max-width: 260px; margin-bottom: 2px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.tt-card-row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted-foreground); }
+.tt-card-row b { font: 500 13px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--foreground); }
+.tt-card-foot { max-width: 260px; margin-top: 2px; font-size: 11px; color: var(--muted-foreground); }
+.tt-card-foot.open { display: flex; align-items: center; gap: 4px; color: var(--stream-2); font-weight: 560; }
+.tt-card-foot.open svg { width: 12px; height: 12px; }
+@media (max-width: 800px) { .tt-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) {
+  .tt-rows { gap: 16px; }
+  .tt-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tt-label { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { .tt-fill::before, .tt-label { transition: none; } .tt-fill.skel { animation: none; } }
+/* Pages where chats start (D-124): a soft panel; a row is the path, a sparkline of chats per day
    in the AI blue, the AI's rate as a pill and the count in mono. Groups open with a chevron. */
 .pg-list, .pg-children { list-style: none; margin: 0; padding: 0; }
 .pg-list { display: grid; gap: 2px; margin-top: 10px; padding: 6px; border-radius: 16px; background: var(--muted); }
