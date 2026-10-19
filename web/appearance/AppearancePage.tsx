@@ -66,14 +66,14 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
         aside={<InstallChip install={install} />}
         actions={
           <>
-            {panel === "appearance" && (
-              <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
-                <TabsList className="kb-tabs agent-view-switch" aria-label="View">
-                  <TabsTrigger value="form">Form</TabsTrigger>
-                  <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            )}
+            {/* On both panels (D-122): desk.yaml holds the look and the behaviour, and a switch that came
+                and went moved Preview and Install. */}
+            <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
+              <TabsList className="kb-tabs agent-view-switch" aria-label="View">
+                <TabsTrigger value="form">Form</TabsTrigger>
+                <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
+              </TabsList>
+            </Tabs>
             {widgetKey && (
               <a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer" title="The saved widget on a test page, in a new tab">Preview</a>
             )}
@@ -84,7 +84,7 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
           value: "widget",
           label: "Playground",
           path: "/playground",
-          content: code && panel === "appearance"
+          content: code
             ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} />
             : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} panel={panel} />,
         }]}
