@@ -2540,8 +2540,7 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
     height: 100dvh; padding: 8px; background: var(--sidebar);
   }
   .home-main-col, .home-ask { min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); }
-  /* The digest sits on faint diagonal lines, as in the reference. */
-  .home-main-col { overflow: auto; padding: 40px 32px; background: repeating-linear-gradient(135deg, transparent 0 9px, color-mix(in oklch, var(--border) 55%, transparent) 9px 10px), var(--background); }
+  .home-main-col { overflow: auto; padding: 40px 32px; }
   .home-ask { display: flex; flex-direction: column; margin: 0; padding: 0; overflow: hidden; }
   .home-ask .home-chat, .home-ask .home-chat.empty { flex: 1; height: auto; min-height: 0; margin: 0; border: 0; border-radius: 0; background: transparent; }
   /* An empty thread keeps its starters and composer at the bottom, where the conversation will be. */
