@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import {
   MAX_ATTACHMENTS,
   MAX_MESSAGE_LENGTH,
+  replySignalDelay,
   SOCKET_PROTOCOL,
   type AiStep,
   type Attachment,
@@ -139,6 +140,9 @@ export class Conversation extends DurableObject<Env> {
   /** D-51: cards with a field change running, and when each last ran one. */
   #changing = new Set<string>();
   #changedAt = new Map<string, number>();
+  /** D-128: when the last `reply` signal went to the visitor's loader, and whether one is waiting. */
+  #signaledAt = 0;
+  #signalPending = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -700,6 +704,7 @@ ${email.body}`;
     this.#broadcast({ type: "message", message }, { agentsOnly: internal });
     this.ctx.waitUntil(this.#publish(ref));
     if (!internal && (input.authorType === "agent" || input.authorType === "ai")) this.#scheduleEmail();
+    if (!internal && input.authorType !== "visitor") this.ctx.waitUntil(this.#signalVisitor(ref));
     return { message, created: true };
   }
 
@@ -1350,6 +1355,28 @@ ${email.body}`;
   }
 
   // ---------- fan-out ----------
+
+  /**
+   * D-128: tells the visitor's loader (live socket on the hub) that this chat has a new public reply,
+   * so a frame that isn't showing it (ended with ×, or the window's list) refetches its list. At most
+   * one per REPLY_SIGNAL_GAP_MS, with a trailing one for the end of a burst. Never throws.
+   */
+  async #signalVisitor(ref: ConversationRef): Promise<void> {
+    if (this.#signalPending) return;
+    this.#signalPending = true;
+    try {
+      const wait = replySignalDelay(this.#signaledAt, Date.now());
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      this.#signaledAt = Date.now();
+      this.#signalPending = false;
+      const row = await this.env.DB.prepare("SELECT contact_id FROM conversations WHERE id = ?").bind(ref.conversationId).first<{ contact_id: string | null }>();
+      if (row?.contact_id) await this.env.WORKSPACE_HUB.getByName(ref.workspaceId).replied(row.contact_id, ref.conversationId);
+    } catch (error) {
+      console.warn("reply signal failed", error);
+    } finally {
+      this.#signalPending = false;
+    }
+  }
 
   async #publish(ref: ConversationRef): Promise<void> {
     const conversation = await loadSummary(this.env.DB, ref.conversationId);

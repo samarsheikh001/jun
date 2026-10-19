@@ -303,11 +303,14 @@
     sid = session().id;
     if (counted != sid) counted = sid, count(); // this page, once per session (not on reconnects)
     var ws = live = new WebSocket(origin.replace(/^http/, "ws") + "/api/widget/" + encodeURIComponent(key) + "/live?s=" + sid);
-    ws.onopen = function () { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); };
+    // D-128: jun:live lets the frame link this socket to its chats (it holds the visitor token).
+    ws.onopen = function () { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); post({ type: "jun:live", sessionId: sid }); };
     ws.onmessage = function (e) {
       var m; try { m = JSON.parse(e.data); } catch (x) { return; }
       // V-07: a teammate started a chat from the desk's visitor list.
       if (m.t == "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from });
+      // D-128: a reply in one of this browser's chats (just its id): the frame refetches its list.
+      if (m.t == "reply") post({ type: "jun:reply", id: m.conversationId });
     };
     // Reconnect with backoff, unless this socket was replaced or dropped on purpose.
     ws.onclose = function () { if (live != ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };

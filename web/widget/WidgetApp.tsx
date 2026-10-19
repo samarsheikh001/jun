@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { MAX_CSAT_COMMENT, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
+import { mergeConversations } from "../lib/conversation-list.ts";
+import { MAX_CSAT_COMMENT, replySignalId, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
 import { islandPalette, logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
@@ -308,6 +309,12 @@ function hostContext(): Promise<{ context?: unknown; actions?: unknown }> {
 }
 const unread = (c: ConversationSummary) => c.lastMessageAuthor === "agent" && c.lastSeq > c.visitorReadSeq;
 
+/** This browser's conversations (newest first), with the ongoing chat's island line. */
+async function fetchConversations(api: WidgetApi): Promise<ConversationSummary[]> {
+  return (await api.call<{ conversations: ConversationSummary[] }>("/conversations")).conversations;
+}
+
+
 interface WidgetConfig extends WidgetLook {
   ai: boolean;
   /** AI-32: the desk's choice before page control acts (only "allow-always" offers Always allow). */
@@ -451,6 +458,30 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [identityVersion, setIdentityVersion] = useState(0);
   /** A returning visitor's conversations are loading: skeleton, not the new-chat greeting it may jump from. */
   const [restoring, setRestoring] = useState(() => Boolean(api.token));
+  /** D-128: bumped each time the loader's live socket (re)opens, to link it to this browser's chats again. */
+  const [liveOpens, setLiveOpens] = useState(0);
+  const liveOpenCount = useRef(0);
+  const listFetchedAt = useRef(0);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /**
+   * D-128: refetch the list (debounced) after the loader's `jun:reply`, a socket reconnect or the tab
+   * showing again. The seenSeq effect below then un-ends and opens a chat with a new team reply, and
+   * `jun:unread` updates the window's badge.
+   */
+  const refreshConversations = useCallback(() => {
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      const token = api.token;
+      if (!token) return;
+      listFetchedAt.current = Date.now();
+      fetchConversations(api).then(
+        (list) => {
+          if (api.token === token) setConversations((prev) => mergeConversations(prev, list));
+        },
+        () => {},
+      );
+    }, 300);
+  }, [api]);
 
   useEffect(() => {
     api.call<WidgetConfig>("/config").then(
@@ -466,16 +497,17 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       return;
     }
     let live = true;
-    api.call<{ conversations: ConversationSummary[] }>("/conversations").then(
-      (r) => {
-        setConversations(r.conversations);
+    listFetchedAt.current = Date.now();
+    fetchConversations(api).then(
+      (list) => {
+        setConversations(list);
         // Go straight back into an ongoing conversation.
         // (Not one the visitor ended with the island's ×, D-46, unless the team has replied there
         // since: that one is un-ended and opened, so the pill says "New reply from …".)
         const ended = readEnded(api.key);
-        const replied = r.conversations.filter((c) => ended.includes(c.id) && unread(c));
+        const replied = list.filter((c) => ended.includes(c.id) && unread(c));
         for (const c of replied) unEnd(api.key, c.id);
-        const active = replied[0] ?? r.conversations.find((c) => c.status !== "resolved" && !ended.includes(c.id));
+        const active = replied[0] ?? list.find((c) => c.status !== "resolved" && !ended.includes(c.id));
         setView((v) => (active && !(v.kind === "thread" && (v.id || v.opener || v.intent || v.first || v.human)) ? { kind: "thread", id: active.id } : v));
         // AI-20 hard rule (D-37): an intent's exit button stays for the whole conversation, so after a
         // reload the chat gets its intent back (the host's onExit can't come back: the button then
@@ -545,6 +577,14 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
         if (typeof data.sessionId === "string") setSessionId(data.sessionId);
       }
+      // D-128: the loader's live socket opened (again): link it to this browser's chats, and catch up
+      // on replies missed while it was down (not on the first open: the list was just loaded).
+      if (data?.type === "jun:live" && !preview) {
+        if (typeof data.sessionId === "string") setSessionId(data.sessionId);
+        if (liveOpenCount.current++ > 0) refreshConversations();
+        setLiveOpens((n) => n + 1);
+      }
+      if (replySignalId(data) && !preview) refreshConversations();
       // AI-32: a run's click loaded this page: open the chat so the run goes on here (the thread closes
       // the cut-off step and the next one starts), instead of waiting for the visitor to open it.
       if (data?.type === "jun:session" && !preview && runCutShort()) postToHost({ type: "jun:open" });
@@ -589,7 +629,24 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     // Only now can we hear the loader's reply, so ask for the current state.
     postToHost({ type: "jun:ready" });
     return () => window.removeEventListener("message", onMessage);
-  }, [api]);
+  }, [api, refreshConversations]);
+
+  // D-128: the hub sends `reply` signals to the loader's live socket of the contact a chat belongs
+  // to; only this frame holds the visitor token, so it tells the server which session is it.
+  useEffect(() => {
+    if (preview || !sessionId || !api.token) return;
+    void api.call("/live/link", { body: { sessionId } }).catch(() => undefined);
+  }, [api, sessionId, identityVersion, liveOpens]);
+
+  // D-128: back on a tab that was hidden for a while: replies may have landed while the socket slept.
+  useEffect(() => {
+    if (preview) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - listFetchedAt.current > 30_000) refreshConversations();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshConversations]);
 
   // Before paint: the island sizes its frame before paint too, and its first paint must already
   // be on the transparent page (html.island), not the plain white one.

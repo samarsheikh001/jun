@@ -329,6 +329,19 @@ widget.get("/widget/:key/live", async (c) => {
   });
 });
 
+// D-128: the frame (which holds the visitor token; the loader doesn't) links the loader's live
+// session to its contact, so the hub can tell that socket when a reply lands in one of the
+// contact's chats. Sent when the session id arrives and each time the loader's socket (re)opens.
+widget.post("/widget/:key/live/link", async (c) => {
+  const inbox = await widgetInbox(c);
+  const { contactId } = await visitor(c, inbox);
+  const body = await readJson(c.req);
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new HttpError(400, "invalid_field", "Bad session id.");
+  await c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).linkContact(sessionId, contactId);
+  return c.json({ ok: true });
+});
+
 widget.get("/widget/:key/conversations", async (c) => {
   const inbox = await widgetInbox(c);
   const { contactId } = await visitor(c, inbox);

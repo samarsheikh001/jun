@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { MAX_SEEN_PAGE_ACTIONS, type SeenPageAction } from "../shared/actions.ts";
 import { ChatGPTAuth, type ChatGPTCredentials, type CredentialStore } from "@jun/llm";
 import { pickAssignee } from "../shared/inbox.ts";
+import { takeTurn } from "../shared/desk-assistant.ts";
 import { notificationPayload, notificationRecipients, readNotificationPrefs, type NotificationEvent, type NotificationPayload } from "../shared/notifications.ts";
 import { SOCKET_PROTOCOL, type HubClientEvent, type HubEvent, type LiveClientEvent, type LiveServerEvent, type LiveVisitor, type PresenceEntry, type Utm } from "../shared/protocol.ts";
 import { upsertIdentified } from "./lib/contacts.ts";
@@ -27,6 +28,12 @@ interface VisitorAttachment {
   kind: "visitor";
   inboxId: string;
   visitor: LiveVisitor;
+  /**
+   * D-128: the contact this browser's frame chats as, for `reply` signals. Set when the frame links
+   * the session with its visitor token (`linkContact`), a chat starts (`linkSession`) or identify
+   * succeeds here. Socket tags can't change after accept, so this lives in the attachment.
+   */
+  cid?: string;
   /** Epoch ms; with the last ping, how we tell a live socket from a dead one. */
   connectedAt: number;
 }
@@ -406,6 +413,22 @@ export class WorkspaceHub extends DurableObject<Env> {
     return true;
   }
 
+  /**
+   * RPC (I-19): may this member ask Home's assistant (or refresh the brief) now? Counted here, so
+   * two tabs share one limit (ASK_LIMITS: a burst and a daily cap); the wait when it's no.
+   */
+  async takeAssistantTurn(userId: string): Promise<{ ok: boolean; retryAfterMs: number }> {
+    const key = `assistant:turns:${userId}`;
+    const result = takeTurn((await this.ctx.storage.get<number[]>(key)) ?? [], Date.now());
+    await this.ctx.storage.put(key, result.times);
+    return { ok: result.ok, retryAfterMs: result.retryAfterMs };
+  }
+
+  /** RPC (I-19): the visitors on the site now (one row per session), for Home's assistant. Agents only. */
+  async liveVisitors(): Promise<LiveVisitor[]> {
+    return this.#visitors();
+  }
+
   /** RPC (W-08): is any teammate's dashboard open? Visitors only ever get this yes/no. */
   async agentsOnline(): Promise<boolean> {
     return this.#live("agent").length > 0;
@@ -423,9 +446,36 @@ export class WorkspaceHub extends DurableObject<Env> {
     for (const [ws, a] of this.#live<VisitorAttachment>(`s:${sessionId}`)) {
       a.visitor.inChat = true;
       a.visitor.contact ??= { id: contactId, name: null, email: null, verified: false };
+      a.cid = contactId;
       ws.serializeAttachment(a);
       this.#broadcast(JSON.stringify({ type: "visitor", visitor: a.visitor } satisfies HubEvent));
     }
+  }
+
+  /**
+   * RPC (D-128): the frame proved it chats as this contact (the Worker checked its visitor token), so
+   * this session's live sockets get `reply` signals for the contact's conversations.
+   */
+  async linkContact(sessionId: string, contactId: string): Promise<void> {
+    for (const [ws, a] of this.#live<VisitorAttachment>(`s:${sessionId}`)) {
+      if (a.cid === contactId) continue;
+      a.cid = contactId;
+      ws.serializeAttachment(a);
+    }
+  }
+
+  /**
+   * RPC (D-128): a public reply landed in one of this contact's conversations. Only "it changed":
+   * the frame refetches its list with its own token. False when no live socket is linked to them.
+   */
+  async replied(contactId: string, conversationId: string): Promise<boolean> {
+    let sent = false;
+    for (const [ws, a] of this.#live<VisitorAttachment>("visitor")) {
+      if (a.cid !== contactId) continue;
+      this.#send(ws, { t: "reply", conversationId } satisfies LiveServerEvent);
+      sent = true;
+    }
+    return sent;
   }
 
   override async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
@@ -466,6 +516,7 @@ export class WorkspaceHub extends DurableObject<Env> {
       this.#send(ws, { t: "id", ok: result.ok, ...(result.ok ? {} : { error: result.error }) } satisfies LiveServerEvent);
       if (!result.ok) return;
       v.contact = { ...result.contact, verified: true };
+      a.cid = result.contact.id;
     } else {
       return;
     }

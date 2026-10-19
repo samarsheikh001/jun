@@ -155,6 +155,7 @@ await step("the live socket identifies the visitor (bad tokens are refused)", as
 });
 
 let inviteId = "";
+let inviteChat = "";
 
 await step("an agent starts a chat with a live visitor: the invite reaches only their page", async () => {
   const res = await agent.call(`/workspaces/${workspaceId}/visitors/${SESSION}/invite`, { body: { body: "Hi Ada! Anything I can help with on billing?" } });
@@ -170,6 +171,7 @@ await step("replying to the invite starts a conversation with the agent, assigne
   const conversation = await startConversation(ada, "Yes please, my invoice looks wrong", { inviteId, sessionId: SESSION });
   assert.equal(conversation.handling, "human");
   assert.ok(conversation.assigneeId, "assigned to the inviting agent");
+  inviteChat = conversation.id;
   const messages = (await agent.call(`/conversations/${conversation.id}`)).json.messages;
   assert.deepEqual(messages.map((m: { authorType: string }) => m.authorType), ["agent", "visitor"]);
   assert.equal(messages[0].body, "Hi Ada! Anything I can help with on billing?");
@@ -179,6 +181,49 @@ await step("replying to the invite starts a conversation with the agent, assigne
   const again = await startConversation(ada, "another one", { inviteId, sessionId: SESSION });
   const againMessages = (await agent.call(`/conversations/${again.id}`)).json.messages;
   assert.deepEqual(againMessages.map((m: { authorType: string }) => m.authorType), ["visitor"]);
+});
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const replies = (socket: TestSocket) => socket.events.filter((e) => e.t === "reply").length;
+
+await step("D-128: a public reply signals the visitor's live socket (only the chat's id); a note doesn't", async () => {
+  await sleep(2500); // past the throttle window of the invite's own signal
+  live.events.length = 0;
+  const note = await agent.call(`/conversations/${inviteChat}/messages`, { body: { body: "internal: check her invoice", internal: true } });
+  assert.equal(note.status, 200);
+  await sleep(2500);
+  assert.equal(replies(live), 0, "an internal note sends no signal");
+  assert.equal((await agent.call(`/conversations/${inviteChat}/messages`, { body: { body: "Found it, fixing now" } })).status, 200);
+  const signal = await live.next((e) => e.t === "reply");
+  assert.deepEqual(signal, { t: "reply", conversationId: inviteChat });
+  // A burst: one signal now, at most one trailing one for the rest.
+  await sleep(2500);
+  live.events.length = 0;
+  for (const body of ["one", "two", "three"]) await agent.call(`/conversations/${inviteChat}/messages`, { body: { body } });
+  await live.next((e) => e.t === "reply");
+  await sleep(3000);
+  assert.ok(replies(live) <= 1, `at most one trailing signal, got ${replies(live) + 1} in all`);
+});
+
+await step("D-128: an anonymous frame links its session; other visitors' sockets hear nothing", async () => {
+  live.events.length = 0;
+  const { token } = await newVisitor();
+  const chat = await startConversation(token, "Anonymous question");
+  const session = `e2e${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
+  const mine = new TestSocket(`/api/widget/${widgetKey}/live?s=${session}`, { headers: { Origin: "https://customer.example" } });
+  const other = new TestSocket(`/api/widget/${widgetKey}/live?s=x${session}`, { headers: { Origin: "https://customer.example" } });
+  await Promise.all([mine.opened, other.opened]);
+  const link = (body: unknown, headers: Record<string, string>) => new Client().call(`/widget/${widgetKey}/live/link`, { body, headers });
+  assert.equal((await link({ sessionId: session }, {})).status, 401, "needs the visitor token");
+  assert.equal((await link({ sessionId: "bad" }, { "X-Visitor-Token": token })).status, 400);
+  assert.equal((await link({ sessionId: session }, { "X-Visitor-Token": token })).status, 200);
+  assert.equal((await agent.call(`/conversations/${chat.id}/messages`, { body: { body: "Hello there" } })).status, 200);
+  assert.deepEqual(await mine.next((e) => e.t === "reply"), { t: "reply", conversationId: chat.id });
+  await sleep(500);
+  assert.equal(replies(other), 0);
+  assert.equal(replies(live), 0, "Ada's socket doesn't hear another contact's chat");
+  mine.close();
+  other.close();
 });
 
 await step("when the visitor leaves, agents see them go", async () => {

@@ -241,10 +241,33 @@ export type LiveClientEvent =
   | { t: "page"; url: string; title?: string; ref?: string; utm?: Utm | null; pages?: number; start?: number; lang?: string; tz?: string }
   | { t: "id"; token: string };
 
-/** Hub → loader. */
+/**
+ * Hub → loader. D-128: `reply` says only that a public agent/AI/system message landed in one of
+ * this browser's conversations (no text, no author); the loader passes it to the frame as
+ * `jun:reply`, which refetches its list. Sent to sockets linked to the conversation's contact.
+ */
 export type LiveServerEvent =
   | { t: "invite"; id: string; body: string; from: string }
-  | { t: "id"; ok: boolean; error?: string };
+  | { t: "id"; ok: boolean; error?: string }
+  | { t: "reply"; conversationId: string };
+
+/** D-128: at most one `reply` signal per conversation in this window (streaming AI turns, bursts). */
+export const REPLY_SIGNAL_GAP_MS = 2000;
+
+/**
+ * D-128: how long to wait before the next `reply` signal: 0 sends now, else the time left in the
+ * window since the last one (a trailing signal, so the last message of a burst is never missed).
+ */
+export function replySignalDelay(lastSentAt: number, now: number, gapMs = REPLY_SIGNAL_GAP_MS): number {
+  return Math.max(0, lastSentAt + gapMs - now);
+}
+
+/** D-128: the conversation id in a loader's `jun:reply` message, or null when it isn't one. */
+export function replySignalId(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const m = data as Record<string, unknown>;
+  return m.type === "jun:reply" && typeof m.id === "string" && /^[\w-]{1,64}$/.test(m.id) ? m.id : null;
+}
 
 /** WebSocket subprotocol. Visitors send their token as a second subprotocol value. */
 export const SOCKET_PROTOCOL = "jun";
