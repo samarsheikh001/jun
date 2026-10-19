@@ -2589,6 +2589,16 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .ask-starter { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms; }
 .ask-starter:hover { background: var(--muted); }
 .ask-starter > svg { width: 13px; height: 13px; flex: none; color: var(--muted-foreground); }
+/* D-132: an empty thread says what it can do, then the member's recent questions (asked again on a click). */
+.ask-empty { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding: 20px 20px 0; }
+.ask-intro { margin: 0; max-width: 46ch; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
+.ask-recent h3 { margin: 0 0 4px; padding: 0 8px; font-size: 12px; line-height: 18px; font-weight: 500; color: var(--muted-foreground); }
+.ask-recent ul { margin: 0 -8px; padding: 0; list-style: none; }
+.ask-recent-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--foreground); font: inherit; font-size: 13px; line-height: 20px; text-align: left; cursor: pointer; transition: background-color 150ms; }
+.ask-recent-row:hover { background: var(--muted); }
+.ask-recent-row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.ask-recent-row > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
+.ask-recent-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The prompt bar: a pill that grows with the text; send turns into stop while an answer streams. */
 form.ask-bar { display: flex; align-items: flex-end; gap: 8px; margin: 12px; padding: 6px 6px 6px 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); transition: box-shadow 150ms; }
 .ask-bar:focus-within { box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground) 28%, transparent), 0 2px 8px #0000000f; }

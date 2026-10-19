@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { isDeskLink, outcomeTitle, type AskEvent, type AskStep, type AskTurn, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
 import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
 import { ApiError } from "../api.ts";
@@ -12,6 +12,7 @@ import {
   ChartColumnIcon,
   ChatIcon,
   CheckIcon,
+  ClockIcon,
   ContactsIcon,
   CopyIcon,
   EditIcon,
@@ -26,6 +27,7 @@ import {
   ToolIcon,
   UsersIcon,
 } from "../components/icons.tsx";
+import { addRecent, askKey, restoreAsk, serialiseAsk, type Turn } from "../lib/ask-store.ts";
 import { deskHref, navigate } from "../lib/router.ts";
 import { ApprovalCard, ApprovalOutcome } from "@/components/approval-card.tsx";
 import { Chevron, Fold, StepTrace, type TraceStep } from "@/components/agent-steps.tsx";
@@ -43,14 +45,13 @@ import { runProposal } from "./actions.ts";
 // I-19 (D-127): Home's ask box. A streamed chat with the desk assistant (POST …/home/ask, NDJSON): its
 // read steps, answers that link to the desk's own pages, and a proposed change as a card with Confirm /
 // Cancel (Confirm runs it through the desk's routes, actions.ts); either way the outcome goes back to the
-// model, which carries on. The thread lives for this tab's session (a module store, so leaving Home and
-// coming back keeps it), never on the server.
+// model, which carries on. The thread lives in a module store (leaving Home and coming back keeps it) and,
+// D-132, in this browser's localStorage per workspace + member (lib/ask-store.ts), never on the server.
 // D-129, after beautifului.dev's primitives (patterns, our own code): the steps are the desk's shared
 // step trace (a live working line with the time, then "Worked for 4.2s · 3 steps" folding the rows),
 // the answer is paced with desk links as inline source chips, then copy and "N sources"; a proposal is
 // an approval card; the composer is a pill with a stop button while an answer streams.
 
-type Turn = (AskTurn & { id: number; /** ms the answer took. */ took?: number; stopped?: boolean }) | { id: number; role: "error"; text: string };
 type AssistantTurn = Extract<Turn, { role: "assistant" }>;
 
 interface Live {
@@ -73,14 +74,54 @@ const EMPTY: Thread = { turns: [], live: null, running: null };
 const threads = new Map<string, Thread>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
+/** D-132: each workspace's localStorage key (set by AskChat from the member), its recent questions. */
+const keys = new Map<string, string>();
+const recents = new Map<string, string[]>();
+const recentListeners = new Set<() => void>();
+const NO_RECENT: string[] = [];
 let nextId = 1;
 const get = (ws: string) => threads.get(ws) ?? EMPTY;
 const set = (ws: string, patch: Partial<Thread>) => {
   threads.set(ws, { ...get(ws), ...patch });
   listeners.forEach((l) => l());
+  const t = get(ws);
+  // Saved once a turn is finished or a card settled: never the answer being written.
+  if (!t.live && !t.running) save(ws);
 };
 function useThread(ws: string): Thread {
   return useSyncExternalStore((cb) => (listeners.add(cb), () => listeners.delete(cb)), () => get(ws));
+}
+
+function save(ws: string): void {
+  const key = keys.get(ws);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, serialiseAsk(get(ws).turns, recents.get(ws) ?? []));
+  } catch {
+    // Storage full or blocked: the thread just doesn't outlive the tab.
+  }
+}
+
+/** The member's thread from this browser, once per workspace, unless one is already in this tab. */
+function bind(ws: string, userId: string): void {
+  const key = askKey(ws, userId);
+  if (keys.get(ws) === key) return;
+  keys.set(ws, key);
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(key);
+  } catch {
+    // No storage: start empty.
+  }
+  const stored = restoreAsk(raw, () => nextId++);
+  recents.set(ws, stored.recent);
+  recentListeners.forEach((l) => l());
+  const t = get(ws);
+  if (!t.turns.length && !t.live && stored.turns.length) set(ws, { turns: stored.turns });
+}
+
+function useRecent(ws: string): string[] {
+  return useSyncExternalStore((cb) => (recentListeners.add(cb), () => recentListeners.delete(cb)), () => recents.get(ws) ?? NO_RECENT);
 }
 
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -138,6 +179,8 @@ async function answer(ws: string, turns: Turn[]): Promise<void> {
     finish({}, text || (rejected ? `I couldn't set that up: ${rejected}` : proposal ? "" : "I don't have an answer to that."));
   } catch (error) {
     if (controller.signal.aborted) {
+      // New chat cleared the thread: nothing to keep.
+      if (controllers.get(ws) !== controller) return;
       // Stopped: keep what was written; a card that wasn't shown yet is dropped.
       proposal = undefined;
       if (text || steps.length) finish({ stopped: true }, text);
@@ -155,6 +198,9 @@ export function askDesk(ws: string, text: string): void {
   const t = get(ws);
   if (t.live || t.running || !text.trim()) return;
   const turns = t.turns.map((x): Turn => (x.role === "assistant" && x.proposal && !x.outcome ? { ...x, outcome: { status: "cancelled", detail: "not confirmed" } } : x));
+  recents.set(ws, addRecent(recents.get(ws) ?? [], text));
+  recentListeners.forEach((l) => l());
+  save(ws);
   void answer(ws, [...turns, { id: nextId++, role: "user", text: text.trim() }]);
 }
 
@@ -163,6 +209,7 @@ const stop = (ws: string) => controllers.get(ws)?.abort();
 /** The header's New chat: stops any answer and clears the thread. */
 export function newAskChat(ws: string): void {
   stop(ws);
+  controllers.delete(ws);
   set(ws, { turns: [], live: null, running: null });
 }
 
@@ -492,8 +539,14 @@ function AssistantRow({ ws, turn, live, thread, latest }: { ws: string; turn: As
   );
 }
 
-export function AskChat({ workspaceId, disabled }: { workspaceId: string; disabled: ReactNode | null }) {
+/** `userId`: the member, so the thread is kept in this browser for them (D-132); without it, this tab only. */
+export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string; userId?: string; disabled: ReactNode | null }) {
+  // Before the first paint, so a reload opens on the kept thread.
+  useLayoutEffect(() => {
+    if (userId) bind(workspaceId, userId);
+  }, [workspaceId, userId]);
   const thread = useThread(workspaceId);
+  const recent = useRecent(workspaceId);
   const [message, setMessage] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const streaming = Boolean(thread.live);
@@ -545,6 +598,26 @@ export function AskChat({ workspaceId, disabled }: { workspaceId: string; disabl
             <MessageScrollerButton />
           </MessageScroller>
         </MessageScrollerProvider>
+      )}
+      {empty && !disabled && (
+        <div className="ask-empty">
+          <p className="ask-intro">Ask about chats, customers, errors, Reports, knowledge or the agent. Changes wait for your Confirm.</p>
+          {recent.length > 0 && (
+            <div className="ask-recent" role="group" aria-labelledby="ask-recent-title">
+              <h3 id="ask-recent-title">Recent</h3>
+              <ul>
+                {recent.map((q) => (
+                  <li key={q}>
+                    <button type="button" data-plain className="ask-recent-row" title={q} onClick={() => send(q)}>
+                      <ClockIcon aria-hidden="true" />
+                      <span>{q}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
       {empty && !disabled && (
         <div className="ask-starters" role="group" aria-label="Try asking">

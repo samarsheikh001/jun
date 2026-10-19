@@ -154,5 +154,7 @@ test("assistant: a settled card's line (D-129)", () => {
   assert.equal(outcomeTitle({ kind: "status", conversationId: "cv_1", status: "resolved" }, {}, done), "Resolved");
   assert.equal(outcomeTitle({ kind: "note", conversationId: "cv_1", body: "x" }, {}, { status: "cancelled" }), "Cancelled");
   assert.equal(outcomeTitle({ kind: "note", conversationId: "cv_1", body: "x" }, {}, { status: "cancelled", detail: "not confirmed" }), "Not confirmed");
+  assert.equal(outcomeTitle({ kind: "note", conversationId: "cv_1", body: "x" }, {}, { status: "cancelled", detail: "expired" }), "Expired");
+  assert.match(outcomeLine({ status: "cancelled", detail: "expired" }), /expired/);
   assert.equal(outcomeTitle({ kind: "issue", conversationId: "cv_1" }, {}, { status: "failed", detail: "no tracker" }), "Didn't work: no tracker");
 });

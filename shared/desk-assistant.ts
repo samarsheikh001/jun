@@ -365,6 +365,7 @@ export type ProposalOutcome = { status: "done" | "cancelled" | "failed"; detail?
 
 /** What the model is told after the person pressed Confirm or Cancel. */
 export function outcomeLine(outcome: ProposalOutcome): string {
+  if (outcome.status === "cancelled" && outcome.detail === "expired") return "The card expired before the person pressed Confirm (the page was reloaded): nothing was changed. Propose it again if it's still wanted.";
   if (outcome.status === "cancelled") return "The person pressed Cancel: nothing was changed. Don't propose it again unless they ask.";
   if (outcome.status === "failed") return `The person pressed Confirm but it failed: ${outcome.detail ?? "unknown error"}. Nothing was changed.`;
   return `The person pressed Confirm and it was done${outcome.detail ? `: ${outcome.detail}` : ""}.`;
@@ -514,7 +515,7 @@ export function stepResult(output: unknown): string | undefined {
 
 /** D-129: the line a card shows once it's settled ("Tagged · export-issue", "Cancelled"). */
 export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: ProposalOutcome): string {
-  if (outcome.status === "cancelled") return outcome.detail === "not confirmed" ? "Not confirmed" : "Cancelled";
+  if (outcome.status === "cancelled") return outcome.detail === "not confirmed" ? "Not confirmed" : outcome.detail === "expired" ? "Expired" : "Cancelled";
   if (outcome.status === "failed") return `Didn't work${outcome.detail ? `: ${outcome.detail}` : ""}`;
   switch (p.kind) {
     case "assign":
