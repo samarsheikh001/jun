@@ -62,7 +62,7 @@ export function movedFromAgentCode(path: string): string | null {
   // D-71: the AI's settings moved to Settings → AI.
   if (/^\/agent\/settings\/?$/.test(path)) return "/settings/ai";
   // D-114: Try it was dropped; the Chat widget's Appearance preview is the real widget to try.
-  if (/^\/agent\/try\/?$/.test(path)) return "/appearance";
+  if (/^\/agent\/try\/?$/.test(path)) return "/playground";
   if (!/^\/agent\/code(\/|$)/.test(path)) return null;
   setCodeView(true, true);
   // D-83: these links can name a file by its path from before the rename.

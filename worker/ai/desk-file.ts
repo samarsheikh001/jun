@@ -490,7 +490,7 @@ export function renderDeskFile(desk: DeskFile): string {
     out.push("");
   }
   if (chat) {
-    out.push("chat:  # the chat widget on your website (the Appearance and Chat widget pages)");
+    out.push("chat:  # the chat widget on your website (the Playground page)");
     if (chat.name !== undefined) out.push(line(2, "name", chat.name, "empty = your workspace's name"));
     if (chat.color !== undefined) out.push(line(2, "color", chat.color));
     if (chat.mode !== undefined) out.push(line(2, "mode", chat.mode, "island (a pill at the bottom centre) | window (a button in the corner that opens a chat window)"));

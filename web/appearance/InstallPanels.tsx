@@ -80,7 +80,7 @@ export function InstallTab({ workspaceId, canEdit, install, reload }: { workspac
       <SettingsCard
         title="Install the chat widget"
         description={<>Paste this into your site's <code>&lt;head&gt;</code>, before your own scripts (so page actions your code registers find it ready). The loader is tiny; the chat itself loads only when a visitor opens it. Colours, wording and the rest of its look are on the{" "}
-          <a href={deskHref("/appearance")} onClick={(e) => { e.preventDefault(); navigate("/appearance"); }}>Appearance</a> tab.</>}
+          <a href={deskHref("/playground")} onClick={(e) => { e.preventDefault(); navigate("/playground"); }}>Appearance</a> tab of the Playground.</>}
         action={<a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={widgetKey ? `/demo.html?key=${widgetKey}` : undefined} target="_blank" rel="noreferrer">Open demo page</a>}
       >
         <div className="invite">

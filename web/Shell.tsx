@@ -13,7 +13,7 @@ import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
-import { WidgetPage, type WidgetTab } from "./appearance/AppearancePage.tsx";
+import { WidgetPage, movedFromAppearance, type WidgetTab } from "./appearance/AppearancePage.tsx";
 import { AGENT_SECTIONS, AgentPage, agentNavId, movedFromAgentCode } from "./agent/AgentPage.tsx";
 import { CommandPalette, ShortcutsHelp } from "./components/CommandPalette.tsx";
 import { bridge, isControlTarget, isTypingTarget, modKey } from "./lib/bridge.ts";
@@ -54,9 +54,9 @@ const NAV_GROUPS = [
     items: [
       // Everything about the AI, Knowledge and its settings included (AGENT_SECTIONS).
       { id: "agent", label: "Agent", Icon: BotIcon },
-      // Appearance · Install · Behaviour, sharing /appearance* (D-114: opens on Appearance, where the
-      // preview is the real widget to try; on Install until the widget is on a site).
-      { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance" },
+      // D-116: the chat widget's playground at /playground* (was Chat widget at /appearance*, which
+      // forwards): its look and behaviour beside the real widget to try; Install until it's on a site.
+      { id: "widget", label: "Playground", Icon: ChatIcon, href: "/playground" },
       // D-112: the other ways customers reach you: Email (C-02) at /channels/email; /channels lists them.
       { id: "channels", label: "Channels", Icon: ChannelsIcon, href: "/channels" },
     ],
@@ -73,7 +73,7 @@ function sectionOf(pagePath: string) {
   return pagePath.startsWith("/knowledge") ? "knowledge"
     : pagePath.startsWith("/agent") ? "agent"
     : pagePath.startsWith("/connect") ? "connect"
-    : pagePath.startsWith("/appearance") ? "widget"
+    : pagePath.startsWith("/playground") ? "widget"
     : pagePath.startsWith("/channels") ? "channels"
     : pagePath.startsWith("/visitors") ? "visitors"
     : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
@@ -247,11 +247,11 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
     currentWorkspace(me);
     const { search, hash } = window.location;
     const pathname = deskPathname();
-    const target = movedFromSettings(pathname, search, hash) ?? movedFromAgentCode(pathname);
+    const target = movedFromSettings(pathname, search, hash) ?? movedFromAgentCode(pathname) ?? movedFromAppearance(pathname);
     if (target) window.history.replaceState(null, "", deskHref(target));
   });
   const urlPath = usePath();
-  const moved = movedFromSettings(urlPath, window.location.search, window.location.hash) ?? movedFromAgentCode(urlPath);
+  const moved = movedFromSettings(urlPath, window.location.search, window.location.hash) ?? movedFromAgentCode(urlPath) ?? movedFromAppearance(urlPath);
   const path = moved ? moved.split("?")[0]! : urlPath;
   useLayoutEffect(() => {
     if (moved) navigate(moved, { replace: true });
@@ -450,7 +450,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // D-91: until the widget is on a site, its sidebar entry carries a dot and opens on Install.
   const install = ob ? { installed: ob.steps.install, host: ob.installedOn, widgetKey: ob.widgetKey } : null;
   const notInstalled = install !== null && !install.installed;
-  const widgetTab: WidgetTab = pagePath.startsWith("/appearance/behaviour") ? "behaviour" : pagePath.startsWith("/appearance/install") ? "install" : "appearance";
+  const widgetTab: WidgetTab = pagePath.startsWith("/playground/behaviour") ? "behaviour" : pagePath.startsWith("/playground/install") ? "install" : "appearance";
 
   return (
     // Town's sidebar (D-36): shadcn's Sidebar, collapsing to a 56px icon rail (toggle, or Ctrl/Cmd+B).
@@ -470,7 +470,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                 const { id, label, Icon } = item;
                 const here = navOf(section) === id;
                 const dot = id === "widget" && notInstalled;
-                const href = dot ? "/appearance/install" : "href" in item ? item.href : `/${id}`;
+                const href = dot ? "/playground/install" : "href" in item ? item.href : `/${id}`;
                 return (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton

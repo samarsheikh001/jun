@@ -268,7 +268,7 @@ widget.post("/widget/:key/visitor", async (c) => {
 // Returns the browser's visitor token for that user (it may change; the frame stores it).
 widget.post("/widget/:key/identify", async (c) => {
   const inbox = await widgetInbox(c);
-  if (!inbox.identitySecret) throw new HttpError(400, "identity_not_configured", "Identity verification isn't set up for this desk (Chat widget → Behaviour → Identify signed-in customers).");
+  if (!inbox.identitySecret) throw new HttpError(400, "identity_not_configured", "Identity verification isn't set up for this desk (Playground → Behaviour → Identify signed-in customers).");
   const body = await readJson(c.req);
   if (typeof body.userToken !== "string") throw new HttpError(400, "invalid_field", "userToken is required.");
   let identity;
@@ -300,7 +300,7 @@ widget.post("/widget/:key/logout", async (c) => {
 // report itself and receive invites addressed to its own session.
 widget.get("/widget/:key/live", async (c) => {
   const inbox = await widgetInbox(c);
-  if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Chat widget → Behaviour → Allowed websites).");
+  if (!fromAllowedSite(c, inbox)) throw new HttpError(403, "site_not_allowed", "This website isn't allowed to use this widget (Playground → Behaviour → Allowed websites).");
   // Crawlers and headless browsers never join the visitor list (the loader skips them too).
   if (BOT_UA.test(c.req.header("user-agent") ?? "")) throw new HttpError(403, "bot", "Automated browsers aren't listed as visitors.");
   const sessionId = c.req.query("s") ?? "";

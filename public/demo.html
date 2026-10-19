@@ -57,7 +57,7 @@
       </div>
       <div class="card" id="settings">
         <h2>Account settings</h2>
-        <p class="note">With <b>Let the AI use your website</b> on (desk: Chat widget → Behaviour; AI-32) the AI can read this page and use it: try "set my company name to Acme Ltd" or "switch my time zone to Tokyo". The password field and the card below are private: it never sees or touches them.</p>
+        <p class="note">With <b>Let the AI use your website</b> on (desk: Playground → Behaviour; AI-32) the AI can read this page and use it: try "set my company name to Acme Ltd" or "switch my time zone to Tokyo". The password field and the card below are private: it never sees or touches them.</p>
         <p><label>Company name <input id="company" name="company" placeholder="Your company" /></label></p>
         <p><label>Time zone <select id="tz" name="tz"><option>London</option><option>New York</option><option>Tokyo</option></select></label></p>
         <p><label>Password <input type="password" name="password" value="hunter22" /></label></p>
@@ -71,7 +71,7 @@
         <p><label>Weekly summary <select id="weekly" name="weekly"><option>On</option><option>Off</option></select></label></p>
         <p><button onclick="document.getElementById('emails-saved').textContent = 'Saved: weekly summary ' + document.getElementById('weekly').value">Save email settings</button> <span id="emails-saved" class="note"></span></p>
       </div>
-      <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Chat widget → Install in the desk has a link with your key.</p>
+      <p class="note" id="missing" hidden>Add <code>?key=wk_…</code> to the URL. Playground → Install in the desk has a link with your key.</p>
     </main>
     <script>
       // P1 demo: a payment request that fails with a 500, and a chart that throws.

@@ -22,9 +22,14 @@ import { UploadIcon } from "../components/icons.tsx";
 // Behaviour (/appearance/behaviour) beside the real widget, and Install (/appearance/install) as a
 // sheet; whether the widget is on a site yet sits in the header (D-91).
 export type WidgetTab = "install" | "appearance" | "behaviour";
+
+/** D-116: the page was Chat widget at /appearance*; old links land on the same panel of /playground. */
+export function movedFromAppearance(path: string): string | null {
+  return /^\/appearance(\/|$)/.test(path) ? path.replace("/appearance", "/playground") : null;
+}
 type WidgetPanel = "appearance" | "behaviour";
 
-/** The Chat widget page: install it, its look, how it behaves. */
+/** The Playground (D-116): the chat widget's look and behaviour beside the real widget; install it. */
 export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, reloadInstall }: {
   workspaceId: string;
   workspaceName: string;
@@ -54,7 +59,7 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
   return (
     <>
       <PageTabs
-        title="Chat widget"
+        title="Playground"
         tabsHidden
         value="widget"
         className="widget-page"
@@ -72,19 +77,19 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
             {widgetKey && (
               <a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer" title="The saved widget on a test page, in a new tab">Preview</a>
             )}
-            <Button size="sm" variant={install && !install.installed ? "default" : "outline"} onClick={() => navigate("/appearance/install", { replace: true })}>Install</Button>
+            <Button size="sm" variant={install && !install.installed ? "default" : "outline"} onClick={() => navigate("/playground/install", { replace: true })}>Install</Button>
           </>
         }
         tabs={[{
           value: "widget",
-          label: "Chat widget",
-          path: "/appearance",
+          label: "Playground",
+          path: "/playground",
           content: code && panel === "appearance"
             ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} />
             : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} panel={panel} />,
         }]}
       />
-      <Sheet open={tab === "install"} onOpenChange={(o) => { if (!o) navigate("/appearance", { replace: true }); }}>
+      <Sheet open={tab === "install"} onOpenChange={(o) => { if (!o) navigate("/playground", { replace: true }); }}>
         <SheetContent side="right" className="install-sheet">
           <SheetHeader>
             <SheetTitle>Install</SheetTitle>
@@ -116,7 +121,7 @@ function InstallChip({ install }: { install: InstallState | null }) {
     <span className="install-chip pending">
       <span className="install-dot warn" aria-hidden="true" />
       Not on your site yet
-      <a href={deskHref("/appearance/install")} onClick={(e) => { e.preventDefault(); navigate("/appearance/install", { replace: true }); }}>Install</a>
+      <a href={deskHref("/playground/install")} onClick={(e) => { e.preventDefault(); navigate("/playground/install", { replace: true }); }}>Install</a>
     </span>
   );
 }
@@ -233,7 +238,7 @@ function LookTab({ workspaceId, workspaceName, canEdit, panel }: { workspaceId: 
   return (
     <div className="appear-page">
       <aside className="appear-controls" aria-label="Widget settings">
-        <Tabs value={panel} onValueChange={(v) => navigate(v === "behaviour" ? "/appearance/behaviour" : "/appearance", { replace: true })} className="appear-panels">
+        <Tabs value={panel} onValueChange={(v) => navigate(v === "behaviour" ? "/playground/behaviour" : "/playground", { replace: true })} className="appear-panels">
           <TabsList className="kb-tabs appear-panel-tabs" aria-label="Settings">
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="behaviour">Behaviour</TabsTrigger>

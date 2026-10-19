@@ -147,12 +147,12 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
     ),
     ai: <AiStep workspaceId={workspaceId} done={s.ai} reload={reload} />,
     brand: s.brand ? (
-      <p className="muted small">Branded. Logo, greeting and side are on the {link("/appearance", "Chat widget")} page; business hours in {link("/settings/inbox", "Settings → Inbox")}.</p>
+      <p className="muted small">Branded. Logo, greeting and side are on the {link("/playground", "Playground")}; business hours in {link("/settings/inbox", "Settings → Inbox")}.</p>
     ) : (
       <div className="row">
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Brand colour" />
         <Button variant="outline" disabled={busy} onClick={saveColor}>Use this colour</Button>
-        <span className="muted small">Logo and greeting on the {link("/appearance", "Chat widget")} page.</span>
+        <span className="muted small">Logo and greeting in the {link("/playground", "Playground")}.</span>
       </div>
     ),
     install: (
@@ -170,7 +170,7 @@ export function WelcomePage({ workspaceId, workspaceName, onboarding, reload }: 
         ) : (
           <p className="muted small">
             Put it before your own scripts. This ticks itself off the first time your page loads it; meanwhile, try the{" "}
-            <a href={`/demo.html?key=${onboarding.widgetKey}`} target="_blank" rel="noreferrer">demo page</a>. Where it goes on Webflow, WordPress, Shopify or Next.js: the Chat widget page's {link("/appearance/install", "Install")} tab; allowed websites and identity are on its {link("/appearance/behaviour", "Behaviour")} tab.
+            <a href={`/demo.html?key=${onboarding.widgetKey}`} target="_blank" rel="noreferrer">demo page</a>. Where it goes on Webflow, WordPress, Shopify or Next.js: the Playground's {link("/playground/install", "Install")}; allowed websites and identity are on its {link("/playground/behaviour", "Behaviour")} tab.
           </p>
         )}
       </>

@@ -69,7 +69,7 @@ const LEGACY_HASHES: Record<string, string> = {
 export function movedFromSettings(path: string, search: string, hash: string): string | null {
   if (!path.startsWith("/settings")) return null;
   const sub = path.replace(/^\/settings\/?/, "").split("/")[0] ?? "";
-  if (sub === "widget") return "/appearance/install";
+  if (sub === "widget") return "/playground/install";
   // D-86: Connect your AI and API tokens are the MCP page now.
   if (sub === "developer") return hash === "#api-tokens" ? "/connect/tokens" : "/connect";
   if (!sub && (hash === "#ai-assistant" || new URLSearchParams(search).get("chatgpt") === "connected")) return `/settings/ai${search}`;
