@@ -5,9 +5,13 @@ import {
   AI_OFF_HANDOFF_REASON,
   computeMetrics,
   isAiOffHandoff,
-  MAX_START_PAGES,
+  chatOutcome,
+  groupPages,
+  MAX_PAGE_SPOTS,
   startPage,
   struggleSpots,
+  targetLabel,
+  type PageRow,
   dayKey,
   durationStat,
   formatDuration,
@@ -22,6 +26,7 @@ import {
 
 const S = 1000;
 const MIN = 60 * S;
+const DAY = 24 * 60 * MIN;
 // Monday 5 Oct 2026, 12:00 UTC.
 const NOW = Date.parse("2026-10-05T12:00:00Z");
 
@@ -220,29 +225,76 @@ test("start pages: origin + path, no query, trailing slash or ids", () => {
   for (const bad of [null, undefined, "", "/billing", "not a url", "javascript:alert(1)", "file:///etc/passwd"]) assert.equal(startPage(bad), null, String(bad));
 });
 
-test("pages where chats start: top pages with counts and share", () => {
-  const at = (url: string | null) => conv(NOW, { startUrl: url });
-  const urls = [
-    ...Array(4).fill("https://app.test/billing?plan=…"),
-    "https://app.test/billing/",
-    "https://app.test/invoices/1",
-    "https://app.test/invoices/2",
-    "https://docs.test/setup",
-    ...Array.from({ length: 10 }, (_, i) => `https://app.test/p${String.fromCharCode(97 + i)}`),
-    null,
-    null,
-    "garbage",
-  ];
-  const r = computeMetrics(input({ conversations: urls.map(at) }));
-  assert.equal(r.pages.withPage, 18);
+test("pages where chats start: counts, chats per day and the AI's rate per page", () => {
+  const at = (url: string | null, facts: Partial<ConversationFacts> = {}, t = NOW) => conv(t, { startUrl: url, ...facts });
+  const ai = { firstAiAt: NOW };
+  const r = computeMetrics(input({
+    conversations: [
+      ...Array.from({ length: 3 }, () => at("https://app.test/billing?plan=…", ai)),
+      at("https://app.test/billing/", { ...ai, handoffReason: "Refund" }, NOW - 2 * DAY),
+      at("https://app.test/billing", {}, NOW - 2 * DAY),
+      at("https://app.test/invoices/1"),
+      at("https://app.test/invoices/2"),
+      at("https://docs.test/setup"),
+      at(null),
+      at(null),
+      at("garbage"),
+    ],
+  }));
+  assert.equal(r.pages.withPage, 8);
   assert.equal(r.pages.withoutPage, 3);
-  assert.equal(r.pages.top.length, MAX_START_PAGES);
-  assert.deepEqual(r.pages.top.slice(0, 3), [
-    { page: "https://app.test/billing", count: 5, share: 5 / 18 },
-    { page: "https://app.test/invoices/:id", count: 2, share: 2 / 18 },
-    { page: "https://app.test/pa", count: 1, share: 1 / 18 },
+  assert.deepEqual(r.pages.rows.map((p) => [p.page, p.count]), [
+    ["https://app.test/billing", 5],
+    ["https://app.test/invoices/:id", 2],
+    ["https://docs.test/setup", 1],
   ]);
-  assert.deepEqual(computeMetrics(input({})).pages, { top: [], withPage: 0, withoutPage: 0 });
+  const billing = r.pages.rows[0]!;
+  // Same days as the conversations series: 2 days ago, then today.
+  assert.equal(billing.perDay.length, r.conversations.series.length);
+  assert.deepEqual(billing.perDay, [0, 0, 0, 0, 2, 0, 3]);
+  assert.deepEqual([billing.ai, billing.aiResolved, billing.aiResolutionRate], [4, 3, 0.75]);
+  // No AI chats there: no rate.
+  assert.equal(r.pages.rows[1]!.aiResolutionRate, null);
+  assert.equal(r.pages.rows[1]!.children, undefined);
+  assert.deepEqual(computeMetrics(input({})).pages, { rows: [], withPage: 0, withoutPage: 0 });
+});
+
+test("pages where chats start: pages under one parent path group, sums and all", () => {
+  const row = (page: string, count: number, ai = 0, aiResolved = 0): PageRow => ({
+    page: `https://app.test${page}`, count, perDay: [count, 1], ai, aiResolved, aiResolutionRate: ai ? aiResolved / ai : null,
+  });
+  const rows = groupPages([
+    row("/app/settings/billing", 4, 2, 1),
+    row("/app/settings/team", 2, 2, 2),
+    row("/app/settings", 1),
+    row("/app/home", 3),
+    row("/app/inbox", 2),
+    row("/pricing", 5),
+    row("/docs", 1),
+    row("/blog/one", 1),
+  ]);
+  // Root pages never group under "/", and one page under /blog stays on its own.
+  assert.deepEqual(rows.map((r) => [r.page.slice(16), r.count, r.children?.length ?? 0]), [
+    ["/app", 12, 3],
+    ["/pricing", 5, 0],
+    ["/blog/one", 1, 0],
+    ["/docs", 1, 0],
+  ]);
+  const app = rows[0]!;
+  // Deepest first: /app/settings is a group inside /app, with its own page as one of its children.
+  assert.deepEqual(app.children!.map((r) => [r.page.slice(16), r.count]), [["/app/settings", 7], ["/app/home", 3], ["/app/inbox", 2]]);
+  const settings = app.children![0]!;
+  assert.deepEqual(settings.children!.map((r) => r.page.slice(16)), ["/app/settings/billing", "/app/settings/team", "/app/settings"]);
+  assert.deepEqual(settings.perDay, [7, 3]);
+  assert.deepEqual([settings.ai, settings.aiResolved, settings.aiResolutionRate], [4, 3, 0.75]);
+  assert.deepEqual(app.perDay, [12, 5]);
+  // A page alone under its parent joins the nearest ancestor that groups.
+  const bubbled = groupPages([row("/app/settings/billing", 2), row("/app/home", 1), row("/app/inbox", 1)]);
+  assert.deepEqual(bubbled.map((r) => [r.page.slice(16), r.count]), [["/app", 4]]);
+  assert.deepEqual(bubbled[0]!.children!.map((r) => r.page.slice(16)), ["/app/settings/billing", "/app/home", "/app/inbox"]);
+  // Different sites never group together.
+  assert.equal(groupPages([{ ...row("/a/x", 1) }, { ...row("/a/y", 1), page: "https://other.test/a/y" }]).length, 2);
+  assert.deepEqual(groupPages([]), []);
 });
 
 test("handoff reasons: grouped, top five", () => {
@@ -393,10 +445,47 @@ test("struggleSpots: by page and element, once per conversation, overlapping sna
     { conversationId: "d", pageUrl: null, events: "not json" },
   ]);
   assert.equal(out.conversations, 2);
-  assert.deepEqual(out.list, [
-    { kind: "rage_click", page: "https://app.acme.dev/reports/:id", target: 'button#export "Export CSV"', conversations: 2 },
-    { kind: "stuck", page: "https://app.acme.dev/import", target: null, conversations: 1 },
-    { kind: "dead_click", page: "https://app.acme.dev/reports/:id", target: 'a "Help"', conversations: 1 },
+  // One card per page, worst first; without facts nothing is known about the outcome.
+  assert.deepEqual(out.pages.map((p) => [p.page, p.conversations, p.known, p.toPerson]), [
+    ["https://app.acme.dev/reports/:id", 2, 0, 0],
+    ["https://app.acme.dev/import", 1, 0, 0],
   ]);
-  assert.deepEqual(struggleSpots([]), { list: [], conversations: 0 });
+  assert.deepEqual(out.pages[0]!.spots, [
+    { kind: "rage_click", page: "https://app.acme.dev/reports/:id", target: 'button#export "Export CSV"', label: "Export CSV", conversations: 2, chats: ["a", "b"] },
+    { kind: "dead_click", page: "https://app.acme.dev/reports/:id", target: 'a "Help"', label: "Help", conversations: 1, chats: ["a"] },
+  ]);
+  assert.deepEqual(out.pages[0]!.chats, [
+    { id: "a", createdAt: null, outcome: null, kinds: ["rage_click", "dead_click"] },
+    { id: "b", createdAt: null, outcome: null, kinds: ["rage_click"] },
+  ]);
+  assert.deepEqual(out.pages[1]!.spots, [{ kind: "stuck", page: "https://app.acme.dev/import", target: null, label: null, conversations: 1, chats: ["b"] }]);
+  assert.deepEqual(struggleSpots([]), { pages: [], conversations: 0 });
+});
+
+test("struggle cards: how many troubled chats went to a person, newest first", () => {
+  const ev = (url: string, kind = "rage_click") => JSON.stringify([{ t: 1, kind, target: { tag: "button", text: "Save" }, url }]);
+  const snap = (conversationId: string, events = ev("/x")) => ({ conversationId, pageUrl: "https://app.test/settings", events });
+  const chats = [
+    conv(NOW - 5 * MIN, { id: "handed", firstAiAt: NOW, handoffReason: "Wants a person" }),
+    conv(NOW - 4 * MIN, { id: "agent", firstAgentAt: NOW }),
+    conv(NOW - 3 * MIN, { id: "aiOff", aiOffHandoff: true }),
+    conv(NOW - 2 * MIN, { id: "ai", firstAiAt: NOW }),
+    conv(NOW - 1 * MIN, { id: "none" }),
+  ];
+  const r = computeMetrics(input({ conversations: chats, snapshots: [...chats.map((c) => snap(c.id)), snap("gone")] }));
+  const card = r.struggles.pages[0]!;
+  assert.deepEqual([card.conversations, card.known, card.toPerson], [6, 5, 3]);
+  assert.deepEqual(card.chats.map((c) => [c.id, c.outcome]), [["none", "none"], ["ai", "ai"], ["aiOff", "person"], ["agent", "person"], ["handed", "person"], ["gone", null]]);
+  assert.equal(card.spots[0]!.label, "Save");
+  assert.equal(chatOutcome(conv(NOW, { firstAiAt: NOW })), "ai");
+  assert.equal(targetLabel({ tag: "button", id: "save" }), "#save");
+  assert.equal(targetLabel({ tag: "div", label: "Close" }), "Close");
+  assert.equal(targetLabel(undefined), "an element");
+});
+
+test("struggle cards: at most MAX_PAGE_SPOTS chips, the rest counted", () => {
+  const events = JSON.stringify(Array.from({ length: MAX_PAGE_SPOTS + 2 }, (_, i) => ({ t: i, kind: "dead_click", target: { tag: "a", text: `L${i}` } })));
+  const out = struggleSpots([{ conversationId: "a", pageUrl: "https://app.test/", events }]);
+  assert.equal(out.pages[0]!.spots.length, MAX_PAGE_SPOTS);
+  assert.equal(out.pages[0]!.moreSpots, 2);
 });

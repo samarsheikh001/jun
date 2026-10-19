@@ -22,8 +22,11 @@ import {
   ComputerIcon,
   Contact01Icon,
   Delete02Icon,
+  CursorDisabled01Icon,
   Download04Icon,
   Edit02Icon,
+  HourglassIcon,
+  MousePointerClickIcon,
   File01Icon,
   FlashIcon as HugeFlashIcon,
   Globe02Icon,
@@ -120,4 +123,8 @@ export const UploadIcon = make(Upload04Icon);
 export const UsersIcon = make(UserMultipleIcon);
 export const XIcon = make(Cancel01Icon);
 export const ThumbsUpIcon = make(HugeThumbsUpIcon);
+// Reports' struggle chips (D-124): rage click, a click that did nothing, stuck on a page.
+export const RageClickIcon = make(MousePointerClickIcon);
+export const DeadClickIcon = make(CursorDisabled01Icon);
+export const StuckIcon = make(HourglassIcon);
 export const ThumbsDownIcon = make(HugeThumbsDownIcon);

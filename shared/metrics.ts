@@ -2,7 +2,7 @@
 // the CSAT ratings and per-teammate reply counts for the period, and this turns them into the
 // report the dashboard shows. Days are calendar days in the viewer's time zone (DST-safe).
 
-import { describeTarget, type DebugEvent } from "./debug.ts";
+import { describeTarget, type DebugEvent, type DebugTarget } from "./debug.ts";
 
 export const METRIC_PERIODS = [7, 30, 90] as const;
 export type MetricPeriod = (typeof METRIC_PERIODS)[number];
@@ -76,11 +76,41 @@ export type StruggleKind = "rage_click" | "dead_click" | "stuck";
 export interface StruggleSpot {
   kind: StruggleKind;
   page: string;
+  /** The element as describeTarget writes it (null for stuck). */
   target: string | null;
+  /** A short name for it ("Save"): its text, else its aria-label, #id, name, role or tag (null for stuck). */
+  label: string | null;
   conversations: number;
+  /** The chats that hit it, newest first (at most MAX_STRUGGLE_CHATS). */
+  chats: string[];
 }
-/** Most spots "Where visitors struggle" lists. */
-export const MAX_STRUGGLES = 8;
+/** D-124: one page's trouble, a card in "Where visitors struggle". */
+export interface StrugglePage {
+  page: string;
+  /** Chats with any trouble on this page (the card's severity). */
+  conversations: number;
+  /** Its spots, most chats first (at most MAX_PAGE_SPOTS; `moreSpots` were left out). */
+  spots: StruggleSpot[];
+  moreSpots: number;
+  /** The troubled chats, newest first (at most MAX_STRUGGLE_CHATS). */
+  chats: StruggleChat[];
+  /** Of the troubled chats the report has facts for (`known`), the ones that went to a person. */
+  known: number;
+  toPerson: number;
+}
+/** A troubled chat in a card's list; `createdAt` and `outcome` are null when the report has no facts for it. */
+export interface StruggleChat {
+  id: string;
+  createdAt: number | null;
+  outcome: ChatOutcome | null;
+  kinds: StruggleKind[];
+}
+/** person: handed to the team (or reached it while AI replies were off) or a teammate replied; ai: only the AI answered; none: no reply. */
+export type ChatOutcome = "person" | "ai" | "none";
+/** Most pages (cards) "Where visitors struggle" lists, spots (chips) per card, and chats per list. */
+export const MAX_STRUGGLE_PAGES = 8;
+export const MAX_PAGE_SPOTS = 6;
+export const MAX_STRUGGLE_CHATS = 25;
 /** Most snapshots a report reads for A-08 (each message's snapshot repeats the trail; one conversation has a few). */
 export const MAX_STRUGGLE_SNAPSHOTS = 5_000;
 
@@ -88,9 +118,13 @@ export const MAX_STRUGGLE_SNAPSHOTS = 5_000;
  * A-08: where visitors who chatted got frustrated: rage clicks, dead clicks and "stuck" pages
  * from their trails, by page and element, each counted once per conversation. A click's page
  * is the last page the trail visited before it (else the snapshot's page). Snapshots of one
- * conversation overlap, so events are merged by time and kind first.
+ * conversation overlap, so events are merged by time and kind first. D-124: grouped by page, worst
+ * first, each with its chats and how many of them went to a person (from `facts`, by id).
  */
-export function struggleSpots(snapshots: SnapshotEvents[]): { list: StruggleSpot[]; conversations: number } {
+export function struggleSpots(
+  snapshots: SnapshotEvents[],
+  facts: ReadonlyMap<string, ConversationFacts> = new Map(),
+): { pages: StrugglePage[]; conversations: number } {
   const chats = new Map<string, { pageUrl: string | null; events: Map<string, DebugEvent> }>();
   for (const snap of snapshots) {
     let parsed: unknown;
@@ -104,9 +138,11 @@ export function struggleSpots(snapshots: SnapshotEvents[]): { list: StruggleSpot
     if (!chat) chats.set(snap.conversationId, (chat = { pageUrl: snap.pageUrl, events: new Map() }));
     for (const e of parsed as DebugEvent[]) if (e && typeof e.t === "number" && typeof e.kind === "string") chat.events.set(`${e.t}|${e.kind}`, e);
   }
-  const spots = new Map<string, StruggleSpot>();
+  const spots = new Map<string, Omit<StruggleSpot, "chats"> & { all: string[] }>();
+  // Per page: its troubled chats and the kinds each one hit there.
+  const byPage = new Map<string, Map<string, Set<StruggleKind>>>();
   let affected = 0;
-  for (const chat of chats.values()) {
+  for (const [id, chat] of chats) {
     const base = chat.pageUrl ?? undefined;
     const pageOf = (url: string | undefined) => {
       try {
@@ -126,18 +162,68 @@ export function struggleSpots(snapshots: SnapshotEvents[]): { list: StruggleSpot
       const key = `${e.kind}|${at}|${target}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const spot = spots.get(key) ?? { kind: e.kind, page: at, target, conversations: 0 };
+      const spot = spots.get(key) ?? { kind: e.kind, page: at, target, label: e.kind === "stuck" ? null : targetLabel(e.target), conversations: 0, all: [] };
       spot.conversations++;
+      spot.all.push(id);
       spots.set(key, spot);
+      const pageChats = byPage.get(at) ?? new Map<string, Set<StruggleKind>>();
+      byPage.set(at, pageChats);
+      pageChats.set(id, (pageChats.get(id) ?? new Set<StruggleKind>()).add(e.kind));
     }
     if (seen.size) affected++;
   }
   // Rage clicks first on a tie: they're the strongest sign.
   const weight: Record<StruggleKind, number> = { rage_click: 0, stuck: 1, dead_click: 2 };
+  const newest = (ids: Iterable<string>) =>
+    [...ids].sort((a, b) => (facts.get(b)?.createdAt ?? 0) - (facts.get(a)?.createdAt ?? 0) || a.localeCompare(b));
+  const sorted = [...spots.values()]
+    .sort((a, b) => b.conversations - a.conversations || weight[a.kind] - weight[b.kind] || (a.label ?? "").localeCompare(b.label ?? ""))
+    .map(({ all, ...spot }): StruggleSpot => ({ ...spot, chats: newest(all).slice(0, MAX_STRUGGLE_CHATS) }));
+  const pages = [...byPage].map(([page, pageChats]): StrugglePage => {
+    const own = sorted.filter((s) => s.page === page);
+    let known = 0;
+    let toPerson = 0;
+    for (const id of pageChats.keys()) {
+      const f = facts.get(id);
+      if (!f) continue;
+      known++;
+      if (chatOutcome(f) === "person") toPerson++;
+    }
+    return {
+      page,
+      conversations: pageChats.size,
+      spots: own.slice(0, MAX_PAGE_SPOTS),
+      moreSpots: Math.max(0, own.length - MAX_PAGE_SPOTS),
+      chats: newest(pageChats.keys()).slice(0, MAX_STRUGGLE_CHATS).map((id) => {
+        const f = facts.get(id);
+        return { id, createdAt: f?.createdAt ?? null, outcome: f ? chatOutcome(f) : null, kinds: [...pageChats.get(id)!].sort((a, b) => weight[a] - weight[b]) };
+      }),
+      known,
+      toPerson,
+    };
+  });
   return {
-    list: [...spots.values()].sort((a, b) => b.conversations - a.conversations || weight[a.kind] - weight[b.kind] || a.page.localeCompare(b.page)).slice(0, MAX_STRUGGLES),
+    // Worst first: the most troubled chats, then the strongest sign, then the path.
+    pages: pages
+      .sort((a, b) => b.conversations - a.conversations || weight[a.spots[0]!.kind] - weight[b.spots[0]!.kind] || a.page.localeCompare(b.page))
+      .slice(0, MAX_STRUGGLE_PAGES),
     conversations: affected,
   };
+}
+
+/** A short name for a clicked element: its text, else its aria-label, #id, name, role or tag. */
+export function targetLabel(t: DebugTarget | undefined): string {
+  if (!t) return "an element";
+  return t.text || t.label || (t.id ? `#${t.id}` : "") || t.name || t.role || t.tag || "an element";
+}
+
+/**
+ * D-124: where a chat ended up. "person" when the AI handed it to the team, it reached the team
+ * because AI replies were off, or a teammate replied publicly; else "ai" if the AI answered.
+ */
+export function chatOutcome(c: ConversationFacts): ChatOutcome {
+  if (c.handoffReason !== null || c.aiOffHandoff || c.firstAgentAt !== null) return "person";
+  return c.firstAiAt !== null ? "ai" : "none";
 }
 
 export interface DurationStat {
@@ -155,13 +241,75 @@ export interface DayPoint {
   aiResolved: number;
 }
 
-export interface PageCount {
-  /** Grouped page: origin + path, no query or hash, ids as ":id" (see startPage). */
+/** A-06 / D-124: a page chats started on, or a group of pages under one parent path. */
+export interface PageRow {
+  /** Grouped page: origin + path, no query or hash, ids as ":id" (see startPage). For a group, the parent path. */
   page: string;
   count: number;
-  /** Of the conversations with a known start page. */
-  share: number;
+  /** Chats per day, the same days as conversations.series. */
+  perDay: number[];
+  /** The AI's chats that started here and the ones it resolved alone (the headline's definitions). */
+  ai: number;
+  aiResolved: number;
+  aiResolutionRate: number | null;
+  /**
+   * A group (at least MIN_PAGE_GROUP pages under this path), most chats first; the row's numbers are
+   * their sums. The parent page itself is one of them when chats started there (same `page`).
+   */
+  children?: PageRow[];
 }
+/** Pages that share a parent path group under it from this many (the parent page itself not counted). */
+export const MIN_PAGE_GROUP = 2;
+/** Most top-level rows the report carries ("Show all" on Reports); most pages kept in one group. */
+export const MAX_PAGE_ROWS = 40;
+export const MAX_GROUP_PAGES = 20;
+
+/**
+ * D-124: group start pages under their parent path ("/app/settings/billing" and "/app/settings/team"
+ * under "/app/settings") when at least MIN_PAGE_GROUP share it. Deepest first, so a group can sit in
+ * a bigger one, and a page left alone joins the nearest ancestor that groups ("/app/settings/billing"
+ * under "/app" beside "/app/home" and "/app/inbox"). Never under the site's root ("/"), where it would
+ * only fold the whole list away.
+ */
+export function groupPages(pages: PageRow[]): PageRow[] {
+  const split = (page: string) => {
+    const u = new URL(page);
+    return { origin: u.origin, segments: u.pathname.split("/").filter(Boolean) };
+  };
+  const nodes = new Map(pages.map((p) => [p.page, p]));
+  const depth = (page: string) => split(page).segments.length;
+  const deepest = Math.max(0, ...pages.map((p) => depth(p.page)));
+  const sum = (rows: PageRow[], at: (r: PageRow) => number) => rows.reduce((s, r) => s + at(r), 0);
+  // d: the parent's depth. Every page still on its own below it is a candidate child.
+  for (let d = deepest - 1; d >= 1; d--) {
+    const under = new Map<string, PageRow[]>();
+    for (const node of nodes.values()) {
+      const { origin, segments } = split(node.page);
+      if (segments.length <= d) continue;
+      const parent = `${origin}/${segments.slice(0, d).join("/")}`;
+      under.set(parent, [...(under.get(parent) ?? []), node]);
+    }
+    for (const [parent, kids] of under) {
+      if (kids.length < MIN_PAGE_GROUP) continue;
+      const self = nodes.get(parent);
+      const children = [...kids, ...(self ? [self] : [])].sort(byCount);
+      for (const k of kids) nodes.delete(k.page);
+      const ai = sum(children, (r) => r.ai);
+      const aiResolved = sum(children, (r) => r.aiResolved);
+      nodes.set(parent, {
+        page: parent,
+        count: sum(children, (r) => r.count),
+        perDay: children[0]!.perDay.map((_, i) => sum(children, (r) => r.perDay[i]!)),
+        ai,
+        aiResolved,
+        aiResolutionRate: rate(aiResolved, ai),
+        children: children.slice(0, MAX_GROUP_PAGES),
+      });
+    }
+  }
+  return [...nodes.values()].sort(byCount);
+}
+const byCount = (a: PageRow, b: PageRow) => b.count - a.count || a.page.localeCompare(b.page);
 
 export interface TopicCount {
   id: string;
@@ -213,15 +361,18 @@ export interface MetricsReport {
   team: { answered: number; firstResponse: DurationStat };
   csat: { good: number; bad: number; score: number | null; badComments: { conversationId: string; comment: string; createdAt: number }[] };
   teammates: { userId: string; name: string; replies: number; conversations: number; firstResponse: DurationStat }[];
-  /** A-06: the pages chats started on, most first; `withoutPage` had no snapshot (e.g. the widget opened outside a site). */
-  pages: { top: PageCount[]; withPage: number; withoutPage: number };
+  /**
+   * A-06: the pages chats started on, most first, grouped under shared parent paths (D-124; at most
+   * MAX_PAGE_ROWS rows); `withoutPage` had no snapshot (e.g. the widget opened outside a site).
+   */
+  pages: { rows: PageRow[]; withPage: number; withoutPage: number };
   /** A-02: every topic with conversations in the period, most first; `unlabeled`: chats with a visitor message and no topic yet. */
   topics: { list: TopicCount[]; labeled: number; unlabeled: number };
-  /** A-08: where visitors who chatted struggled; `conversations`: chats with any such spot. */
-  struggles: { list: StruggleSpot[]; conversations: number };
+  /** A-08: where visitors who chatted struggled, by page (D-124); `conversations`: chats with any such spot. */
+  struggles: { pages: StrugglePage[]; conversations: number };
 }
 
-/** Most pages "Pages where chats start" lists. */
+/** Rows "Pages where chats start" shows before "Show all". */
 export const MAX_START_PAGES = 8;
 
 /**
@@ -385,7 +536,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
   const byAgent = new Map<string, number[]>();
   const reasons = new Map<string, { reason: string; count: number }>();
   let passedWhileOff = 0;
-  const pages = new Map<string, number>();
+  const pages = new Map<string, PageRow>();
   let withoutPage = 0;
   const topics = new Map<string, { id: string; name: string; count: number; ai: number; aiResolved: number; handedOff: number }>();
   let unlabeled = 0;
@@ -396,9 +547,13 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     total++;
     series[i]!.conversations++;
     if (c.resolved) resolved++;
-    const page = startPage(c.startUrl);
-    if (page) pages.set(page, (pages.get(page) ?? 0) + 1);
-    else withoutPage++;
+    const pageKey = startPage(c.startUrl);
+    const page = pageKey ? (pages.get(pageKey) ?? { page: pageKey, count: 0, perDay: keys.map(() => 0), ai: 0, aiResolved: 0, aiResolutionRate: null }) : null;
+    if (page) {
+      page.count++;
+      page.perDay[i]!++;
+      pages.set(page.page, page);
+    } else withoutPage++;
 
     // A handoff only happens from AI handling, so a handed-off conversation was the AI's even if
     // it never got to answer (the visitor asked for a person first, or its first reply was a
@@ -416,6 +571,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       aiConversations++;
       series[i]!.ai++;
       if (topic) topic.ai++;
+      if (page) page.ai++;
       if (handed) {
         handedOff++;
         if (topic) topic.handedOff++;
@@ -428,6 +584,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
         aiResolved++;
         series[i]!.aiResolved++;
         if (topic) topic.aiResolved++;
+        if (page) page.aiResolved++;
       }
     }
     if (c.firstVisitorAt !== null && c.firstAiAt !== null && c.firstAiAt >= c.firstVisitorAt) aiTimes.push(c.firstAiAt - c.firstVisitorAt);
@@ -498,10 +655,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     csat: { good, bad, score: rate(good, good + bad), badComments },
     teammates,
     pages: {
-      top: [...pages]
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .slice(0, MAX_START_PAGES)
-        .map(([page, count]) => ({ page, count, share: count / (total - withoutPage) })),
+      rows: groupPages([...pages.values()].map((p) => ({ ...p, aiResolutionRate: rate(p.aiResolved, p.ai) }))).slice(0, MAX_PAGE_ROWS),
       withPage: total - withoutPage,
       withoutPage,
     },
@@ -515,6 +669,6 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
         unlabeled,
       };
     })(),
-    struggles: struggleSpots(input.snapshots ?? []),
+    struggles: struggleSpots(input.snapshots ?? [], new Map(input.conversations.map((c) => [c.id, c]))),
   };
 }

@@ -24,7 +24,10 @@ const setAi = (enabled: boolean) =>
 
 // A-06: the same site every run, so these pages lead the list and counts move by this run's chats.
 const SITE = "https://metrics.e2e.test";
-const pageCount = (r: any, page: string) => r.pages.top.find((p: { page: string }) => p.page === page)?.count ?? 0;
+type Row = { page: string; count: number; children?: Row[] };
+// D-124: rows can be groups; a page's own count is its leaf (a group's own page is one of its children).
+const leaves = (rows: Row[]): Row[] => rows.flatMap((r) => (r.children ? leaves(r.children) : [r]));
+const pageCount = (r: any, page: string) => leaves(r.pages.rows).find((p) => p.page === page)?.count ?? 0;
 
 /** A new visitor and their first message (sent from `pageUrl`, as the loader does); returns what's needed to keep chatting. */
 async function startChat(body: string, pageUrl: string) {
@@ -178,8 +181,8 @@ await step("the report moved by exactly the scenario", async () => {
   assert.equal(pageCount(after, `${SITE}/invoices/:id`) - pageCount(before, `${SITE}/invoices/:id`), 2, JSON.stringify(after.pages));
   assert.equal(d((r) => r.pages.withPage), 4);
   assert.equal(d((r) => r.pages.withoutPage), 0);
-  assert.ok(after.pages.top.length <= 8);
-  for (const p of after.pages.top) assert.ok(Math.abs(p.share - p.count / after.pages.withPage) < 1e-9);
+  assert.ok(after.pages.rows.length <= 40);
+  for (const p of after.pages.rows as Row[]) if (p.children) assert.equal(p.count, p.children.reduce((s, c) => s + c.count, 0));
   assert.equal(after.pages.withPage + after.pages.withoutPage, after.conversations.total);
 
   assert.equal(d((r) => r.csat.bad), 1);

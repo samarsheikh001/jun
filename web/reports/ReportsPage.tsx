@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { mapTopics, MIN_MAP_TOPICS, hueShades, topicHues, type MapTopic } from "../lib/topic-map.ts";
 import { topicInsight, type InsightPart } from "../lib/topic-insight.ts";
 import DayChart from "./DayChart.tsx";
+import { StartPages, Struggles } from "./PageSections.tsx";
 import TopicMap from "./TopicMap.tsx";
 import { TopicsPanel } from "./TopicsPanel.tsx";
 
@@ -103,103 +104,6 @@ const goTo = (path: string) => (e: MouseEvent) => {
   e.preventDefault();
   navigate(path);
 };
-
-/** A-06: where visitors were when they opened a chat. Paths only when every page is on one site. */
-function StartPages({ pages }: { pages: MetricsReport["pages"] }) {
-  const origins = new Set(pages.top.map((p) => new URL(p.page).origin));
-  const site = origins.size === 1 ? new URL(pages.top[0]!.page).host : null;
-  const label = (page: string) => {
-    const u = new URL(page);
-    let path = u.pathname;
-    try {
-      path = decodeURI(path);
-    } catch {
-      // Not valid percent-encoding: show it as stored.
-    }
-    // Long paths wrap after a slash; with several sites the host stays on one line.
-    const parts = (site || path !== "/" ? path : "").split(/(?<=\/)/);
-    return (
-      <>
-        {!site && <span className="page-host">{u.host}</span>}
-        {parts.map((part, i) => (
-          <span key={i}>
-            {part}
-            <wbr />
-          </span>
-        ))}
-      </>
-    );
-  };
-  const rest = pages.withPage - pages.top.reduce((s, p) => s + p.count, 0);
-  return (
-    <section className="dash-card">
-      <div className="dash-card-head">
-        <h2>Pages where chats start</h2>
-        {site && <span className="muted small nums">{site}</span>}
-      </div>
-      {pages.top.length === 0 ? (
-        <p className="muted small">
-          No chats from your site in this period. The widget notes the page a visitor is on when they send their first message.
-        </p>
-      ) : (
-        <>
-          <ul className="dash-rows bars">
-            {pages.top.map((p) => (
-              <li key={p.page} title={p.page} style={{ "--share": p.count / pages.top[0]!.count } as CSSProperties}>
-                <span className="dash-row-label page-path">{label(p.page)}</span>
-                <span className="dash-row-share">{percent(p.share)}</span>
-                <span className="dash-row-value">{p.count.toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="dash-foot">
-            Share of the {pages.withPage.toLocaleString()} chats that started on a known page{rest > 0 ? ` (${rest} on pages not listed)` : ""}.
-            {pages.withoutPage > 0 && ` ${pages.withoutPage} had no page (opened outside your site).`} Numbers and ids in paths are grouped as :id.
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
-
-const STRUGGLE_WORDS = { rage_click: "Rage clicks", dead_click: "Clicks that did nothing", stuck: "Stuck after a problem" } as const;
-
-/** A-08: where visitors who chatted got frustrated (rage clicks, dead clicks, stuck), by page and element. */
-function Struggles({ struggles }: { struggles: MetricsReport["struggles"] }) {
-  const path = (page: string) => {
-    try {
-      return decodeURI(new URL(page).pathname);
-    } catch {
-      return page;
-    }
-  };
-  return (
-    <section className="dash-card">
-      <div className="dash-card-head"><h2>Where visitors struggle</h2></div>
-      {struggles.list.length === 0 ? (
-        <p className="muted small">No rage clicks, dead clicks or stuck pages in this period's chats. The widget records them on your site and shares them when a visitor writes in.</p>
-      ) : (
-        <>
-          <ul className="dash-rows bars">
-            {struggles.list.map((s) => (
-              <li key={`${s.kind}|${s.page}|${s.target}`} title={s.page} style={{ "--share": s.conversations / struggles.list[0]!.conversations } as CSSProperties}>
-                <span className="dash-row-label">
-                  {STRUGGLE_WORDS[s.kind]}
-                  {s.target && <> on <code>{s.target}</code></>}
-                  <div className="muted small struggle-page">{path(s.page)}</div>
-                </span>
-                <span className="dash-row-value">{s.conversations.toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="dash-foot">
-            Chats whose visitor hit this before or while writing in ({struggles.conversations.toLocaleString()} chats had at least one). Only visitors who chatted are counted: the widget sends what happened with their messages.
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
 
 /** Topics Top topics names in its bar and legend; the rest are one Other (never an Other of one topic). */
 const MAX_TOPICS_SHOWN = 7;
