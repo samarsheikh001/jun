@@ -2500,12 +2500,23 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
    D-129, after beautifului.dev's primitives (patterns and measures, our tokens): source chips, copy and
    "N sources" under an answer, approval cards for proposals, a pill prompt bar. */
 .home-chat { display: flex; flex-direction: column; height: min(640px, 72vh); margin-top: 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); overflow: hidden; }
-/* Wide screens: the assistant is a panel docked on the right, as tall as the window, beside the brief. */
+.home-ask-head h2 { display: inline-flex; align-items: center; gap: 8px; }
+.home-ask-head h2 > svg { width: 16px; height: 16px; }
+/* Wide screens: the assistant is its own floating panel on the right, as tall as the window, apart
+   from the brief: a raised card with a header bar over the chat (after the user's "Operator" reference). */
 @media (min-width: 1180px) {
-  .content.home { display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 32vw, 480px); gap: 0 32px; align-items: start; }
+  .content.home { display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 32vw, 480px); gap: 0 32px; align-items: start; padding-right: 12px; }
   .home-main-col { min-width: 0; }
-  .home-ask { position: sticky; top: 16px; display: flex; flex-direction: column; height: calc(100dvh - 32px); margin: 0; }
-  .home-ask .home-chat, .home-ask .home-chat.empty { flex: 1; height: auto; min-height: 0; }
+  .home-ask {
+    position: sticky; top: 12px; display: flex; flex-direction: column; height: calc(100dvh - 24px); margin: -12px 0 0; padding: 0;
+    border: 1px solid var(--border); border-radius: calc(var(--radius) + 10px); background: var(--card); box-shadow: var(--shadow-lg, 0 12px 32px -12px rgb(0 0 0 / 0.25)); overflow: hidden;
+  }
+  /* Dark: the card token is the page's own colour, so the panel lifts a step to stand apart. */
+  :root[data-theme="dark"] .home-ask { background: color-mix(in oklch, var(--card), var(--foreground) 4%); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.6); }
+  .home-ask-head { flex-direction: column; align-items: stretch; gap: 2px; margin: 0; padding: 16px 20px 14px; border-bottom: 1px solid var(--border); }
+  .home-ask-head h2 { font-size: 16px; }
+  .home-ask-head .dash-caption { font-size: 12.5px; line-height: 18px; }
+  .home-ask .home-chat, .home-ask .home-chat.empty { flex: 1; height: auto; min-height: 0; margin: 0; border: 0; border-radius: 0; background: transparent; }
   /* An empty thread keeps its starters and composer at the bottom, where the conversation will be. */
   .home-ask .home-chat.empty { justify-content: flex-end; }
 }

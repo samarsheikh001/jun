@@ -221,8 +221,8 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
         {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
       </div>
       <section className="dash-card home-ask" aria-labelledby="ask-title">
-        <div className="dash-card-head">
-          <h2 id="ask-title">Ask about your desk</h2>
+        <div className="dash-card-head home-ask-head">
+          <h2 id="ask-title"><SparkleIcon aria-hidden="true" />Ask about your desk</h2>
           <span className="dash-caption">Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm.</span>
         </div>
         {data ? <AskChat workspaceId={workspaceId} disabled={off} /> : <div className="home-chat empty"><div className="skel-composer"><SkelText width={220} /></div></div>}
