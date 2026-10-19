@@ -723,9 +723,10 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 
 /* ---------- knowledge (after Chatbase's Sources page) ---------- */
 .panel form.row input { flex: 1; }
-.kb-page { width: 100%; max-width: 1920px; margin: 0 auto; padding: 32px 32px 48px; display: flex; flex-direction: column; gap: 24px; }
-.kb-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; }
-.kb-head h1 { margin: 0; }
+.kb-page { width: 100%; max-width: 1920px; margin: 0 auto; padding: 0 24px 48px; display: flex; flex-direction: column; gap: 24px; }
+/* D-117: Knowledge is listed under Agent, so it has the same header bar as the other Set up pages. */
+.kb-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin: 0 -24px; padding: 12px 24px; border-bottom: 1px solid var(--border); }
+.kb-head h1 { margin: 0; font-size: 16px; font-weight: 665; }
 .kb-head-side { display: flex; align-items: center; gap: 16px; }
 .kb-head-synced { color: var(--muted-foreground); }
 /* Add cards: 6 per row on wide screens, 3 on tablets, a snapping strip on phones. */
@@ -792,7 +793,7 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .kb-pager-size, .kb-pager-nav { display: flex; align-items: center; gap: 12px; }
 .kb-pager-nav { gap: 8px; }
 .kb-pager-nav > span { margin-right: 4px; }
-@media (max-width: 767px) { .kb-page { padding: 16px; } .kb-row { padding: 12px; } .kb-kind { display: none; } .kb-pager { padding: 0; } }
+@media (max-width: 767px) { .kb-page { padding: 0 16px 16px; } .kb-head { margin: 0 -16px; padding: 12px 16px; } .kb-row { padding: 12px; } .kb-kind { display: none; } .kb-pager { padding: 0; } }
 
 /* Sheets: the right-hand panel slides fully in (500 ms) and out (300 ms). */
 .kb-sheet { width: 75%; max-width: none; gap: 0; background: var(--background); transition-duration: 500ms; }
@@ -2007,6 +2008,9 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   /* One column: the page grows and the main scroller scrolls it. */
   .appear-page { grid-template-columns: minmax(0, 1fr); flex: none; }
   .appear-controls { border-right: 0; border-bottom: 1px solid var(--border); }
+  .appear-body { padding: 4px 16px 16px; }
+  .appear-panels { padding: 16px 16px 4px; }
+  .appear-actions { padding: 12px 16px; }
   .appear-stage { min-height: 600px; }
 }
 @media (max-width: 700px) {

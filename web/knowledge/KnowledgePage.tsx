@@ -226,7 +226,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
         <h1>Knowledge</h1>
         <div className="kb-head-side">
           {lastSynced && <span className="kb-head-synced">Last synced {ago(lastSynced)}</span>}
-          <Button type="button" variant="outline" size="lg" onClick={() => show({ kind: "test" })}>
+          <Button type="button" variant="outline" size="sm" onClick={() => show({ kind: "test" })}>
             <SearchIcon />
             Test a question
           </Button>
