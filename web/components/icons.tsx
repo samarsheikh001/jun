@@ -20,6 +20,7 @@ import {
   BubbleChatIcon,
   Cancel01Icon,
   ComputerIcon,
+  Contact01Icon,
   Delete02Icon,
   Download04Icon,
   Edit02Icon,
@@ -86,6 +87,7 @@ export const ChevronsRightIcon = make(ArrowRightDoubleIcon);
 export const ChevronDownIcon = make(ArrowDown01Icon);
 export const ChevronRightIcon = make(ArrowRight01Icon);
 export const ChevronUpIcon = make(ArrowUp01Icon);
+export const ContactsIcon = make(Contact01Icon);
 export const ColumnsIcon = make(LayoutThreeColumnIcon);
 export const DownloadIcon = make(Download04Icon);
 export const EditIcon = make(Edit02Icon);

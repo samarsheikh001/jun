@@ -170,6 +170,7 @@ visitors.get("/workspaces/:id/contacts/:contactId", async (c) => {
     const co0 = co!.results[0] as { external_id: string; name: string | null; attributes: string } | undefined;
     if (co0)
       company = {
+        id: row.company_id,
         externalId: co0.external_id,
         name: co0.name,
         attributes: JSON.parse(co0.attributes) as Record<string, string | number | boolean>,

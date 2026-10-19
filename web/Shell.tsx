@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, KeyIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, ContactsIcon, KeyIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -27,6 +27,7 @@ import { deskHref, deskPathname, navigate, usePath } from "./lib/router.ts";
 import { slugOf, withoutWorkspace } from "./lib/workspace-url.ts";
 import { movedFromSettings, SettingsDialog } from "./SettingsDialog.tsx";
 import { VisitorsPage } from "./visitors/VisitorsPage.tsx";
+import { ContactsPage } from "./contacts/ContactsPage.tsx";
 import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.tsx";
 import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
@@ -45,6 +46,8 @@ const NAV_GROUPS = [
     items: [
       { id: "inbox", label: "Inbox", Icon: InboxIcon },
       { id: "visitors", label: "Visitors", Icon: UsersIcon },
+      // V-16 (D-118): every person and company the desk knows; companies at /contacts/companies.
+      { id: "contacts", label: "Contacts", Icon: ContactsIcon },
       // The page is Reports; /dashboard stays its address.
       { id: "dashboard", label: "Reports", Icon: ChartColumnIcon },
     ],
@@ -76,6 +79,7 @@ function sectionOf(pagePath: string) {
     : pagePath.startsWith("/playground") ? "widget"
     : pagePath.startsWith("/channels") ? "channels"
     : pagePath.startsWith("/visitors") ? "visitors"
+    : pagePath.startsWith("/contacts") ? "contacts"
     : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
     : pagePath.startsWith("/welcome") ? "welcome"
     : "inbox";
@@ -630,6 +634,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <WelcomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} onboarding={onboarding.state} reload={onboarding.reload} />
       ) : section === "visitors" ? (
         <VisitorsPage workspaceId={workspace.workspaceId} visitors={visitors} />
+      ) : section === "contacts" ? (
+        <ContactsPage workspaceId={workspace.workspaceId} path={pagePath} />
       ) : section === "dashboard" ? (
         <ReportsPage workspaceId={workspace.workspaceId} />
       ) : section === "widget" ? (

@@ -1490,6 +1490,33 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 .openers code { white-space: nowrap; }
 .openers-off, .issue-images-warning { margin: 0; background: var(--note); color: var(--note-foreground); border: 1px solid var(--note-border); border-radius: var(--radius); padding: 6px 10px; }
 
+/* ---------- contacts (V-16, D-118): the inbox's tab strip and table on a daily page ---------- */
+.contacts-page { --colors: color, background-color, border-color, text-decoration-color, fill, stroke; gap: 16px; }
+.contacts-page .cv-tabs { position: static; margin: 0 -4px; }
+.contacts-page .cv-search { width: 260px; }
+.contacts-table { min-width: 620px; }
+.contacts-table th { cursor: default; }
+.contacts-num { font-variant-numeric: tabular-nums; }
+.contacts-open { display: inline-grid; min-width: 20px; height: 20px; place-items: center; padding: 0 6px; border-radius: 9999px; background: var(--primary-soft); color: var(--primary); font-size: 12px; font-weight: 665; }
+.contacts-open-word { color: var(--primary); font-weight: 525; }
+.contacts-link { color: inherit; text-decoration: none; }
+.contacts-link:hover, .cv-name a:hover { text-decoration: underline; }
+.contacts-title { display: grid; gap: 4px; }
+.contacts-title .reports-head { gap: 12px; }
+.contacts-title h1 { min-width: 0; overflow-wrap: anywhere; }
+.contacts-crumbs { display: flex; gap: 6px; color: var(--muted-foreground); }
+.contacts-crumbs a { color: inherit; text-decoration: none; }
+.contacts-crumbs a:hover { color: var(--foreground); text-decoration: underline; }
+.contacts-page .dash-hero .dash-card-head { margin-bottom: 10px; }
+.contacts-page .env { overflow-wrap: anywhere; }
+.contacts-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+.contacts-list-skel { height: 120px; margin-top: 8px; border-radius: var(--radius); }
+.contacts-trail { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.contacts-trail li { display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.contacts-trail li:last-child { border-bottom: 0; }
+.contacts-trail .cv-time { flex: none; width: 64px; }
+.contacts-trail-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ---------- Appearance page (W-04): settings column + the real widget on a dotted canvas ---------- */
 .appear-page { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 4fr) minmax(0, 5fr); }
 .appear-controls { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
@@ -1668,7 +1695,8 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .reports-head { flex-wrap: wrap; }
 .reports-head h1 { margin: 0; }
 /* Dashboard (A-01): flat sections split by rules like the other pages; numbers in Geist Mono, words in Geist,
-   one blue for the AI (--stream-*) and neutrals for the rest. No texture, glow or rainbow. */
+   one blue for the AI (--stream-*) and neutrals for the rest. No texture or rainbow; the only glow is the
+   ribbon's, behind its busiest stretch. */
 :root {
   --stream-0: oklch(0.83 0.085 252);
   --stream-1: oklch(0.70 0.15 255);
@@ -1691,39 +1719,63 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 24px 40px; align-items: start; }
 .dash-rows-skel { height: 220px; margin-top: 8px; border-radius: var(--radius); }
 
-/* Conversations per day: stacked columns, resolved by the AI at the base in the strongest blue, the AI's
-   other chats lighter, the team's in a neutral. Hover or the arrow keys pick a day (the head shows it). */
-:root { --day-team: color-mix(in oklch, var(--muted-foreground) 45%, transparent); }
-.day-chart { margin-top: 8px; }
-.day-skel { height: 248px; margin-top: 8px; border-radius: var(--radius); }
-.day-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 16px; font-size: 13px; color: var(--muted-foreground); }
+/* Conversations: the period's total as a headline (big mono number, change badge, the period before),
+   a one-line readout of the picked day, then the ribbon. */
+.conv-head { display: grid; gap: 2px; margin-bottom: 14px; }
+.conv-head h2 { margin: 0; font-size: 15px; line-height: 22px; font-weight: 665; letter-spacing: normal; color: color-mix(in oklch, var(--foreground) 72%, transparent); }
+.conv-total { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.conv-total .kpi-value { font-size: 44px; line-height: 1.1; }
+.conv-compare { margin: 0; font-size: 13px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.day-readout { margin: 0 0 6px; min-height: 20px; font-size: 13px; line-height: 20px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.day-readout .strong { color: var(--foreground); font-weight: 525; }
+@media (max-width: 640px) { .day-readout { min-height: 40px; } }
+
+/* Conversations per day as a ribbon (D-106, glow approved later): each day's parts stacked symmetrically
+   around a centre line, resolved by the AI innermost in the strongest blue, outer layers lighter, a soft
+   glow behind the busiest stretch. Hover or the arrow keys move one marker (pills: total, AI resolved). */
+:root { --ribbon-glow: 0.3; --ribbon-line: color-mix(in oklch, var(--foreground) 16%, transparent); --ribbon-pill: #fff; }
+:root[data-theme="dark"] { --ribbon-glow: 0.2; --ribbon-line: color-mix(in oklch, var(--foreground) 22%, transparent); --ribbon-pill: var(--popover); }
+.day-chart { margin-top: 4px; min-width: 0; }
+.day-skel { height: 268px; margin-top: 8px; border-radius: var(--radius); }
+.day-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 10px; font-size: 13px; color: var(--muted-foreground); }
 .day-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .day-legend i { width: 10px; height: 10px; border-radius: 3px; }
-.day-legend i, .day-stack i { background: var(--day-team); }
-.day-chart .aiResolved { background: var(--stream-2); }
-.day-chart .aiThenTeam { background: var(--stream-0); }
-.day-plot { position: relative; height: 220px; margin-left: 32px; }
-.day-ticks span { position: absolute; left: 0; right: 0; bottom: calc(var(--at) * 100%); border-top: 1px dashed var(--border); }
-.day-ticks span:first-child { border-top-style: solid; }
-.day-ticks span::before {
-  content: attr(data-n); position: absolute; right: calc(100% + 10px); top: -7px;
-  font: 11px/14px var(--font-mono); color: var(--muted-foreground); font-variant-numeric: tabular-nums;
+.day-legend .aiResolved { background: var(--stream-2); }
+.day-legend .aiThenTeam { background: var(--stream-1); }
+.day-legend .team { background: var(--stream-0); }
+.ribbon { position: relative; height: 240px; outline: none; touch-action: pan-y; cursor: crosshair; border-radius: 6px; }
+.ribbon:focus-visible { box-shadow: 0 0 0 2px var(--ring); }
+.ribbon svg { display: block; overflow: visible; }
+.ribbon-glow { opacity: var(--ribbon-glow); }
+.ribbon-axis { stroke: var(--ribbon-line); stroke-width: 1; }
+.ribbon-layers path { transition: opacity 0.15s; stroke: color-mix(in oklch, var(--background) 55%, transparent); stroke-width: 1; stroke-linejoin: round; }
+.ribbon-layers .team { stroke: none; }
+.ribbon-layers .aiResolved { fill: var(--stream-2); }
+.ribbon-layers .aiThenTeam { fill: var(--stream-1); }
+.ribbon-layers .team { fill: var(--stream-0); }
+/* Without the AI's parts the team's chats are the whole ribbon, in the main blue. */
+.ribbon[data-solo] .ribbon-layers .team { fill: var(--stream-2); }
+.ribbon-layers { animation: ribbon-in 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.ribbon-marker { stroke: var(--ribbon-line); stroke-width: 1; stroke-dasharray: 3 3; }
+.ribbon-marker.on { stroke: color-mix(in oklch, var(--foreground) 45%, transparent); stroke-dasharray: none; }
+.ribbon-pill {
+  position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 4px;
+  height: 22px; padding: 0 8px; border-radius: 999px; white-space: nowrap; pointer-events: none;
+  font: 500 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--foreground);
+  background: var(--ribbon-pill); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+  transition: left 0.12s ease-out, top 0.12s ease-out;
 }
-.day-cols { position: absolute; inset: 0; display: flex; outline: none; }
-.day-cols:focus-visible { box-shadow: 0 0 0 2px var(--ring); border-radius: 4px; }
-.day-col { flex: 1; min-width: 0; display: flex; align-items: flex-end; justify-content: center; padding: 0 max(1px, 18%); }
-.day-stack {
-  display: flex; flex-direction: column; gap: 1px; width: 100%; max-width: 48px; height: calc(var(--h) * 100%);
-  border-radius: 4px 4px 0 0; overflow: hidden; transform-origin: bottom; transition: opacity 0.15s;
-  animation: day-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+.ribbon-pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--stream-2); }
+.ribbon-pill small { font: 11px/1 var(--font-sans, inherit); color: var(--muted-foreground); }
+.ribbon-empty { position: absolute; left: 50%; top: calc(50% - 24px); transform: translateX(-50%); font-size: 13px; color: var(--muted-foreground); white-space: nowrap; }
+.day-axis { position: relative; height: 18px; margin-top: 6px; }
+.day-axis span { position: absolute; top: 0; width: 60px; text-align: center; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.day-axis span.on { z-index: 1; color: var(--foreground); background: var(--background); border-radius: 4px; }
+@keyframes ribbon-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .ribbon-layers { animation: none; }
+  .ribbon-pill, .ribbon-layers path { transition: none; }
 }
-.day-stack i { display: block; min-height: 2px; }
-.day-cols[data-active] .day-col:not(.on) .day-stack { opacity: 0.4; }
-.day-axis { display: flex; margin: 8px 0 0 32px; }
-.day-axis span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; font-size: 12px; color: var(--muted-foreground); }
-.day-axis span.on { color: var(--foreground); }
-@keyframes day-in { from { transform: scaleY(0); } }
-@media (prefers-reduced-motion: reduce) { .day-stack { animation: none; } }
 
 /* Headline numbers. */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 24px 32px; margin-top: 28px; }
@@ -1764,8 +1816,13 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 /* One line (its height is known before the numbers load); a long detail ends in an ellipsis. */
 .kpi-detail { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; }
 .kpi-detail > :last-child:not(.kpi-change) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.kpi-change { flex: none; display: inline-flex; align-items: center; gap: 1px; font-weight: 665; font-variant-numeric: tabular-nums; }
-.kpi-change svg { width: 14px; height: 14px; stroke-width: 2.5; }
+/* The change against the period before: a small tinted badge. */
+.kpi-change {
+  flex: none; display: inline-flex; align-items: center; gap: 2px; height: 22px; padding: 0 7px 0 5px; border-radius: 999px;
+  font: 500 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted-foreground);
+  background: color-mix(in oklch, currentColor 12%, transparent);
+}
+.kpi-change svg { width: 13px; height: 13px; stroke-width: 2.5; }
 .kpi-change.up { color: var(--success); }
 .kpi-change.down { color: var(--destructive); }
 
@@ -2035,6 +2092,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .content { padding: 20px 16px; }
   .panel { padding-top: 20px; }
   .dash-card { --pad: 16px; }
+  .contacts-page .cv-search { width: 100%; margin-left: 0; }
   .messages { padding: 16px; }
   input:not([type="checkbox"], [type="radio"], [type="color"]), textarea, select { font-size: 16px; }
 }

@@ -29,6 +29,8 @@ interface Page { title: string; placeholder: string; groups: (query: string) => 
 const NAVIGATION: { label: string; path: string; hint?: string }[] = [
   { label: "Inbox", path: "/inbox", hint: "g i" },
   { label: "Visitors", path: "/visitors", hint: "g v" },
+  { label: "Contacts", path: "/contacts" },
+  { label: "Contacts: Companies", path: "/contacts/companies" },
   { label: "Reports", path: "/dashboard", hint: "g d" },
   { label: "Agent", path: "/agent" },
   { label: "Knowledge", path: "/knowledge" },

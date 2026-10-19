@@ -3,6 +3,7 @@ import { finishStuckSyncs, handleCrawlBatch, resyncAll, type CrawlJob } from "./
 import { labelAllWorkspaces } from "./ai/topics.ts";
 import { ai, handleChatGPTCallback } from "./routes/ai.ts";
 import { auth } from "./routes/auth.ts";
+import { contacts } from "./routes/contacts.ts";
 import { conversations } from "./routes/conversations.ts";
 import { email } from "./routes/email.ts";
 import { files } from "./routes/files.ts";
@@ -59,6 +60,7 @@ app.route("/", files);
 app.route("/", ai);
 app.route("/", agent);
 app.route("/", visitors);
+app.route("/", contacts);
 app.route("/", onboarding);
 app.route("/", inbox);
 app.route("/", metrics);
