@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/message-scroller.tsx";
 import { runBulk, runProposal, type BulkRowState } from "./actions.ts";
 import { BulkCard } from "./BulkCard.tsx";
+import { AskInput, highlight, type AskInputHandle } from "./AskInput.tsx";
 import { DeskLink } from "./DeskLink.tsx";
 
 // I-19 (D-127): Home's ask box. A streamed chat with the desk assistant (POST …/home/ask, NDJSON): its
@@ -741,7 +742,7 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
   const thread = useThread(workspaceId);
   const recent = useRecent(workspaceId);
   const [message, setMessage] = useState("");
-  const input = useRef<HTMLTextAreaElement>(null);
+  const input = useRef<AskInputHandle>(null);
   const streaming = Boolean(thread.live);
   const busy = Boolean(thread.live || thread.running);
   const send = (text: string) => {
@@ -769,7 +770,7 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
                     </MessageScrollerItem>
                   ) : turn.role === "user" ? (
                     <MessageScrollerItem key={turn.id} messageId={String(turn.id)} scrollAnchor className="wchat-row-user">
-                      <div className="wchat-user">{turn.text}</div>
+                      <div className="wchat-user">{highlight(turn.text)}</div>
                     </MessageScrollerItem>
                   ) : turn.role === "error" ? (
                     <MessageScrollerItem key={turn.id} messageId={String(turn.id)} className="wchat-ai wchat-error">
@@ -831,21 +832,18 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
           send(message);
         }}
       >
-        <textarea
+        <AskInput
           ref={input}
-          rows={1}
+          ws={workspaceId}
           value={message}
-          disabled={Boolean(disabled)}
-          placeholder={disabled ? "The assistant needs the AI on" : "Ask about chats, customers, errors, Reports…"}
-          aria-label="Ask the desk assistant"
-          maxLength={2000}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send(message);
-            }
+          onChange={setMessage}
+          onSend={send}
+          onNewChat={() => {
+            newAskChat(workspaceId);
+            input.current?.focus();
           }}
+          disabled={Boolean(disabled)}
+          placeholder={disabled ? "The assistant needs the AI on" : "Ask, @ to mention a chat or person, / for commands"}
         />
         {streaming ? (
           <Button type="button" size="icon-sm" aria-label="Stop" title="Stop" onClick={() => stop(workspaceId)}>

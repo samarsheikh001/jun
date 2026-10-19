@@ -2618,12 +2618,27 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .ask-recent-row > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
 .ask-recent-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The prompt bar: a pill that grows with the text; send turns into stop while an answer streams. */
-form.ask-bar { display: flex; align-items: flex-end; gap: 8px; margin: 12px; padding: 6px 6px 6px 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); transition: box-shadow 150ms; }
+form.ask-bar { position: relative; display: flex; align-items: flex-end; gap: 8px; margin: 12px; padding: 6px 6px 6px 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); transition: box-shadow 150ms; }
 .ask-bar:focus-within { box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground) 28%, transparent), 0 2px 8px #0000000f; }
 .ask-bar[data-disabled] { opacity: 0.7; }
 .ask-bar textarea { flex: 1; min-height: 32px; max-height: 160px; padding: 6px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 14px; line-height: 20px; field-sizing: content; box-shadow: none; }
 .ask-bar textarea:focus, .ask-bar textarea:focus-visible { outline: none; box-shadow: none; }
 .ask-bar textarea::placeholder { color: var(--muted-foreground); }
+/* D-134: @ references highlighted behind a transparent textarea (as MentionText), the @ and / list above the bar. */
+.ask-input { position: relative; flex: 1; min-width: 0; display: flex; }
+.ask-input-back { position: absolute; inset: 0; overflow: hidden; padding: 6px 0; color: var(--foreground); font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow-wrap: break-word; pointer-events: none; }
+.ask-bar .ask-input textarea { color: transparent; caret-color: var(--foreground); overflow-wrap: break-word; white-space: pre-wrap; }
+.ask-bar .ask-input textarea::selection { background: color-mix(in oklab, #3b82f6 35%, transparent); color: transparent; }
+mark.ask-mention { color: inherit; background: color-mix(in oklab, oklch(0.65 0.15 250) 22%, transparent); border-radius: 4px; box-shadow: 0 0 0 1px color-mix(in oklab, oklch(0.65 0.15 250) 35%, transparent); }
+.ask-menu { position: absolute; z-index: 30; left: -12px; right: -44px; bottom: calc(100% + 14px); max-height: 320px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 12px; background: var(--popover); color: var(--popover-foreground); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); animation: approval-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.ask-menu-head { padding: 6px 8px 2px; font-size: 11.5px; line-height: 16px; font-weight: 500; color: var(--muted-foreground); }
+.ask-menu-option { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px; border-radius: 8px; font-size: 13px; line-height: 18px; cursor: pointer; }
+.ask-menu-option[aria-selected="true"] { background: var(--accent); }
+.ask-menu-icon { display: inline-flex; flex: none; color: var(--muted-foreground); }
+.ask-menu-icon > svg { width: 14px; height: 14px; }
+.ask-menu-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.ask-menu-name.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.ask-menu-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 12px; }
 .ask-bar [data-slot="button"] { flex: none; width: 32px; height: 32px; border-radius: 999px; }
 .ask-bar [data-slot="button"] svg { width: 16px; height: 16px; }
 /* An approval card (web/components/approval-card.tsx): question, what changes as chips, Cancel / Confirm. */
