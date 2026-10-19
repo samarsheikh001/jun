@@ -63,6 +63,14 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
       }
       tabs={[
         {
+          // D-113: the look is a tab of the widget, not a page of its own (/appearance keeps its address).
+          // D-114: first, since its preview is where you try the agent as customers see it.
+          value: "appearance",
+          label: "Appearance",
+          path: "/appearance",
+          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
+        },
+        {
           value: "install",
           label: "Install",
           path: "/appearance/install",
@@ -71,13 +79,6 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
               <InstallTab workspaceId={workspaceId} canEdit={canEdit} install={install} reload={reloadInstall} />
             </div>
           ),
-        },
-        {
-          // D-113: the look is a tab of the widget, not a page of its own (/appearance keeps its address).
-          value: "appearance",
-          label: "Appearance",
-          path: "/appearance",
-          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
         },
         {
           value: "behaviour",
@@ -537,7 +538,7 @@ function Preview({ widgetKey, look, open, onOpen }: { widgetKey: string; look: R
           </button>
         )}
       </div>
-      <p className="appear-note muted small">This is the real widget with your unsaved changes. Messages you send here start real chats in your inbox.</p>
+      <p className="appear-note muted small">Try your agent here: this is the real widget, with your unsaved look and your saved agent. Messages you send start real chats in your inbox.</p>
     </div>
   );
 }

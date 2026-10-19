@@ -54,8 +54,9 @@ const NAV_GROUPS = [
     items: [
       // Everything about the AI, Knowledge and its settings included (AGENT_SECTIONS).
       { id: "agent", label: "Agent", Icon: BotIcon },
-      // Install · Appearance · Behaviour, sharing /appearance* (old links keep working).
-      { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance/install" },
+      // Appearance · Install · Behaviour, sharing /appearance* (D-114: opens on Appearance, where the
+      // preview is the real widget to try; on Install until the widget is on a site).
+      { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance" },
       // D-112: the other ways customers reach you: Email (C-02) at /channels/email; /channels lists them.
       { id: "channels", label: "Channels", Icon: ChannelsIcon, href: "/channels" },
     ],
@@ -469,7 +470,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                 const { id, label, Icon } = item;
                 const here = navOf(section) === id;
                 const dot = id === "widget" && notInstalled;
-                const href = "href" in item ? item.href : `/${id}`;
+                const href = dot ? "/appearance/install" : "href" in item ? item.href : `/${id}`;
                 return (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
