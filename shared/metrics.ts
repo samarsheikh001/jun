@@ -23,6 +23,8 @@ export interface ConversationFacts {
   firstAgentId: string | null;
   /** Reason on the first public handoff by the AI (never AI_OFF_HANDOFF_REASON), or null. */
   handoffReason: string | null;
+  /** D-126: when that handoff notice was written. Optional for older callers. */
+  handoffAt?: number | null;
   /** It was passed to the team because AI replies were off: not the AI handing off. */
   aiOffHandoff: boolean;
   /** Page of the conversation's first debug snapshot, sent with the visitor's first message (A-06). */
@@ -326,6 +328,32 @@ export interface TopicCount {
   handedOff: number;
 }
 
+/** D-126: one grouped handoff reason (handoffReasonLabel), a bar in "Top handoff reasons". */
+export interface HandoffReason {
+  reason: string;
+  count: number;
+  /** Of the period's handoffs. */
+  share: number;
+  /** The most common topics among its labelled chats (at most two), and how many of its chats have a topic. */
+  topics: { name: string; count: number }[];
+  labeled: number;
+  /** Median time from the handoff to the team's first reply, over its chats that got one after it. */
+  replyMedian: number | null;
+  /** Its chats, newest first (at most MAX_REASON_CHATS). */
+  chats: HandoffChat[];
+}
+/** A handed-off chat in a reason's list. `replyAfter`: handoff to the team's first reply (null: none, or it came before). */
+export interface HandoffChat {
+  id: string;
+  createdAt: number;
+  topic: string | null;
+  replied: boolean;
+  replyAfter: number | null;
+}
+/** Most reasons the report carries ("Show all" on Reports) and chats per reason. */
+export const MAX_HANDOFF_REASONS = 20;
+export const MAX_REASON_CHATS = 25;
+
 export interface MetricsReport {
   days: MetricPeriod;
   timezone: string;
@@ -356,7 +384,10 @@ export interface MetricsReport {
     resolutionRate: number | null;
     handoffRate: number | null;
     firstResponse: DurationStat;
-    reasons: { reason: string; count: number }[];
+    /** D-126: grouped reasons, most first (at most MAX_HANDOFF_REASONS). */
+    reasons: HandoffReason[];
+    /** D-126: handoff to the team's first public reply, over handed-off chats answered after the handoff. */
+    handoffReply: DurationStat;
   };
   team: { answered: number; firstResponse: DurationStat };
   csat: { good: number; bad: number; score: number | null; badComments: { conversationId: string; comment: string; createdAt: number }[] };
@@ -534,7 +565,8 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
   const aiTimes: number[] = [];
   const teamTimes: number[] = [];
   const byAgent = new Map<string, number[]>();
-  const reasons = new Map<string, { reason: string; count: number }>();
+  const reasons = new Map<string, { reason: string; count: number; topics: Map<string, number>; labeled: number; chats: HandoffChat[]; replies: number[] }>();
+  const handoffReplies: number[] = [];
   let passedWhileOff = 0;
   const pages = new Map<string, PageRow>();
   let withoutPage = 0;
@@ -577,8 +609,20 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
         if (topic) topic.handedOff++;
         const label = handoffReasonLabel(c.handoffReason!);
         const key = label.toLowerCase();
-        const entry = reasons.get(key) ?? { reason: label, count: 0 };
+        const entry = reasons.get(key) ?? { reason: label, count: 0, topics: new Map<string, number>(), labeled: 0, chats: [] as HandoffChat[], replies: [] as number[] };
         entry.count++;
+        if (topic) {
+          entry.labeled++;
+          entry.topics.set(topic.name, (entry.topics.get(topic.name) ?? 0) + 1);
+        }
+        // Only a reply after the handoff is the team picking it up (an earlier one came before the AI had it back).
+        const at = c.handoffAt ?? null;
+        const replyAfter = at !== null && c.firstAgentAt !== null && c.firstAgentAt >= at ? c.firstAgentAt - at : null;
+        if (replyAfter !== null) {
+          entry.replies.push(replyAfter);
+          handoffReplies.push(replyAfter);
+        }
+        entry.chats.push({ id: c.id, createdAt: c.createdAt, topic: topic?.name ?? null, replied: c.firstAgentAt !== null, replyAfter });
         reasons.set(key, entry);
       } else if (c.firstAgentAt === null && !aiOff) {
         aiResolved++;
@@ -649,7 +693,19 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       resolutionRate: rate(aiResolved, aiConversations),
       handoffRate: rate(handedOff, aiConversations),
       firstResponse: durationStat(aiTimes),
-      reasons: [...reasons.values()].sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)).slice(0, 5),
+      reasons: [...reasons.values()]
+        .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+        .slice(0, MAX_HANDOFF_REASONS)
+        .map((x): HandoffReason => ({
+          reason: x.reason,
+          count: x.count,
+          share: x.count / handedOff,
+          topics: [...x.topics].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 2).map(([name, count]) => ({ name, count })),
+          labeled: x.labeled,
+          replyMedian: durationStat(x.replies).median,
+          chats: x.chats.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id)).slice(0, MAX_REASON_CHATS),
+        })),
+      handoffReply: durationStat(handoffReplies),
     },
     team: { answered: teamTimes.length, firstResponse: durationStat(teamTimes) },
     csat: { good, bad, score: rate(good, good + bad), badComments },

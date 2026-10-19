@@ -16,6 +16,8 @@ import {
   durationStat,
   formatDuration,
   handoffReasonLabel,
+  MAX_HANDOFF_REASONS,
+  MAX_REASON_CHATS,
   parsePeriod,
   periodDays,
   previousPeriod,
@@ -297,7 +299,7 @@ test("pages where chats start: pages under one parent path group, sums and all",
   assert.deepEqual(groupPages([]), []);
 });
 
-test("handoff reasons: grouped, top five", () => {
+test("handoff reasons: grouped, most first, each with its share", () => {
   assert.equal(handoffReasonLabel("AI error: fetch failed (502)"), "AI error");
   assert.equal(handoffReasonLabel("Bug flagged by the AI: POST /api/billing returns 500"), "Bug flagged by the AI");
   assert.equal(handoffReasonLabel("Monthly AI reply cap (2000) reached."), "Monthly AI reply cap reached");
@@ -307,14 +309,53 @@ test("handoff reasons: grouped, top five", () => {
 
   const reasons = ["Refund request", "refund request.", "Refund request", "AI error: a", "AI error: b", "Wants to cancel", "Angry", "Data deletion", "Zebra"];
   const r = computeMetrics(input({ conversations: reasons.map((reason) => conv(NOW, { handoffReason: reason })) }));
-  assert.deepEqual(r.ai.reasons, [
-    { reason: "Refund request", count: 3 },
-    { reason: "AI error", count: 2 },
-    { reason: "Angry", count: 1 },
-    { reason: "Data deletion", count: 1 },
-    { reason: "Wants to cancel", count: 1 },
+  assert.deepEqual(r.ai.reasons.map((x) => [x.reason, x.count]), [
+    ["Refund request", 3],
+    ["AI error", 2],
+    ["Angry", 1],
+    ["Data deletion", 1],
+    ["Wants to cancel", 1],
+    ["Zebra", 1],
   ]);
+  assert.equal(r.ai.reasons[0]!.share, 3 / 9);
   assert.equal(r.ai.handedOff, 9);
+
+  // Capped at MAX_HANDOFF_REASONS.
+  const many = computeMetrics(input({ conversations: Array.from({ length: MAX_HANDOFF_REASONS + 5 }, (_, i) => conv(NOW, { handoffReason: `Reason ${i}` })) }));
+  assert.equal(many.ai.reasons.length, MAX_HANDOFF_REASONS);
+});
+
+test("handoff reasons: topics, chats and the time from handoff to the team's reply (D-126)", () => {
+  const refund = { handoffReason: "Refund needs approval", firstAiAt: NOW + S };
+  const r = computeMetrics(input({
+    conversations: [
+      conv(NOW - 3 * MIN, { ...refund, id: "a", topicId: "tp_r", topicName: "Refunds", handoffAt: NOW, firstAgentAt: NOW + 4 * MIN }),
+      conv(NOW - 2 * MIN, { ...refund, id: "b", topicId: "tp_r", topicName: "Refunds", handoffAt: NOW, firstAgentAt: NOW + 2 * MIN }),
+      conv(NOW - 1 * MIN, { ...refund, id: "c", topicId: "tp_b", topicName: "Billing", handoffAt: NOW }),
+      // A teammate replied before the handoff: replied, but not a reply to it.
+      conv(NOW - 4 * MIN, { ...refund, id: "d", handoffAt: NOW, firstAgentAt: NOW - MIN }),
+      // Older callers without handoffAt: no time.
+      conv(NOW - 5 * MIN, { ...refund, id: "e", firstAgentAt: NOW + MIN, topicId: "tp_x", topicName: "Accounts" }),
+      conv(NOW, { handoffReason: "Asked for a person", id: "f", handoffAt: NOW, firstAgentAt: NOW + 10 * MIN }),
+    ],
+  }));
+  const x = r.ai.reasons[0]!;
+  assert.equal(x.reason, "Refund needs approval");
+  assert.equal(x.count, 5);
+  assert.equal(x.labeled, 4);
+  assert.deepEqual(x.topics, [{ name: "Refunds", count: 2 }, { name: "Accounts", count: 1 }]);
+  assert.equal(x.replyMedian, 3 * MIN);
+  assert.deepEqual(x.chats.map((c) => c.id), ["c", "b", "a", "d", "e"], "newest first");
+  assert.deepEqual(x.chats.find((c) => c.id === "d"), { id: "d", createdAt: NOW - 4 * MIN, topic: null, replied: true, replyAfter: null });
+  assert.equal(x.chats.find((c) => c.id === "c")!.replied, false);
+  assert.deepEqual(r.ai.reasons[1]!.topics, []);
+  // Over every reason: 2m, 4m, 10m.
+  assert.equal(r.ai.handoffReply.count, 3);
+  assert.equal(r.ai.handoffReply.median, 4 * MIN);
+
+  const many = computeMetrics(input({ conversations: Array.from({ length: MAX_REASON_CHATS + 3 }, (_, i) => conv(NOW - i * S, { handoffReason: "Angry" })) }));
+  assert.equal(many.ai.reasons[0]!.chats.length, MAX_REASON_CHATS);
+  assert.equal(many.ai.reasons[0]!.count, MAX_REASON_CHATS + 3);
 });
 
 test("first response: first visitor message to first public agent reply", () => {

@@ -174,7 +174,10 @@ await step("the report moved by exactly the scenario", async () => {
 
   const reason = (r: any) => r.ai.reasons.find((x: { reason: string }) => x.reason === "The customer asked for a person")?.count ?? 0;
   assert.ok(reason(after) >= 1);
-  assert.ok(after.ai.reasons.length <= 5);
+  assert.ok(after.ai.reasons.length <= 20);
+  // D-126: each reason carries its share and its chats.
+  const asked = after.ai.reasons.find((x: { reason: string }) => x.reason === "The customer asked for a person");
+  assert.ok(asked.share > 0 && asked.share <= 1 && asked.chats.length >= 1, JSON.stringify(asked));
 
   // A-06: query, hash, trailing slash and ids grouped.
   assert.equal(pageCount(after, `${SITE}/billing`) - pageCount(before, `${SITE}/billing`), 2, JSON.stringify(after.pages));

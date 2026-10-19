@@ -1,10 +1,8 @@
-import { useId, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronRightIcon, DeadClickIcon, RageClickIcon, StuckIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button.tsx";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet.tsx";
-import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { MAX_START_PAGES, type ChatOutcome, type MetricsReport, type PageRow, type StruggleKind, type StrugglePage } from "../../shared/metrics.ts";
-import { deskHref, navigate } from "../lib/router.ts";
+import { ChatsSheet } from "./ChatsSheet.tsx";
 
 // D-124: "Pages where chats start" (rows with a per-day sparkline, grouped under shared parent paths)
 // and "Where visitors struggle" (one card per page, chips per element, what happened to those chats).
@@ -12,10 +10,6 @@ import { deskHref, navigate } from "../lib/router.ts";
 
 const percent = (r: number) => `${Math.round(r * 100)}%`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-const goTo = (path: string) => (e: MouseEvent) => {
-  e.preventDefault();
-  navigate(path);
-};
 
 const decodedPath = (page: string) => {
   const path = new URL(page).pathname;
@@ -252,32 +246,26 @@ export function Struggles({ struggles }: { struggles: MetricsReport["struggles"]
           </p>
         </>
       )}
-      <Sheet open={list !== null} onOpenChange={(o) => { if (!o) setList(null); }}>
-        <SheetContent side="right" className="st-sheet">
-          <SheetHeader>
-            <SheetTitle className="st-sheet-title">{list ? decodedPath(list.card.page) : ""}</SheetTitle>
-            <SheetDescription>{list ? `${list.title} · ${plural(listed, "chat")}` : ""}</SheetDescription>
-          </SheetHeader>
-          <ScrollArea className="topics-sheet-body">
-            <ul className="st-chats">
-              {chats.map((c) => (
-                <li key={c.id}>
-                  <a href={deskHref(`/inbox/${c.id}`)} onClick={goTo(`/inbox/${c.id}`)}>
-                    <span className="st-chat-when">
-                      {c.createdAt === null ? "Chat" : new Date(c.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                    <span className="st-chat-kinds" aria-label={c.kinds.map((k) => KIND[k].short).join(", ")}>
-                      {c.kinds.map((k) => { const { Icon } = KIND[k]; return <Icon key={k} />; })}
-                    </span>
-                    {c.outcome && <span className={`tt-pill st-chat-outcome ${c.outcome}`}>{OUTCOME[c.outcome]}</span>}
-                  </a>
-                </li>
-              ))}
-            </ul>
-            {listed > chats.length && <p className="dash-foot st-chats-foot">Showing the newest {chats.length} of {listed}.</p>}
-          </ScrollArea>
-        </SheetContent>
-      </Sheet>
+      <ChatsSheet
+        open={list !== null}
+        onClose={() => setList(null)}
+        title={list ? decodedPath(list.card.page) : ""}
+        titleClassName="st-sheet-title"
+        description={list ? `${list.title} · ${plural(listed, "chat")}` : ""}
+        total={listed}
+        chats={chats.map((c) => ({
+          id: c.id,
+          createdAt: c.createdAt,
+          aside: (
+            <>
+              <span className="st-chat-kinds" aria-label={c.kinds.map((k) => KIND[k].short).join(", ")}>
+                {c.kinds.map((k) => { const { Icon } = KIND[k]; return <Icon key={k} />; })}
+              </span>
+              {c.outcome && <span className={`tt-pill st-chat-outcome ${c.outcome}`}>{OUTCOME[c.outcome]}</span>}
+            </>
+          ),
+        }))}
+      />
     </section>
   );
 }

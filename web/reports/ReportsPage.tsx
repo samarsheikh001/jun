@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { ArrowDownIcon as ArrowDown, ArrowRightIcon as ArrowRight, ArrowUpIcon as ArrowUp, BotIcon, ChatIcon, HandoffIcon, TagIcon, ThumbsDownIcon, ThumbsUpIcon } from "@/components/icons";
 import { formatDuration, MAX_METRIC_CONVERSATIONS, METRIC_PERIODS, type DayPoint, type MetricPeriod, type MetricsReport, type TopicCount } from "../../shared/metrics.ts";
 import { api, describeError } from "../api.ts";
@@ -9,10 +9,12 @@ import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { mapTopics, MIN_MAP_TOPICS, type MapTopic } from "../lib/topic-map.ts";
-import { topicInsight, type InsightPart } from "../lib/topic-insight.ts";
+import { topicInsight } from "../lib/topic-insight.ts";
 import DayChart from "./DayChart.tsx";
+import { HandoffReasons, HandoffReasonsSkeleton } from "./HandoffReasons.tsx";
 import { StartPages, Struggles } from "./PageSections.tsx";
 import TopicMap from "./TopicMap.tsx";
+import { BarCard, BarStat, Insight, useActiveRow } from "./RankedBars.tsx";
 import { TopicsPanel } from "./TopicsPanel.tsx";
 
 // A-01: core metrics. Days are calendar days in the browser's time zone; the Worker
@@ -112,63 +114,15 @@ const MAX_TOPICS_SHOWN = 7;
 const TOPICS_SHEET_PATH = "/dashboard/topics";
 const openTopics = () => navigate(TOPICS_SHEET_PATH, { replace: true });
 
-/** The written line beside the bars (D-123): topic names and numbers emphasised, the top topic in its bar's strong blue. */
-function Insight({ parts }: { parts: InsightPart[] }) {
-  return (
-    <p className="tt-insight">
-      {parts.map((p, i) =>
-        typeof p === "string" ? p
-          : "strong" in p ? <span key={i} className="tt-em">{p.strong}</span>
-            : <span key={i} className={p.lead ? "tt-em tt-lead" : "tt-em"}>{p.lead && <i aria-hidden="true" />}{p.topic}</span>,
-      )}
-    </p>
-  );
-}
-
-/** One of the left column's stats: a faint icon, the number in mono, a muted label. */
-function TopicStat({ icon: Icon, value, label, hint }: { icon: typeof TagIcon; value: string; label: string; hint?: string }) {
-  return (
-    <div className="tt-stat" title={hint}>
-      <Icon className="tt-stat-icon" />
-      <dd>{value}</dd>
-      <dt>{label}</dt>
-    </div>
-  );
-}
-
 /** A bar row: a topic, or Other (`rest` set). */
 type TopicRow = { id: string; name: string; count: number; topic: TopicCount | null; rest?: TopicCount[] };
 
 /** The hovered or focused row's card: its numbers, kept inside the bars' box (right of the count, else under or over the row). */
-function TopicCard({ row, labeled, showAi, box, active }: { row: TopicRow; labeled: number; showAi: boolean; box: HTMLDivElement | null; active: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
-  useLayoutEffect(() => {
-    const card = ref.current;
-    const li = box?.querySelector<HTMLElement>(`[data-row="${CSS.escape(active)}"]`);
-    const end = li?.querySelector<HTMLElement>(".tt-value");
-    const fill = li?.querySelector<HTMLElement>(".tt-fill");
-    if (!box || !card || !end || !fill) return;
-    const b = box.getBoundingClientRect();
-    const e = end.getBoundingClientRect();
-    const f = fill.getBoundingClientRect();
-    const w = card.offsetWidth;
-    const h = card.offsetHeight;
-    const right = e.right - b.left + 12;
-    if (right + w <= b.width) {
-      const mid = f.top + f.height / 2 - b.top;
-      setAt({ left: right, top: Math.max(0, Math.min(mid - h / 2, b.height - h)) });
-      return;
-    }
-    // No room beside the bar: under the row (over it near the box's bottom), ending at the count.
-    const below = f.bottom - b.top + 12;
-    const above = f.top - b.top - 12 - h;
-    setAt({ left: Math.max(0, Math.min(e.right - b.left - w, b.width - w)), top: below + h <= b.height || above < 0 ? below : above });
-  }, [box, active]);
+function TopicCard({ row, labeled, showAi, box }: { row: TopicRow; labeled: number; showAi: boolean; box: HTMLDivElement | null }) {
   const t = row.topic;
   const share = (n: number, of: number) => `${n.toLocaleString()} (${percent(of > 0 ? n / of : null)})`;
   return (
-    <div ref={ref} className="tt-card" role="tooltip" style={at ? { left: at.left, top: at.top } : { visibility: "hidden" }}>
+    <BarCard box={box} active={row.id}>
       <span className="tt-card-name">{row.name}</span>
       <span className="tt-card-row"><span>Chats</span><b>{share(row.count, labeled)}</b></span>
       {t && showAi && (t.ai > 0 ? (
@@ -182,7 +136,7 @@ function TopicCard({ row, labeled, showAi, box, active }: { row: TopicRow; label
       ) : (
         <span className="tt-card-foot open">Open in inbox <ArrowRight /></span>
       )}
-    </div>
+    </BarCard>
   );
 }
 
@@ -194,7 +148,7 @@ function TopicCard({ row, labeled, showAi, box, active }: { row: TopicRow; label
  * when there's no topic map above.
  */
 function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: MetricsReport["topics"]; showAi: boolean; aiEnabled: boolean; manage: boolean; mapNote: string | null }) {
-  const [active, setActive] = useState<string | null>(null);
+  const { active, hover } = useActiveRow();
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const shown = topics.list.length <= MAX_TOPICS_SHOWN + 1 ? topics.list.length : MAX_TOPICS_SHOWN;
   const rest = topics.list.slice(shown);
@@ -205,12 +159,6 @@ function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: Met
   // The AI's numbers across the labelled topics it answered in (the headline counts every AI chat).
   const ai = topics.list.reduce((s, t) => ({ chats: s.chats + t.ai, resolved: s.resolved + t.aiResolved, handedOff: s.handedOff + t.handedOff }), { chats: 0, resolved: 0, handedOff: 0 });
   const href = (id: string) => `/inbox?topic=${encodeURIComponent(id)}`;
-  const hover = (id: string) => ({
-    onPointerEnter: () => setActive(id),
-    onPointerLeave: () => setActive((a) => (a === id ? null : a)),
-    onFocus: () => setActive(id),
-    onBlur: () => setActive((a) => (a === id ? null : a)),
-  });
   const activeRow = rows.find((r) => r.id === active) ?? null;
   return (
     <section className="dash-card top-topics">
@@ -235,12 +183,12 @@ function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: Met
             <div className="tt-side">
               {insight && <Insight parts={insight} />}
               <dl className="tt-stats">
-                <TopicStat icon={TagIcon} value={topics.list.length.toLocaleString()} label={topics.list.length === 1 ? "Topic" : "Topics"} />
-                <TopicStat icon={ChatIcon} value={topics.labeled.toLocaleString()} label="Labelled chats" />
+                <BarStat icon={TagIcon} value={topics.list.length.toLocaleString()} label={topics.list.length === 1 ? "Topic" : "Topics"} />
+                <BarStat icon={ChatIcon} value={topics.labeled.toLocaleString()} label="Labelled chats" />
                 {showAi && ai.chats > 0 && (
                   <>
-                    <TopicStat icon={BotIcon} value={percent(ai.resolved / ai.chats)} label="Resolved by the AI" hint={`${ai.resolved} of the ${ai.chats} AI chats in these topics, resolved alone`} />
-                    <TopicStat icon={HandoffIcon} value={ai.handedOff.toLocaleString()} label="Handed off" hint={`${percent(ai.handedOff / ai.chats)} of the ${ai.chats} AI chats in these topics went to the team`} />
+                    <BarStat icon={BotIcon} value={percent(ai.resolved / ai.chats)} label="Resolved by the AI" hint={`${ai.resolved} of the ${ai.chats} AI chats in these topics, resolved alone`} />
+                    <BarStat icon={HandoffIcon} value={ai.handedOff.toLocaleString()} label="Handed off" hint={`${percent(ai.handedOff / ai.chats)} of the ${ai.chats} AI chats in these topics went to the team`} />
                   </>
                 )}
               </dl>
@@ -269,7 +217,7 @@ function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: Met
                   );
                 })}
               </ol>
-              {activeRow && <TopicCard key={activeRow.id} row={activeRow} labeled={topics.labeled} showAi={showAi} box={box} active={activeRow.id} />}
+              {activeRow && <TopicCard key={activeRow.id} row={activeRow} labeled={topics.labeled} showAi={showAi} box={box} />}
             </div>
           </div>
           <p className="dash-foot">
@@ -454,6 +402,7 @@ function DashboardSkeleton({ aiOff }: { aiOff: boolean }) {
         </div>
       </section>
       <TopTopicsSkeleton />
+      {!aiOff && <HandoffReasonsSkeleton />}
       <div className="dash-grid" aria-hidden="true">
         {[0, 1].map((i) => (
           <section key={i} className="dash-card">
@@ -524,28 +473,11 @@ export function ReportsPage({ workspaceId, path, canEdit }: { workspaceId: strin
           <Overview r={r} />
           {showMap && <TopicMapSection topics={r.topics} mapped={mapped} />}
           <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} manage={!showMap} mapNote={mapNote} />
+          {!r.ai.off && <HandoffReasons ai={r.ai} />}
 
           <div className="dash-grid">
             <StartPages pages={r.pages} />
             {r.struggles && <Struggles struggles={r.struggles} />}
-            {!r.ai.off && (
-              <section className="dash-card">
-                <div className="dash-card-head"><h2>Top handoff reasons</h2></div>
-                {r.ai.reasons.length === 0 ? (
-                  <p className="muted small">No handoffs in this period.</p>
-                ) : (
-                  <ul className="dash-rows bars">
-                    {r.ai.reasons.map((x) => (
-                      <li key={x.reason} style={{ "--share": x.count / r.ai.reasons[0]!.count } as CSSProperties}>
-                        <span className="dash-row-label">{x.reason}</span>
-                        <span className="dash-row-share">{percent(x.count / r.ai.handedOff)}</span>
-                        <span className="dash-row-value">{x.count.toLocaleString()}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            )}
             <Ratings csat={r.csat} />
           </div>
 

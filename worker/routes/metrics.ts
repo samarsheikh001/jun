@@ -41,6 +41,11 @@ const CONVERSATION_FACTS = `
         WHERE m.conversation_id = c.id AND m.author_type = 'system' AND m.internal = 0 AND json_extract(m.meta, '$.handoffReason') IS NOT NULL
           AND json_extract(m.meta, '$.handoffReason') <> ?5
         ORDER BY m.seq LIMIT 1) AS handoffReason,
+      -- D-126: when that notice was written, for the time from handoff to the team's reply.
+      (SELECT m.created_at FROM messages m
+        WHERE m.conversation_id = c.id AND m.author_type = 'system' AND m.internal = 0 AND json_extract(m.meta, '$.handoffReason') IS NOT NULL
+          AND json_extract(m.meta, '$.handoffReason') <> ?5
+        ORDER BY m.seq LIMIT 1) AS handoffAt,
       EXISTS (SELECT 1 FROM messages m
         WHERE m.conversation_id = c.id AND m.author_type = 'system' AND m.internal = 0 AND json_extract(m.meta, '$.handoffReason') = ?5) AS aiOffHandoff,
       -- A-06: the loader sends the page with the visitor's first message; no extra tracking.

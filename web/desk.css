@@ -1964,10 +1964,23 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .tt-card-foot { max-width: 260px; margin-top: 2px; font-size: 11px; color: var(--muted-foreground); }
 .tt-card-foot.open { display: flex; align-items: center; gap: 4px; color: var(--stream-2); font-weight: 560; }
 .tt-card-foot.open svg { width: 12px; height: 12px; }
+/* Top handoff reasons (D-126): Top topics' rows as buttons opening the reason's chats, a wider label
+   column with the topics a reason comes from under its name. */
+button.tt-row { width: 100%; padding: 0; border: 0; background: none; font: inherit; text-align: inherit; cursor: pointer; }
+.hr-rows .tt-row { grid-template-columns: 200px minmax(0, 1fr); }
+.hr-label { display: grid; gap: 1px; white-space: normal; }
+.hr-name, .hr-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hr-sub { font-size: 11.5px; color: var(--muted-foreground); opacity: 0.85; }
+.tt-row.lead .hr-sub, .tt-row.on .hr-sub { color: var(--muted-foreground); }
+.st-sheet-action { margin-top: 10px; }
+.hr-step-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; color: var(--muted-foreground); }
+.hr-step-note svg { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+.hr-chat-topic { overflow: hidden; max-width: 40%; font-size: 12.5px; color: var(--muted-foreground); white-space: nowrap; text-overflow: ellipsis; }
+.hr-chat-reply.none { color: var(--muted-foreground); }
 @media (max-width: 800px) { .tt-layout { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) {
   .tt-rows { gap: 16px; }
-  .tt-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tt-row, .hr-rows .tt-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .tt-label { text-align: left; }
 }
 @media (prefers-reduced-motion: reduce) { .tt-fill::before, .tt-label { transition: none; } .tt-fill.skel { animation: none; } }
