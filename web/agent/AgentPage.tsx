@@ -13,6 +13,7 @@ import { TestsView } from "./TestsView.tsx";
 import { AgentSkeleton } from "./AgentSkeleton.tsx";
 import { SaveBar, routeFor, setCodeView, useCodeView } from "./parts.tsx";
 import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
+import { TestChat } from "./TestChat.tsx";
 
 // The Agent page (AI-18). Plain views, one URL each, for the people who run support:
 //   /agent              Instructions: how the AI talks, when it hands over (instructions.md)
@@ -25,21 +26,32 @@ import { useAgentConfig, type AgentConfig } from "./useAgentConfig.ts";
 // text, exactly as `jun pull` / `jun push` see it. Every view edits one shared draft; one save makes
 // it a new version.
 
-type Tab = "instructions" | "tasks" | "tests" | "actions" | "widgets";
-const TABS: Tab[] = ["instructions", "tasks", "tests", "actions", "widgets"];
+type Tab = "try" | "instructions" | "tasks" | "tests" | "actions" | "widgets";
+const TABS: Tab[] = ["try", "instructions", "tasks", "tests", "actions", "widgets"];
+
+/** A sidebar entry under Agent: one of this page's views, or (D-113) Knowledge and the AI's settings, which keep their own pages. */
+type AgentNavId = Tab | "knowledge" | "settings";
 
 /**
- * The Agent's parts, as the sidebar lists them under Agent. `group` starts a labelled group: Actions
- * and Widgets are the building blocks tasks use (D-71), so they come last, apart. The AI's settings
- * are in Settings → AI.
+ * Everything about the AI, as the sidebar lists it under Agent (D-113: one place for it). `group`
+ * starts a labelled group: Actions and Widgets are the building blocks tasks use (D-71), so they come
+ * last, apart. Knowledge stays at /knowledge and the settings at Settings → AI (the dialog).
  */
-export const AGENT_SECTIONS: { id: Tab; label: string; path: string; group?: string }[] = [
+export const AGENT_SECTIONS: { id: AgentNavId; label: string; path: string; group?: string }[] = [
+  { id: "try", label: "Try it", path: "/agent/try" },
   { id: "instructions", label: "Instructions", path: "/agent" },
+  { id: "knowledge", label: "Knowledge", path: "/knowledge" },
   { id: "tasks", label: "Tasks", path: "/agent/tasks" },
   { id: "tests", label: "Tests", path: "/agent/tests" },
+  { id: "settings", label: "AI settings", path: "/settings/ai" },
   { id: "actions", label: "Actions", path: "/agent/actions", group: "Building blocks" },
   { id: "widgets", label: "Widgets", path: "/agent/widgets" },
 ];
+
+/** Which entry under Agent a page is (Knowledge included). */
+export function agentNavId(path: string): AgentNavId {
+  return path.startsWith("/knowledge") ? "knowledge" : agentSection(path);
+}
 
 /**
  * Old /agent/code[/<file>] links (the Code page before the Form / Code switch): that file's page,
@@ -103,8 +115,8 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
         className="agent-tabs"
         actions={
           <>
-            {/* An item's page (a widget, an action, a task) has its own AI / Code tabs. */}
-            {!(item && (tab === "widgets" || tab === "actions" || tab === "tasks")) && (
+            {/* An item's page (a widget, an action, a task) has its own AI / Code tabs; Try it has no file. */}
+            {tab !== "try" && !(item && (tab === "widgets" || tab === "actions" || tab === "tasks")) && (
               <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCodeView(v === "code")}>
                 <TabsList className="kb-tabs agent-view-switch" aria-label="View">
                   <TabsTrigger value="form">Form</TabsTrigger>
@@ -116,6 +128,7 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
           </>
         }
         tabs={[
+          { value: "try", label: "Try it", path: "/agent/try", content: view(<TryView cfg={cfg} canEdit={canEdit} />) },
           { value: "instructions", label: "Instructions", path: "/agent", content: view(<InstructionsView cfg={cfg} canEdit={canEdit} workspaceId={workspaceId} file={file} />) },
           { value: "tasks", label: "Tasks", path: "/agent/tasks", content: view(<TasksView cfg={cfg} canEdit={canEdit} selected={tab === "tasks" ? item : null} />) },
           { value: "actions", label: "Actions", path: "/agent/actions", content: view(<ActionsView cfg={cfg} canEdit={canEdit} selected={tab === "actions" ? item : null} />) },
@@ -125,6 +138,19 @@ export function AgentPage({ workspaceId, canEdit, path }: { workspaceId: string;
       />
       <HistorySheet cfg={cfg} canEdit={canEdit} open={history} onClose={() => setHistory(false)} />
     </>
+  );
+}
+
+/**
+ * D-113: chat with the agent as a customer would, on the unsaved draft: the same test chat a task's
+ * Test tab has (AI-29), for the whole agent. Nothing is stored; POST actions are pretended.
+ */
+function TryView({ cfg, canEdit }: { cfg: AgentConfig; canEdit: boolean }) {
+  if (!canEdit) return <p className="muted p-6">Owners and admins can try the agent here.</p>;
+  return (
+    <div className="agent-try-chat" aria-label="Try your agent">
+      <TestChat cfg={cfg} path="try" name="try it" />
+    </div>
   );
 }
 

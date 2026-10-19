@@ -391,7 +391,7 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="content wide reports">
       <div className="row reports-head">
-        <h1>Dashboard</h1>
+        <h1>Reports</h1>
         <span className="spacer" />
         <div className="segmented" role="group" aria-label="Period">
           {METRIC_PERIODS.map((p) => (

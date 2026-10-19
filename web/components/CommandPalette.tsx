@@ -27,17 +27,19 @@ interface Group { label: string; items: Item[]; limit?: number }
 interface Page { title: string; placeholder: string; groups: (query: string) => Group[] }
 
 const NAVIGATION: { label: string; path: string; hint?: string }[] = [
-  { label: "Dashboard", path: "/dashboard", hint: "g d" },
   { label: "Inbox", path: "/inbox", hint: "g i" },
   { label: "Visitors", path: "/visitors", hint: "g v" },
-  { label: "Knowledge", path: "/knowledge" },
+  { label: "Reports", path: "/dashboard", hint: "g d" },
   { label: "Agent", path: "/agent" },
+  { label: "Agent: Try it", path: "/agent/try" },
+  { label: "Knowledge", path: "/knowledge" },
   { label: "Agent: Tasks", path: "/agent/tasks" },
   { label: "Agent: Actions", path: "/agent/actions" },
   { label: "Agent: Widgets", path: "/agent/widgets" },
   { label: "Agent: Tests", path: "/agent/tests" },
   { label: "Chat widget", path: "/appearance/install" },
-  { label: "Appearance", path: "/appearance" },
+  { label: "Chat widget: Appearance", path: "/appearance" },
+  { label: "Channels: Email", path: "/channels/email" },
   { label: "Settings", path: "/settings", hint: "g s" },
 ];
 /**

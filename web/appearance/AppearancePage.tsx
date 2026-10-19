@@ -16,44 +16,16 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { DeskCode } from "./DeskCode.tsx";
 import { UploadIcon } from "../components/icons.tsx";
 
-// Two sidebar pages share /appearance* (/widget itself is the chat iframe the Worker serves):
-// Chat widget (D-91): Install (/appearance/install) and Behaviour (/appearance/behaviour), with
-// whether the widget is on a site yet in the header; and Appearance (/appearance): the look.
-export type WidgetTab = "install" | "behaviour";
+// The Chat widget page, at /appearance* (/widget itself is the chat iframe the Worker serves). D-113:
+// one sidebar entry, tabs Install (/appearance/install), Appearance (/appearance: the look, as a
+// form or as desk.yaml) and Behaviour (/appearance/behaviour); whether the widget is on a site yet
+// sits in the header (D-91).
+export type WidgetTab = "install" | "appearance" | "behaviour";
 
-/** The Appearance page: the widget's look, as a form or as desk.yaml (Form / Code). */
-export function AppearancePage({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
-  // D-84: Form / Code; Code is desk.yaml. Its own switch, always opening on Form (the look is
-  // picked by eye; the Agent pages' remembered Code view doesn't carry over).
-  const [code, setCode] = useState(false);
-  return (
-    <PageTabs
-      title="Appearance"
-      value="look"
-      className="widget-page"
-      tabsHidden
-      actions={
-        <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
-          <TabsList className="kb-tabs agent-view-switch" aria-label="View">
-            <TabsTrigger value="form">Form</TabsTrigger>
-            <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      }
-      tabs={[
-        {
-          value: "look",
-          label: "Look",
-          path: "/appearance",
-          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
-        },
-      ]}
-    />
-  );
-}
-
-export function WidgetPage({ workspaceId, canEdit, tab, install, reloadInstall }: {
+/** The Chat widget page: install it, its look, how it behaves. */
+export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, reloadInstall }: {
   workspaceId: string;
+  workspaceName: string;
   canEdit: boolean;
   tab: WidgetTab;
   /** Null until the onboarding state has loaded. */
@@ -70,12 +42,25 @@ export function WidgetPage({ workspaceId, canEdit, tab, install, reloadInstall }
     }, 5000);
     return () => window.clearInterval(timer);
   }, [waiting, reloadInstall]);
+  // D-84: the look's Form / Code (Code is desk.yaml). Its own switch, opening on Form (the look is
+  // picked by eye; the Agent pages' remembered Code view doesn't carry over).
+  const [code, setCode] = useState(false);
   return (
     <PageTabs
       title="Chat widget"
       value={tab}
       className="widget-page"
       aside={<InstallChip install={install} />}
+      actions={
+        tab === "appearance" ? (
+          <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
+            <TabsList className="kb-tabs agent-view-switch" aria-label="View">
+              <TabsTrigger value="form">Form</TabsTrigger>
+              <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        ) : undefined
+      }
       tabs={[
         {
           value: "install",
@@ -86,6 +71,13 @@ export function WidgetPage({ workspaceId, canEdit, tab, install, reloadInstall }
               <InstallTab workspaceId={workspaceId} canEdit={canEdit} install={install} reload={reloadInstall} />
             </div>
           ),
+        },
+        {
+          // D-113: the look is a tab of the widget, not a page of its own (/appearance keeps its address).
+          value: "appearance",
+          label: "Appearance",
+          path: "/appearance",
+          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
         },
         {
           value: "behaviour",

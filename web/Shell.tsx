@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BookOpenIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, PaletteIcon, KeyIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, KeyIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuBadge,
-  SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarTrigger, useSidebar,
+  SidebarGroupLabel, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar.tsx";
 import { DeskIcon } from "./components/DeskIcon.tsx";
 import { PageErrorBoundary } from "./components/PageErrorBoundary.tsx";
@@ -13,8 +13,8 @@ import { ThemeButton } from "./components/ThemeButton.tsx";
 import type { HubClientEvent, HubEvent, LiveVisitor, PresenceEntry } from "../shared/protocol.ts";
 import { api, type Me } from "./api.ts";
 import { InboxPage } from "./inbox/InboxPage.tsx";
-import { AppearancePage, WidgetPage, type WidgetTab } from "./appearance/AppearancePage.tsx";
-import { AGENT_SECTIONS, AgentPage, agentSection, movedFromAgentCode } from "./agent/AgentPage.tsx";
+import { WidgetPage, type WidgetTab } from "./appearance/AppearancePage.tsx";
+import { AGENT_SECTIONS, AgentPage, agentNavId, movedFromAgentCode } from "./agent/AgentPage.tsx";
 import { CommandPalette, ShortcutsHelp } from "./components/CommandPalette.tsx";
 import { bridge, isControlTarget, isTypingTarget, modKey } from "./lib/bridge.ts";
 import { dispatchShortcut, INITIAL_SHORTCUT_STATE, type ShortcutCommand } from "./lib/commands.ts";
@@ -35,19 +35,36 @@ import { CHANNEL_SECTIONS, channelSection, ChannelsOverview, EmailChannelPage } 
 import { WorkspaceSwitcher, WorkspaceSwitcherSkeleton } from "./workspaces/WorkspaceSwitcher.tsx";
 import { currentWorkspace, goHome, switchWorkspace } from "./workspaces/workspace.ts";
 
-const NAV = [
-  { id: "dashboard", label: "Dashboard", Icon: ChartColumnIcon },
-  { id: "inbox", label: "Inbox", Icon: InboxIcon },
-  { id: "visitors", label: "Visitors", Icon: UsersIcon },
-  { id: "knowledge", label: "Knowledge", Icon: BookOpenIcon },
-  { id: "agent", label: "Agent", Icon: BotIcon },
-  // Chat widget (Install, Behaviour) and Appearance (the look) share /appearance* (old links keep working).
-  { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance/install" },
-  { id: "appearance", label: "Appearance", Icon: PaletteIcon, href: "/appearance" },
-  // D-112: the other ways customers reach you: Email (C-02) at /channels/email; /channels lists them.
-  { id: "channels", label: "Channels", Icon: ChannelsIcon, href: "/channels" },
-  // D-86: connect your own AI to the desk's MCP server (/mcp is the server itself).
-  { id: "connect", label: "MCP", Icon: McpIcon },
+/**
+ * D-113: the sidebar by job. The day's work first (the desk opens on Inbox), then setting up what
+ * customers meet, then developers. The icon rail drops the group labels.
+ */
+const NAV_GROUPS = [
+  {
+    label: null,
+    items: [
+      { id: "inbox", label: "Inbox", Icon: InboxIcon },
+      { id: "visitors", label: "Visitors", Icon: UsersIcon },
+      // The page is Reports; /dashboard stays its address.
+      { id: "dashboard", label: "Reports", Icon: ChartColumnIcon },
+    ],
+  },
+  {
+    label: "Set up",
+    items: [
+      // Everything about the AI, Knowledge and its settings included (AGENT_SECTIONS).
+      { id: "agent", label: "Agent", Icon: BotIcon },
+      // Install · Appearance · Behaviour, sharing /appearance* (old links keep working).
+      { id: "widget", label: "Chat widget", Icon: ChatIcon, href: "/appearance/install" },
+      // D-112: the other ways customers reach you: Email (C-02) at /channels/email; /channels lists them.
+      { id: "channels", label: "Channels", Icon: ChannelsIcon, href: "/channels" },
+    ],
+  },
+  {
+    label: "Developers",
+    // D-86: connect your own AI to the desk's MCP server (/mcp is the server itself).
+    items: [{ id: "connect", label: "MCP", Icon: McpIcon }],
+  },
 ] as const;
 
 /** Which sidebar entry a path belongs to. */
@@ -55,14 +72,16 @@ function sectionOf(pagePath: string) {
   return pagePath.startsWith("/knowledge") ? "knowledge"
     : pagePath.startsWith("/agent") ? "agent"
     : pagePath.startsWith("/connect") ? "connect"
-    : pagePath.startsWith("/appearance/install") || pagePath.startsWith("/appearance/behaviour") ? "widget"
-    : pagePath.startsWith("/appearance") ? "appearance"
+    : pagePath.startsWith("/appearance") ? "widget"
     : pagePath.startsWith("/channels") ? "channels"
     : pagePath.startsWith("/visitors") ? "visitors"
     : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
     : pagePath.startsWith("/welcome") ? "welcome"
     : "inbox";
 }
+
+/** The sidebar entry a page belongs to: Knowledge is listed under Agent (D-113). */
+const navOf = (section: ReturnType<typeof sectionOf>) => (section === "knowledge" ? "agent" : section);
 
 /**
  * Who was signed in on this browser last time, for the first frame before /me answers (a
@@ -114,17 +133,20 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
           <WorkspaceSwitcherSkeleton name={session.workspace} />
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarMenu aria-label="Main">
-              {NAV.map((item) => {
+          {NAV_GROUPS.map((group) => (
+          <SidebarGroup key={group.label ?? "work"}>
+            {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+            <SidebarMenu aria-label={group.label ?? "Main"}>
+              {group.items.map((item) => {
                 const { id, label, Icon } = item;
+                const active = navOf(section) === id;
                 return (
                 <SidebarMenuItem key={id}>
-                  <SidebarMenuButton isActive={section === id} tooltip={label} render={<a href={deskHref("href" in item ? item.href : `/${id}`)} />}>
+                  <SidebarMenuButton isActive={active} tooltip={label} render={<a href={deskHref("href" in item ? item.href : `/${id}`)} />}>
                     <Icon />
                     <span>{label}</span>
                   </SidebarMenuButton>
-                  {id === "channels" && section === "channels" && (
+                  {id === "channels" && active && (
                     <SidebarMenuSub aria-label="Channels">
                       {CHANNEL_SECTIONS.map((ch) => (
                         <SidebarMenuSubItem key={ch.id}>
@@ -135,12 +157,12 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
                       ))}
                     </SidebarMenuSub>
                   )}
-                  {id === "agent" && section === "agent" && (
+                  {id === "agent" && active && (
                     <SidebarMenuSub aria-label="Agent">
                       {AGENT_SECTIONS.map((a) => (
                         <SidebarMenuSubItem key={a.id}>
                           {a.group && <span className="agent-nav-group">{a.group}</span>}
-                          <SidebarMenuSubButton isActive={agentSection(pagePath) === a.id} href={deskHref(a.path)}>
+                          <SidebarMenuSubButton isActive={agentNavId(pagePath) === a.id} href={deskHref(a.path)}>
                             <span>{a.label}</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
@@ -152,6 +174,7 @@ export function ShellSkeleton({ session }: { session: LastSession }) {
               })}
             </SidebarMenu>
           </SidebarGroup>
+          ))}
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
@@ -426,7 +449,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // D-91: until the widget is on a site, its sidebar entry carries a dot and opens on Install.
   const install = ob ? { installed: ob.steps.install, host: ob.installedOn, widgetKey: ob.widgetKey } : null;
   const notInstalled = install !== null && !install.installed;
-  const widgetTab: WidgetTab = pagePath.startsWith("/appearance/behaviour") ? "behaviour" : "install";
+  const widgetTab: WidgetTab = pagePath.startsWith("/appearance/behaviour") ? "behaviour" : pagePath.startsWith("/appearance/install") ? "install" : "appearance";
 
   return (
     // Town's sidebar (D-36): shadcn's Sidebar, collapsing to a 56px icon rail (toggle, or Ctrl/Cmd+B).
@@ -438,18 +461,21 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           <WorkspaceSwitcher current={workspace} all={me.memberships ?? [workspace]} />
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarMenu aria-label="Main">
-              {NAV.map((item) => {
+          {NAV_GROUPS.map((group) => (
+          <SidebarGroup key={group.label ?? "work"}>
+            {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+            <SidebarMenu aria-label={group.label ?? "Main"}>
+              {group.items.map((item) => {
                 const { id, label, Icon } = item;
+                const here = navOf(section) === id;
                 const dot = id === "widget" && notInstalled;
                 const href = "href" in item ? item.href : `/${id}`;
                 return (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
-                    isActive={section === id && !settingsOpen}
+                    isActive={here && !settingsOpen}
                     tooltip={dot ? `${label} (not installed yet)` : label}
-                    render={<a href={deskHref(href)} aria-current={section === id && !settingsOpen ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(href); }} />}
+                    render={<a href={deskHref(href)} aria-current={here && !settingsOpen ? "page" : undefined} onClick={(e) => { e.preventDefault(); navigate(href); }} />}
                   >
                     <Icon />
                     <span>{label}{dot && <span className="sr-only">, not installed yet</span>}</span>
@@ -457,7 +483,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                   {dot && <span className="nav-dot" aria-hidden="true" />}
                   {id === "visitors" && visitors && visitors.length > 0 && <SidebarMenuBadge className="nav-count">{visitors.length}</SidebarMenuBadge>}
                   {/* The channels open under it while you're there, like the Agent's parts. */}
-                  {id === "channels" && section === "channels" && !settingsOpen && (
+                  {id === "channels" && here && !settingsOpen && (
                     <SidebarMenuSub aria-label="Channels">
                       {CHANNEL_SECTIONS.map((ch) => {
                         const active = channelSection(pagePath) === ch.id;
@@ -477,10 +503,10 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                     </SidebarMenuSub>
                   )}
                   {/* The Agent's parts open under it while you're there (Chatbase's "Build"); the icon rail shows only Agent. */}
-                  {id === "agent" && section === "agent" && !settingsOpen && (
+                  {id === "agent" && here && !settingsOpen && (
                     <SidebarMenuSub aria-label="Agent">
                       {AGENT_SECTIONS.map((a) => {
-                        const active = agentSection(pagePath) === a.id;
+                        const active = agentNavId(pagePath) === a.id;
                         return (
                           <SidebarMenuSubItem key={a.id}>
                             {a.group && <span className="agent-nav-group">{a.group}</span>}
@@ -502,6 +528,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
               })}
             </SidebarMenu>
           </SidebarGroup>
+          ))}
         </SidebarContent>
         <SidebarFooter>
           {ob && showGetStarted && section !== "welcome" && (
@@ -605,9 +632,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : section === "dashboard" ? (
         <ReportsPage workspaceId={workspace.workspaceId} />
       ) : section === "widget" ? (
-        <WidgetPage workspaceId={workspace.workspaceId} canEdit={canEdit} tab={widgetTab} install={install} reloadInstall={reloadOnboarding} />
-      ) : section === "appearance" ? (
-        <AppearancePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+        <WidgetPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} tab={widgetTab} install={install} reloadInstall={reloadOnboarding} />
       ) : section === "channels" ? (
         channelSection(pagePath) === "email" ? (
           <EmailChannelPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />

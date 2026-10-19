@@ -158,7 +158,7 @@ export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; can
       title="Topics"
       id="topics"
       ref={ref}
-      description={`The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to ${max}). See them on the Dashboard and filter the inbox by them. Visitors never see topics.`}
+      description={`The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to ${max}). See them on Reports and filter the inbox by them. Visitors never see topics.`}
       action={canEdit && <Button variant="outline" size="sm" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</Button>}
     >
       {notice && <p className="ok-text small">{notice}</p>}

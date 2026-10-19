@@ -8,7 +8,7 @@ import { ModelFactsSkeleton } from "./InstructionsView.tsx";
 // While the agent's files load, each Agent view draws its own layout with placeholders (the same
 // classes as the real view), so nothing moves when the files arrive.
 
-type Tab = "instructions" | "tasks" | "tests" | "actions" | "widgets";
+type Tab = "try" | "instructions" | "tasks" | "tests" | "actions" | "widgets";
 
 const CARD_WIDTHS = [[132, 260, 180], [108, 240, 120], [150, 270, 200], [96, 230, 150], [124, 250, 90], [140, 220, 170]] as const;
 
@@ -45,6 +45,14 @@ export function AgentSkeleton({ tab, item, code, canEdit }: { tab: Tab; item: st
       <div className="agent-skel-studio" {...busy}>
         <Skeleton />
         <Skeleton />
+      </div>
+    );
+  }
+  // D-113: Try it has no file, so no Code view: the test chat's box.
+  if (tab === "try") {
+    return (
+      <div className="agent-try-chat" {...busy}>
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
