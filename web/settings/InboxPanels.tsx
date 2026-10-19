@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { cachedGet, fetchSetting } from "./settingsData.ts";
 import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { SettingRow, SettingsCard } from "./layout.tsx";
 import { DeskFileNote } from "../components/DeskFileNote.tsx";
+import { deskHref, navigate } from "../lib/router.ts";
 
 interface SavedReplyRow { id: string; title: string; body: string }
 interface TagRow { id: string; name: string; conversations: number }
@@ -110,100 +111,20 @@ export function TagsPanel({ workspaceId, canEdit }: { workspaceId: string; canEd
   );
 }
 
-interface TopicRow { id: string; name: string; conversations: number }
-
-/**
- * A-02: the AI's topic labels. Owners and admins rename, merge (move the conversations, delete
- * the source) and delete them (those conversations get labelled again later), or label now.
- */
-export function TopicsPanel({ workspaceId, canEdit }: { workspaceId: string; canEdit: boolean }) {
-  const base = `/workspaces/${workspaceId}/topics`;
-  const [topics, setTopics] = useState<TopicRow[] | null>(() => cachedGet<{ topics: TopicRow[] }>(base)?.topics ?? null);
-  const [max, setMax] = useState(() => cachedGet<{ max: number }>(base)?.max ?? 40);
-  const [merging, setMerging] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
-  const ref = useRef<HTMLElement>(null);
-  const load = useCallback(async () => {
-    const r = await fetchSetting<{ topics: TopicRow[]; max: number }>(base);
-    setTopics(r.topics);
-    setMax(r.max);
-  }, [base]);
-  useEffect(() => {
-    load().catch(() => setTopics([]));
-  }, [load]);
-  const loaded = topics !== null;
-  useEffect(() => {
-    if (loaded && window.location.hash === "#topics") ref.current?.scrollIntoView({ block: "start" });
-  }, [loaded]);
-
-  const labelNow = () =>
-    run(async () => {
-      setNotice(null);
-      const r = await api<{ labeled: number; unlabeled: number; skipped?: "ai_off" | "cap_reached" }>(`${base}/label`, { body: {} });
-      setNotice(
-        r.skipped === "ai_off"
-          ? "AI replies are off, so nothing was labelled."
-          : r.skipped === "cap_reached"
-            ? "The monthly AI cap is reached, so nothing was labelled."
-            : r.labeled === 0 && r.unlabeled === 0
-              ? "Nothing to label: every quiet chat has a topic."
-              : `Labelled ${r.labeled} conversation${r.labeled === 1 ? "" : "s"}.`,
-      );
-      await load();
-    });
-
+/** D-120: Topics are managed in Reports now (a sheet over the page); this card points there. */
+export function TopicsMovedNote() {
   return (
     <SettingsCard
       title="Topics"
       id="topics"
-      ref={ref}
-      description={`The AI gives each chat a short topic once it's resolved or quiet for 10 minutes, reusing these when one fits (up to ${max}). See them on Reports and filter the inbox by them. Visitors never see topics.`}
-      action={canEdit && <Button variant="outline" size="sm" disabled={busy} onClick={labelNow}>{busy ? "Working…" : "Label now"}</Button>}
-    >
-      {notice && <p className="ok-text small">{notice}</p>}
-      {error && <p className="error small">{error}</p>}
-      {topics === null ? null : topics.length === 0 ? (
-        <p className="muted">No topics yet.</p>
-      ) : (
-        <ul className="list">
-          {topics.map((t) => (
-            <li key={t.id}>
-              <span>
-                <span className="strong">{t.name}</span> <span className="muted small nums">· {t.conversations} conversation{t.conversations === 1 ? "" : "s"}</span>
-              </span>
-              {canEdit && merging === t.id ? (
-                <span className="topic-actions">
-                  <SelectField
-                    aria-label={`Merge ${t.name} into`}
-                    defaultValue=""
-                    disabled={busy}
-                    onValueChange={(value) => {
-                      const into = value;
-                      if (into) run(async () => { await api(`${base}/${t.id}/merge`, { body: { into } }); setMerging(null); await load(); });
-                    }}
-                  >
-                    <SelectOption value="" disabled>Merge into…</SelectOption>
-                    {topics.filter((o) => o.id !== t.id).map((o) => <SelectOption key={o.id} value={o.id}>{o.name}</SelectOption>)}
-                  </SelectField>
-                  <Button variant="outline" size="sm" onClick={() => setMerging(null)}>Cancel</Button>
-                </span>
-              ) : canEdit && (
-                <span className="topic-actions">
-                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { const name = window.prompt("Rename topic", t.name); if (name && name !== t.name) run(async () => { await api(`${base}/${t.id}`, { method: "PATCH", body: { name } }); await load(); }); }}>
-                    Rename
-                  </Button>
-                  {topics.length > 1 && <Button variant="outline" size="sm" disabled={busy} onClick={() => setMerging(t.id)}>Merge</Button>}
-                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { if (window.confirm(`Delete "${t.name}"? Its ${t.conversations} conversation${t.conversations === 1 ? "" : "s"} will be labelled again later.`)) { run(async () => { await api(`${base}/${t.id}`, { method: "DELETE" }); await load(); }); } }}>
-                    Delete
-                  </Button>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </SettingsCard>
+      description={
+        <>
+          Topics are managed in{" "}
+          <a href={deskHref("/dashboard/topics")} onClick={(e) => { e.preventDefault(); navigate("/dashboard/topics"); }}>Reports</a>
+          , beside the topic map.
+        </>
+      }
+    />
   );
 }
 

@@ -1858,6 +1858,56 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .page-host { white-space: nowrap; color: var(--muted-foreground); }
 .topic-actions { display: inline-flex; gap: 6px; margin-left: auto; }
 .topic-actions [data-slot="select-trigger"] { max-width: 180px; }
+/* Topic map (D-120): dots on a thin grid over a grainy rainbow field (grain and rainbow approved for this
+   chart only, over D-106). Field blobs and dots take their hue from --h; light and dark set the rest. */
+:root {
+  --tm-field-l: 0.84; --tm-field-c: 0.15; --tm-field-o: 0.8;
+  --tm-dot-l: 0.6; --tm-dot-c: 0.2;
+  --tm-grid: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --tm-tick: color-mix(in oklch, var(--foreground) 52%, transparent);
+}
+:root[data-theme="dark"] {
+  --tm-field-l: 0.55; --tm-field-c: 0.16; --tm-field-o: 0.42;
+  --tm-dot-l: 0.78; --tm-dot-c: 0.16;
+  --tm-grid: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+.topic-map-head { display: grid; gap: 2px; }
+.topic-map { position: relative; min-width: 0; margin-top: 10px; }
+.topic-map svg { display: block; overflow: visible; }
+.tm-field { opacity: var(--tm-field-o); }
+.tm-field ellipse { fill: oklch(var(--tm-field-l) var(--tm-field-c) var(--h)); }
+.tm-grid line { stroke: var(--tm-grid); stroke-width: 1; shape-rendering: crispEdges; }
+.tm-grid text { font: 11px var(--font-mono); font-variant-numeric: tabular-nums; fill: var(--tm-tick); }
+.tm-axis text { font: 500 10.5px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; fill: var(--muted-foreground); }
+.tm-dot { cursor: pointer; outline: none; text-decoration: none; }
+.tm-hit { fill: transparent; }
+.tm-mark {
+  fill: oklch(var(--tm-dot-l) var(--tm-dot-c) var(--h)); stroke: var(--background); stroke-width: 2;
+  transform-box: fill-box; transform-origin: center; transition: transform 0.15s;
+  animation: tm-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i) * 25ms);
+}
+.tm-dot text { font: 500 12px var(--font-mono); text-decoration: none; fill: var(--foreground); paint-order: stroke; stroke: color-mix(in oklch, var(--background) 70%, transparent); stroke-width: 3px; stroke-linejoin: round; }
+.tm-dot:hover .tm-mark, .tm-dot.on .tm-mark { transform: scale(1.5); }
+.tm-dot:focus-visible .tm-mark { stroke: var(--ring); stroke-width: 2.5; transform: scale(1.5); }
+.tm-tip {
+  position: absolute; z-index: 2; transform: translate(14px, -50%); display: grid; gap: 3px; min-width: 180px; padding: 10px 12px;
+  border-radius: 10px; background: var(--popover); color: var(--popover-foreground); pointer-events: none;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); font-size: 13px;
+}
+.tm-tip.flip { transform: translate(calc(-100% - 14px), -50%); }
+.tm-tip-name { display: flex; align-items: center; gap: 6px; font-weight: 600; margin-bottom: 2px; }
+.tm-tip-name i { width: 8px; height: 8px; border-radius: 50%; background: oklch(var(--tm-dot-l) var(--tm-dot-c) var(--h)); }
+.tm-tip-row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted-foreground); }
+.tm-tip-row b { font: 500 13px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--foreground); }
+.tm-tip-foot { margin-top: 2px; font-size: 11px; color: var(--muted-foreground); }
+@keyframes tm-in { from { transform: scale(0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tm-mark { animation: none; transition: none; } }
+.topics-sheet { width: 100%; max-width: 560px; gap: 0; background: var(--background); }
+.topics-sheet-body { flex: 1; min-height: 0; }
+.topics-manage { display: grid; gap: 12px; padding: 0 16px 24px; }
+.topics-manage-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.topics-manage .list, .topics-manage p { margin: 0; }
+.topics-manage-bar p { flex: 1 1 240px; }
 .team-table { margin: 10px 0 8px; font-variant-numeric: tabular-nums; }
 .team-table th:not(:first-child), .team-table td:not(:first-child) { text-align: right; }
 

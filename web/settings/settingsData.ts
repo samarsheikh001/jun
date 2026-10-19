@@ -65,7 +65,7 @@ export function sectionRequests(id: SectionId, workspaceId: string, canInvite: b
   switch (id) {
     case "general": return [];
     case "ai": return [`${ws}/ai`];
-    case "inbox": return [`${ws}/inbox`, `${ws}/saved-replies`, `${ws}/tags`, `${ws}/topics`];
+    case "inbox": return [`${ws}/inbox`, `${ws}/saved-replies`, `${ws}/tags`];
     case "team": return [`${ws}/members`, ...(canInvite ? [`${ws}/invites`] : [])];
     case "notifications": return [`${ws}/notifications`, `${ws}/push/subscriptions`, THIS_DEVICE];
     case "integrations": return [`${ws}/trackers`];

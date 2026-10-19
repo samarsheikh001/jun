@@ -60,7 +60,7 @@ const SETTINGS_SECTIONS: { heading: string; path: string; area?: string }[] = [
   { heading: "Business hours", path: "/settings/inbox" },
   { heading: "Saved replies", path: "/settings/inbox" },
   { heading: "Tags", path: "/settings/inbox" },
-  { heading: "Topics", path: "/settings/inbox" },
+  { heading: "Topics", path: "/dashboard/topics", area: "Reports" },
   { heading: "Team", path: "/settings/team" },
   { heading: "Notifications", path: "/settings/notifications" },
   { heading: "Issue trackers", path: "/settings/integrations" },

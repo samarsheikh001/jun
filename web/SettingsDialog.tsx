@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
 import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
-import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsPanel } from "./settings/InboxPanels.tsx";
+import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsMovedNote } from "./settings/InboxPanels.tsx";
 import { NotificationsPanel } from "./settings/NotificationsPanel.tsx";
 import { HoursPanel, type InboxSettings } from "./settings/WidgetPanels.tsx";
 import { SettingRow, SettingsCard } from "./settings/layout.tsx";
@@ -55,7 +55,8 @@ const THEME_ICON = { system: MonitorIcon, light: SunIcon, dark: MoonIcon } as co
 
 // Old one-page anchors (bookmarks, other pages' links) → the section that now holds them.
 const LEGACY_HASHES: Record<string, string> = {
-  "#topics": "/settings/inbox#topics",
+  // D-120: Topics are managed in Reports' sheet.
+  "#topics": "/dashboard/topics",
   "#assignment": "/settings/inbox#assignment",
   "#issue-trackers": "/settings/integrations#issue-trackers",
   "#notifications": "/settings/notifications",
@@ -70,6 +71,8 @@ export function movedFromSettings(path: string, search: string, hash: string): s
   if (!path.startsWith("/settings")) return null;
   const sub = path.replace(/^\/settings\/?/, "").split("/")[0] ?? "";
   if (sub === "widget") return "/playground/install";
+  // D-120: Topics moved to Reports (a sheet over the page).
+  if (sub === "inbox" && hash === "#topics") return "/dashboard/topics";
   // D-86: Connect your AI and API tokens are the MCP page now.
   if (sub === "developer") return hash === "#api-tokens" ? "/connect/tokens" : "/connect";
   if (!sub && (hash === "#ai-assistant" || new URLSearchParams(search).get("chatgpt") === "connected")) return `/settings/ai${search}`;
@@ -227,7 +230,7 @@ function SectionPanels({ id, me, workspace, workspaceId, canEdit, role, myId }: 
           <WidgetSettings workspaceId={workspaceId} canEdit={canEdit} />
           <SavedRepliesPanel workspaceId={workspaceId} />
           <TagsPanel workspaceId={workspaceId} canEdit={canEdit} />
-          <TopicsPanel workspaceId={workspaceId} canEdit={canEdit} />
+          <TopicsMovedNote />
         </>
       );
     case "team":

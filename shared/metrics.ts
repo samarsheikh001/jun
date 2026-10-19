@@ -173,6 +173,9 @@ export interface TopicCount {
   aiResolutionRate: number | null;
   /** Of this topic's conversations, the ones the AI resolved alone. */
   aiResolved: number;
+  /** This topic's AI conversations (the rate's whole) and the ones the AI handed to the team (topic map, D-120). */
+  ai: number;
+  handedOff: number;
 }
 
 export interface MetricsReport {
@@ -384,7 +387,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
   let passedWhileOff = 0;
   const pages = new Map<string, number>();
   let withoutPage = 0;
-  const topics = new Map<string, { id: string; name: string; count: number; ai: number; aiResolved: number }>();
+  const topics = new Map<string, { id: string; name: string; count: number; ai: number; aiResolved: number; handedOff: number }>();
   let unlabeled = 0;
 
   for (const c of input.conversations) {
@@ -404,7 +407,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
     const aiOff = c.aiOffHandoff || isAiOffHandoff(c.handoffReason);
     if (aiOff) passedWhileOff++;
     const handed = c.handoffReason !== null && !isAiOffHandoff(c.handoffReason);
-    const topic = c.topicId && c.topicName ? (topics.get(c.topicId) ?? { id: c.topicId, name: c.topicName, count: 0, ai: 0, aiResolved: 0 }) : null;
+    const topic = c.topicId && c.topicName ? (topics.get(c.topicId) ?? { id: c.topicId, name: c.topicName, count: 0, ai: 0, aiResolved: 0, handedOff: 0 }) : null;
     if (topic) {
       topic.count++;
       topics.set(topic.id, topic);
@@ -415,6 +418,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       if (topic) topic.ai++;
       if (handed) {
         handedOff++;
+        if (topic) topic.handedOff++;
         const label = handoffReasonLabel(c.handoffReason!);
         const key = label.toLowerCase();
         const entry = reasons.get(key) ?? { reason: label, count: 0 };
@@ -506,7 +510,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       return {
         list: [...topics.values()]
           .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-          .map((t) => ({ id: t.id, name: t.name, count: t.count, share: t.count / labeled, aiResolutionRate: rate(t.aiResolved, t.ai), aiResolved: t.aiResolved })),
+          .map((t) => ({ id: t.id, name: t.name, count: t.count, share: t.count / labeled, aiResolutionRate: rate(t.aiResolved, t.ai), aiResolved: t.aiResolved, ai: t.ai, handedOff: t.handedOff })),
         labeled,
         unlabeled,
       };

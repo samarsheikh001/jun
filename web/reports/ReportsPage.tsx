@@ -6,7 +6,12 @@ import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet.tsx";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
+import { mapTopics, MIN_MAP_TOPICS, type MapTopic } from "../lib/topic-map.ts";
 import DayChart from "./DayChart.tsx";
+import TopicMap from "./TopicMap.tsx";
+import { TopicsPanel } from "./TopicsPanel.tsx";
 
 // A-01: core metrics. Days are calendar days in the browser's time zone; the Worker
 // aggregates and shared/metrics.ts defines every number (see docs/features.md A-01, A-06).
@@ -198,8 +203,15 @@ function Struggles({ struggles }: { struggles: MetricsReport["struggles"] }) {
 /** Most topics "Top topics" lists. */
 const MAX_TOPICS_SHOWN = 8;
 
-/** A-02: what visitors ask about, from the AI's topic labels. A topic opens the inbox filtered by it. */
-function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topics"]; showAi: boolean; aiEnabled: boolean }) {
+/** The Manage topics sheet's address (D-120); Settings → Inbox and the command palette link here. */
+const TOPICS_SHEET_PATH = "/dashboard/topics";
+const openTopics = () => navigate(TOPICS_SHEET_PATH, { replace: true });
+
+/**
+ * A-02: what visitors ask about, from the AI's topic labels. A topic opens the inbox filtered by it.
+ * `manage`: the Manage topics button sits here when there's no topic map above (too few topics).
+ */
+function TopTopics({ topics, showAi, aiEnabled, manage, mapNote }: { topics: MetricsReport["topics"]; showAi: boolean; aiEnabled: boolean; manage: boolean; mapNote: string | null }) {
   const top = topics.list.slice(0, MAX_TOPICS_SHOWN);
   const rest = topics.list.length - top.length;
   // The AI's rate per topic is a column only when it differs between topics; one rate for all is a line.
@@ -210,7 +222,7 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
     <section className="dash-card">
       <div className="dash-card-head">
         <h2>Top topics</h2>
-        <a className="small" href={deskHref("/settings/inbox#topics")} onClick={goTo("/settings/inbox#topics")}>Manage</a>
+        {manage && <Button variant="outline" size="sm" onClick={openTopics}>Manage topics</Button>}
       </div>
       {top.length === 0 ? (
         <p className="muted small">
@@ -246,8 +258,30 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
             {!aiEnabled && " New chats aren't labelled while AI replies are off."}
             {aiEnabled && topics.unlabeled > 0 && ` ${topics.unlabeled} chat${topics.unlabeled === 1 ? " isn't" : "s aren't"} labelled yet (still going, or quiet for less than a few minutes).`}
           </p>
+          {mapNote && <p className="dash-foot">{mapNote}</p>}
         </>
       )}
+    </section>
+  );
+}
+
+/** D-120: the topic map, with the Manage topics button in its header. Shown from MIN_MAP_TOPICS topics with AI chats. */
+function TopicMapSection({ topics, mapped }: { topics: MetricsReport["topics"]; mapped: MapTopic[] }) {
+  const left = topics.list.length - mapped.length;
+  return (
+    <section className="dash-card">
+      <div className="dash-card-head">
+        <div className="topic-map-head">
+          <h2>Topic map</h2>
+          <span className="dash-caption">Each dot is a topic: how many chats it had, and how many of its AI chats the AI resolved alone.</span>
+        </div>
+        <Button variant="outline" size="sm" onClick={openTopics}>Manage topics</Button>
+      </div>
+      <TopicMap topics={mapped} />
+      <p className="dash-foot">
+        Hover or focus a dot for its numbers; click it to open its chats in the inbox. Warm colours mark busy topics the AI rarely finishes, green and yellow the ones it does.
+        {left > 0 && ` ${left} topic${left === 1 ? " has" : "s have"} no AI chats and ${left === 1 ? "isn't" : "aren't"} on the map.`}
+      </p>
     </section>
   );
 }
@@ -384,8 +418,11 @@ function DashboardSkeleton({ aiOff }: { aiOff: boolean }) {
   );
 }
 
-export function ReportsPage({ workspaceId }: { workspaceId: string }) {
+export function ReportsPage({ workspaceId, path, canEdit }: { workspaceId: string; path: string; canEdit: boolean }) {
   const [days, setDays] = useState<MetricPeriod>(7);
+  // Bumped after a topic change in the sheet, so the report behind it refreshes.
+  const [reload, setReload] = useState(0);
+  const topicsOpen = /^\/(dashboard|reports)\/topics\/?$/.test(path);
   const [report, setReport] = useState<MetricsReport | null>(() => reportCache.get(`${workspaceId}:7`) ?? null);
   const [error, setError] = useState<string | null>(null);
 
@@ -405,10 +442,15 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
     return () => {
       current = false;
     };
-  }, [workspaceId, days]);
+  }, [workspaceId, days, reload]);
 
   const r = report?.days === days ? report : reportCache.get(`${workspaceId}:${days}`) ?? null;
   const empty = r && r.conversations.total === 0 && r.csat.good + r.csat.bad === 0;
+  const mapped = r && !r.ai.off ? mapTopics(r.topics.list) : [];
+  const showMap = mapped.length >= MIN_MAP_TOPICS;
+  const mapNote = !r || showMap || r.ai.off || r.topics.list.length === 0
+    ? null
+    : `The topic map appears here once ${MIN_MAP_TOPICS} or more topics have AI chats in this period.`;
 
   return (
     <div className="content wide reports">
@@ -432,9 +474,10 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
         <>
           {r.truncated && <p className="muted small">Based on the newest {MAX_METRIC_CONVERSATIONS.toLocaleString()} conversations in this period.</p>}
           <Overview r={r} />
+          {showMap && <TopicMapSection topics={r.topics} mapped={mapped} />}
 
           <div className="dash-grid">
-            <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} />
+            <TopTopics topics={r.topics} showAi={!r.ai.off} aiEnabled={r.ai.enabled} manage={!showMap} mapNote={mapNote} />
             <StartPages pages={r.pages} />
             {r.struggles && <Struggles struggles={r.struggles} />}
             {!r.ai.off && (
@@ -484,6 +527,17 @@ export function ReportsPage({ workspaceId }: { workspaceId: string }) {
           </section>
         </>
       )}
+      <Sheet open={topicsOpen} onOpenChange={(o) => { if (!o) navigate("/dashboard", { replace: true }); }}>
+        <SheetContent side="right" className="topics-sheet">
+          <SheetHeader>
+            <SheetTitle>Topics</SheetTitle>
+            <SheetDescription>{canEdit ? "Rename, merge or delete the AI's topic labels, or label quiet chats now." : "The AI's topic labels. Only owners and admins can change them."}</SheetDescription>
+          </SheetHeader>
+          <ScrollArea className="topics-sheet-body">
+            {topicsOpen && <TopicsPanel workspaceId={workspaceId} canEdit={canEdit} onChange={() => setReload((n) => n + 1)} />}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

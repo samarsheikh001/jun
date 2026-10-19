@@ -637,7 +637,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : section === "contacts" ? (
         <ContactsPage workspaceId={workspace.workspaceId} path={pagePath} />
       ) : section === "dashboard" ? (
-        <ReportsPage workspaceId={workspace.workspaceId} />
+        <ReportsPage workspaceId={workspace.workspaceId} path={pagePath} canEdit={canEdit} />
       ) : section === "widget" ? (
         <WidgetPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} tab={widgetTab} install={install} reloadInstall={reloadOnboarding} />
       ) : section === "channels" ? (
