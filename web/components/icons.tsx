@@ -15,7 +15,6 @@ import {
   ArrowUp01Icon,
   ArrowUp02Icon,
   BookOpen01Icon,
-  BotIcon as HugeBotIcon,
   Bug01Icon,
   BubbleChatIcon,
   Clock01Icon,
@@ -81,7 +80,6 @@ export const ArrowDownIcon = make(ArrowDown02Icon);
 export const ArrowRightIcon = make(ArrowRight02Icon);
 export const ArrowUpIcon = make(ArrowUp02Icon);
 export const BookOpenIcon = make(BookOpen01Icon);
-export const BotIcon = make(HugeBotIcon);
 export const BugIcon = make(Bug01Icon);
 export const ChatIcon = make(BubbleChatIcon);
 export const ClockIcon = make(Clock01Icon);
@@ -130,6 +128,8 @@ export const SparkleIcon = make(SparklesIcon);
 export const AsteriskIcon = make([
   ["path", { d: "M12 3.5V20.5M3.5 12H20.5M6 6L18 18M18 6L6 18", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "0" }],
 ] as IconSvgElement);
+/** The AI wherever the desk shows it (the Agent page, AI stats, assistant cards): the same asterisk, not a robot (the user's call). */
+export const BotIcon = AsteriskIcon;
 export const StopIcon = make(HugeStopIcon);
 export const SunIcon = make(Sun03Icon);
 export const TextIcon = make(HugeTextIcon);
