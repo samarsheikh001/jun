@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Brief, BriefSection } from "../../shared/home-brief.ts";
 import { api, describeError } from "../api.ts";
-import { ArrowRightIcon, ChatIcon, RefreshIcon, SparkleIcon } from "../components/icons.tsx";
+import { ArrowRightIcon, ChatIcon, EditIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
-import { AskChat, askDesk } from "./AskChat.tsx";
+import { AskChat, askDesk, newAskChat, useAskStarted } from "./AskChat.tsx";
 
 // I-19 (D-127): Home, the page a workspace opens on. The daily brief (numbers worked out on the
 // server, worded by the AI when it's on, else written in code; cached per member per day) and,
@@ -205,6 +205,7 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
       ? <>The assistant needs the AI, which is off for this workspace: {settingsLink}.</>
       : <>{ai.message} {role === "agent" ? null : <DeskLink path="/settings/ai">Settings → AI</DeskLink>}</>;
 
+  const started = useAskStarted(workspaceId);
   const askAbout = (question: string) => {
     askDesk(workspaceId, question);
     document.getElementById("ask-title")?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
@@ -221,9 +222,12 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
         {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
       </div>
       <section className="dash-card home-ask" aria-labelledby="ask-title">
-        <div className="dash-card-head home-ask-head">
-          <h2 id="ask-title"><SparkleIcon aria-hidden="true" />Ask about your desk</h2>
-          <span className="dash-caption">Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm.</span>
+        <div className="home-ask-head">
+          <h2 id="ask-title" title="Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm."><SparkleIcon aria-hidden="true" />Assistant</h2>
+          <div className="home-ask-tools">
+            <button type="button" className="home-ask-tool" aria-label="New chat" title="New chat" disabled={!started} onClick={() => newAskChat(workspaceId)}><EditIcon /></button>
+            {role !== "agent" && <a className="home-ask-tool" href={deskHref("/settings/ai")} aria-label="AI settings" title="AI settings" onClick={(e) => { e.preventDefault(); navigate("/settings/ai"); }}><SettingsIcon /></a>}
+          </div>
         </div>
         {data ? <AskChat workspaceId={workspaceId} disabled={off} /> : <div className="home-chat empty"><div className="skel-composer"><SkelText width={220} /></div></div>}
       </section>

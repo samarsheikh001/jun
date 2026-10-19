@@ -2500,8 +2500,16 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
    D-129, after beautifului.dev's primitives (patterns and measures, our tokens): source chips, copy and
    "N sources" under an answer, approval cards for proposals, a pill prompt bar. */
 .home-chat { display: flex; flex-direction: column; height: min(640px, 72vh); margin-top: 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); overflow: hidden; }
-.home-ask-head h2 { display: inline-flex; align-items: center; gap: 8px; }
-.home-ask-head h2 > svg { width: 16px; height: 16px; }
+/* The assistant's header bar (after the user's "Operator" reference): its name with a mark, quiet icon buttons on the right. */
+.home-ask-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 56px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--border); }
+.home-ask-head h2 { display: inline-flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.01em; }
+.home-ask-head h2 > svg { width: 18px; height: 18px; }
+.home-ask-tools { display: flex; align-items: center; gap: 2px; }
+.home-ask-tool { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted-foreground); cursor: pointer; transition: background-color 150ms, color 150ms; }
+.home-ask-tool:hover:not(:disabled) { background: var(--muted); color: var(--foreground); }
+.home-ask-tool:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.home-ask-tool:disabled { opacity: 0.4; cursor: default; }
+.home-ask-tool > svg { width: 17px; height: 17px; }
 /* Wide screens: two pages side by side (after the user's "Operator" reference): the brief and the
    assistant are flat panes of the same kind, window-tall, each scrolling on its own, on the sidebar's
    colour with a small gap between them. No shadow: they sit together, nothing floats. */
@@ -2513,9 +2521,6 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
   .home-main-col, .home-ask { min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); }
   .home-main-col { overflow: auto; padding: 24px 32px 32px; }
   .home-ask { display: flex; flex-direction: column; margin: 0; padding: 0; overflow: hidden; }
-  .home-ask-head { flex-direction: column; align-items: stretch; gap: 2px; margin: 0; padding: 16px 20px 14px; border-bottom: 1px solid var(--border); }
-  .home-ask-head h2 { font-size: 16px; }
-  .home-ask-head .dash-caption { font-size: 12.5px; line-height: 18px; }
   .home-ask .home-chat, .home-ask .home-chat.empty { flex: 1; height: auto; min-height: 0; margin: 0; border: 0; border-radius: 0; background: transparent; }
   /* An empty thread keeps its starters and composer at the bottom, where the conversation will be. */
   .home-ask .home-chat.empty { justify-content: flex-end; }

@@ -160,6 +160,18 @@ export function askDesk(ws: string, text: string): void {
 
 const stop = (ws: string) => controllers.get(ws)?.abort();
 
+/** The header's New chat: stops any answer and clears the thread. */
+export function newAskChat(ws: string): void {
+  stop(ws);
+  set(ws, { turns: [], live: null, running: null });
+}
+
+/** Whether the thread has anything to clear (the header's New chat is off on an empty one). */
+export const useAskStarted = (ws: string): boolean => {
+  const t = useThread(ws);
+  return t.turns.length > 0 || Boolean(t.live);
+};
+
 /** Confirm or Cancel on a card; then the model hears how it went and carries on. */
 async function decide(ws: string, turnId: number, confirm: boolean): Promise<void> {
   const t = get(ws);
