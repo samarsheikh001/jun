@@ -3,33 +3,27 @@ import { api } from "../api.ts";
 import { useAction } from "../useAction.ts";
 import { deskHref, navigate } from "../lib/router.ts";
 import { SettingRow, SettingsCard } from "../settings/layout.tsx";
-import type { InstallState } from "../appearance/InstallPanels.tsx";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button, buttonVariants } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
-import { ChatIcon, CheckIcon, ExternalLinkIcon, MailIcon, PaletteIcon, SlackIcon, XIcon } from "@/components/icons";
+import { CheckIcon, ExternalLinkIcon, MailIcon, SlackIcon, XIcon } from "@/components/icons";
 import type { EmailSettings } from "../../shared/email.ts";
 import { CLOUDFLARE_TOKEN_PERMISSIONS, type SetupResult, type SetupStep } from "../../shared/email-setup.ts";
 
-// The Channels group (sidebar): the ways customers reach the desk. The chat widget's pages keep their
-// /appearance* URLs; email (C-02) is /channels/email; /channels lists them all.
+// The Channels group (sidebar): ways customers reach the desk besides the chat widget, which keeps its
+// own Chat widget and Appearance entries (D-112). Email (C-02) is /channels/email; /channels lists them.
 
-export type ChannelSection = "overview" | "widget" | "appearance" | "email";
+export type ChannelSection = "overview" | "email";
 
 export const CHANNEL_SECTIONS: { id: Exclude<ChannelSection, "overview">; label: string; path: string }[] = [
-  { id: "widget", label: "Chat widget", path: "/appearance/install" },
-  { id: "appearance", label: "Appearance", path: "/appearance" },
   { id: "email", label: "Email", path: "/channels/email" },
 ];
 
 /** Which Channels page a path shows. */
 export function channelSection(path: string): ChannelSection {
-  if (path.startsWith("/appearance/install") || path.startsWith("/appearance/behaviour")) return "widget";
-  if (path.startsWith("/appearance")) return "appearance";
-  if (path.startsWith("/channels/email")) return "email";
-  return "overview";
+  return path.startsWith("/channels/email") ? "email" : "overview";
 }
 
 /** GET /workspaces/:id/email. */
@@ -41,8 +35,8 @@ export interface EmailStatus {
   replyExample: string | null;
 }
 
-/** /channels: one card per channel, saying whether it's live, each opening its own page. */
-export function ChannelsOverview({ workspaceId, install }: { workspaceId: string; install: InstallState | null }) {
+/** /channels: one card per channel (the chat widget has its own entries), saying whether it's live, each opening its own page. */
+export function ChannelsOverview({ workspaceId }: { workspaceId: string }) {
   const [email, setEmail] = useState<EmailStatus | null>(null);
   useEffect(() => {
     api<EmailStatus>(`/workspaces/${workspaceId}/email`).then(setEmail, () => {});
@@ -51,16 +45,8 @@ export function ChannelsOverview({ workspaceId, install }: { workspaceId: string
     <div className="page-tabs">
       <div className="page-tabs-head"><h1>Channels</h1></div>
       <div className="p-6 max-md:p-4">
-      <p className="muted mb-6 max-w-2xl">Where your customers reach you. Every channel lands in the same inbox, and the AI and your team answer them all.</p>
+      <p className="muted mb-6 max-w-2xl">More ways your customers reach you, besides the chat widget on your site. Everything lands in the same inbox, and the AI and your team answer it all.</p>
       <div className="grid gap-4 max-w-4xl sm:grid-cols-2">
-        <ChannelCard
-          Icon={ChatIcon}
-          title="Chat widget"
-          text="The chat on your website: the AI answers first, your team takes over."
-          status={install === null ? null : install.installed ? { label: install.host ? `Live on ${install.host}` : "Installed", on: true } : { label: "Not installed", on: false }}
-          href="/appearance/install"
-          links={[{ label: "Appearance", href: "/appearance", Icon: PaletteIcon }]}
-        />
         <ChannelCard
           Icon={MailIcon}
           title="Email"
@@ -75,14 +61,13 @@ export function ChannelsOverview({ workspaceId, install }: { workspaceId: string
   );
 }
 
-function ChannelCard({ Icon, title, text, status, href, links = [] }: {
+function ChannelCard({ Icon, title, text, status, href }: {
   Icon: (props: { className?: string }) => ReactNode;
   title: string;
   text: string;
   /** Null while it loads. */
   status: { label: string; on: boolean } | null;
   href?: string;
-  links?: { label: string; href: string; Icon: (props: { className?: string }) => ReactNode }[];
 }) {
   const body = (
     <>
@@ -100,15 +85,6 @@ function ChannelCard({ Icon, title, text, status, href, links = [] }: {
       {href ? (
         <a href={deskHref(href)} className="block no-underline text-inherit" onClick={(e) => { e.preventDefault(); navigate(href); }}>{body}</a>
       ) : body}
-      {links.length > 0 && (
-        <div className="mt-3 flex gap-2">
-          {links.map((l) => (
-            <a key={l.href} className={buttonVariants({ variant: "ghost", size: "sm" })} href={deskHref(l.href)} onClick={(e) => { e.preventDefault(); navigate(l.href); }}>
-              <l.Icon /> {l.label}
-            </a>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
