@@ -23,10 +23,33 @@ function useWidth() {
   return [ref, width] as const;
 }
 
+/**
+ * Measures a label in the font `.tm-dot text` draws it with (desk.css: 500 12px var(--font-mono)),
+ * plus its 3px halo stroke; falls back to the estimate without a canvas. Re-measures once the web
+ * fonts have loaded (`fontsReady` bumps).
+ */
+function useMeasure() {
+  const [fontsReady, setFontsReady] = useState(0);
+  useLayoutEffect(() => {
+    let live = true;
+    document.fonts?.ready.then(() => live && setFontsReady((n) => n + 1)).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return useMemo(() => {
+    void fontsReady; // a new measure once the fonts are in
+    const ctx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+    if (!ctx) return labelWidth;
+    const family = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim() || "monospace";
+    ctx.font = `500 12px ${family}`;
+    return (text: string) => Math.ceil(ctx.measureText(text).width + 3);
+  }, [fontsReady]);
+}
+
 const M = { top: 14, right: 14, bottom: 46, left: 58 };
 
 export default function TopicMap({ topics }: { topics: MapTopic[] }) {
   const [ref, width] = useWidth();
+  const measure = useMeasure();
   const [active, setActive] = useState<string | null>(null);
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const narrow = width > 0 && width < 560;
@@ -39,9 +62,9 @@ export default function TopicMap({ topics }: { topics: MapTopic[] }) {
     // Biggest first: they get the first pick of label places.
     const sorted = [...topics].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
     const placed = spreadDots(sorted.map((t) => ({ t, x: scale.at(t.count) * pw, y: (1 - t.rate) * ph })));
-    const sides = placeLabels(placed.map((d) => ({ id: d.t.id, x: d.x, y: d.y, w: labelWidth(shortLabel(d.t.name)) })), pw, ph);
+    const sides = placeLabels(placed.map((d) => ({ id: d.t.id, x: d.x, y: d.y, w: measure(shortLabel(d.t.name)) })), pw, ph);
     return placed.map((d) => ({ ...d, hue: fieldHue(pw ? d.x / pw : 0, 1 - d.y / ph), label: sides.get(d.t.id) ?? null }));
-  }, [topics, scale, pw, ph]);
+  }, [topics, scale, pw, ph, measure]);
 
   const shown = dots.find((d) => d.t.id === active) ?? null;
   const size = Math.min(pw, ph);

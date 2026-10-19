@@ -165,7 +165,11 @@ export default function DayChart({ series, showAi, onHover }: { series: DayPoint
   const busiest = totals.indexOf(max);
   const resting = empty ? [] : busiest === n - 1 || Math.abs(xOf(busiest) - xOf(n - 1)) < 72 ? [n - 1] : [busiest, n - 1];
   const markers = active === null ? resting : [active];
-  const glowAt = xOf(busiestStretch(totals));
+  // The glow fades out before the chart's sides: near one it moves in a little and narrows, so its
+  // gradient reaches nothing at the edge instead of being cut off there.
+  const glowR = Math.max(120, W * 0.32);
+  const glowAt = Math.min(W - glowR * 0.55, Math.max(glowR * 0.55, xOf(busiestStretch(totals))));
+  const glowRx = Math.max(1, Math.min(glowR, glowAt, W - glowAt));
 
   // Axis: as many dates as fit, counted back from the last day so it always has one.
   const short = n <= 7;
@@ -216,7 +220,7 @@ export default function DayChart({ series, showAi, onHover }: { series: DayPoint
                   <stop offset="1" stopColor="var(--stream-1)" stopOpacity="0" />
                 </radialGradient>
               </defs>
-              {!empty && <ellipse className="ribbon-glow" cx={glowAt} cy={cy} rx={Math.max(120, W * 0.32)} ry={HEIGHT * 0.62} fill="url(#ribbon-glow)" />}
+              {!empty && <ellipse className="ribbon-glow" cx={glowAt} cy={cy} rx={glowRx} ry={HEIGHT * 0.62} fill="url(#ribbon-glow)" />}
               <line className="ribbon-axis" x1={0} x2={W} y1={cy} y2={cy} />
               <g className="ribbon-layers">
                 <path className="team" d={path(2, 0.75)} />

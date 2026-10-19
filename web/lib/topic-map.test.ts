@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatScale, fieldHue, mapTopics, placeLabels, shortLabel, spreadDots } from "./topic-map.ts";
+import { boxesMeet, chatScale, fieldHue, LABEL_GAP, labelBox, labelWidth, mapTopics, placeLabels, shortLabel, spreadDots } from "./topic-map.ts";
 
 test("mapTopics: only topics with AI chats, with their rate", () => {
   const t = (id: string, rate: number | null) => ({ id, name: id, count: 4, share: 0.5, aiResolutionRate: rate, aiResolved: 1, ai: 2, handedOff: 1 });
@@ -49,6 +49,24 @@ test("placeLabels: right first, then other sides, hidden when nothing fits", () 
   // Near a side, a label above slides inwards to fit.
   const edge = placeLabels([{ id: "a", x: 395, y: 100, w: 60 }, { id: "b", x: 360, y: 100, w: 4 }], 400, 200);
   assert.deepEqual(edge.get("a"), { side: "above", x: 370 });
+});
+
+test("placeLabels: two dots on one line, close together, long names: the labels never overlap", () => {
+  // The 7-day map had Onboarding and Account Settings on one line, ~100px apart, running into each other.
+  const width = 600;
+  const points = [
+    { id: "a", x: 180, y: 200, w: labelWidth("Account Settings") },
+    { id: "b", x: 80, y: 200, w: labelWidth("Onboarding and setup") },
+    { id: "c", x: 240, y: 200, w: labelWidth("Workspace settings") },
+  ];
+  const sides = placeLabels(points, width, 400);
+  const boxes = points.flatMap((p) => {
+    const s = sides.get(p.id);
+    return s ? [labelBox(p, s.side, width)] : [];
+  });
+  assert.ok(boxes.length >= 2, "at least two labels fit");
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) assert.ok(!boxesMeet(boxes[i]!, boxes[j]!, LABEL_GAP - 0.01), `labels ${i} and ${j} overlap`);
 });
 
 test("spreadDots and shortLabel", () => {

@@ -112,8 +112,11 @@ export interface LabelPoint {
   w: number;
 }
 
-/** Width of a label in Geist Mono at 12px (0.6em per character). */
-export const labelWidth = (text: string) => Math.ceil(text.length * 7.2);
+/**
+ * Fallback width of a label in Geist Mono 500 at 12px (about 0.62em per character, measured), for when
+ * the browser can't measure it (TopicMap measures with canvas `measureText`).
+ */
+export const labelWidth = (text: string) => Math.ceil(text.length * 7.5);
 /** Longest label drawn; longer names end in an ellipsis (the whole name is in the tooltip). */
 export const MAX_LABEL = 24;
 export const shortLabel = (name: string) => (name.length > MAX_LABEL ? `${name.slice(0, MAX_LABEL - 1)}…` : name);
@@ -121,37 +124,52 @@ export const shortLabel = (name: string) => (name.length > MAX_LABEL ? `${name.s
 const LABEL_H = 14;
 const GAP = 8;
 const DOT = 6;
+/** Room kept between two labels' boxes, so neighbours never read as one name. */
+export const LABEL_GAP = 6;
+
+export interface LabelBox { x0: number; y0: number; x1: number; y1: number }
+
+/** The box a point's label covers on a side (`width` is the plot's, for sliding above / below labels inwards). */
+export function labelBox(p: LabelPoint, side: LabelSide, width: number): LabelBox {
+  const half = LABEL_H / 2;
+  const cx = Math.min(Math.max(p.x, p.w / 2), Math.max(p.w / 2, width - p.w / 2));
+  switch (side) {
+    case "right": return { x0: p.x + GAP, y0: p.y - half, x1: p.x + GAP + p.w, y1: p.y + half };
+    case "left": return { x0: p.x - GAP - p.w, y0: p.y - half, x1: p.x - GAP, y1: p.y + half };
+    case "above": return { x0: cx - p.w / 2, y0: p.y - GAP - LABEL_H, x1: cx + p.w / 2, y1: p.y - GAP };
+    case "below": return { x0: cx - p.w / 2, y0: p.y + GAP, x1: cx + p.w / 2, y1: p.y + GAP + LABEL_H };
+  }
+}
+
+/** Whether two boxes overlap, or come closer than `pad`. */
+export const boxesMeet = (a: LabelBox, b: LabelBox, pad = 0) => a.x0 < b.x1 + pad && b.x0 < a.x1 + pad && a.y0 < b.y1 + pad && b.y0 < a.y1 + pad;
+
+const SIDES = ["right", "left", "above", "below"] as const;
 
 /**
  * Where each label goes, in the order given (put the biggest topics first): right of the dot, else
- * left, above, below; one that fits nowhere inside the plot without covering another label or dot
- * is hidden (null) and shows in the dot's tooltip instead. Above and below, a label near a side slides
- * inwards to fit (`x` is its centre then).
+ * left, above, below. Every spot is checked against the plot's edges, every label already placed (kept
+ * LABEL_GAP apart) and every other dot; a label that fits nowhere is hidden (null) and shows in the
+ * dot's tooltip instead. Above and below, a label near a side slides inwards to fit (`x` is its centre then).
  */
 export function placeLabels(points: LabelPoint[], width: number, height: number): Map<string, { side: LabelSide; x: number } | null> {
-  const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  const placed: LabelBox[] = [];
   const out = new Map<string, { side: LabelSide; x: number } | null>();
-  const centre = (p: LabelPoint) => Math.min(Math.max(p.x, p.w / 2), Math.max(p.w / 2, width - p.w / 2));
-  const box = (p: LabelPoint, side: LabelSide) => {
-    const half = LABEL_H / 2;
-    const cx = centre(p);
-    switch (side) {
-      case "right": return { x0: p.x + GAP, y0: p.y - half, x1: p.x + GAP + p.w, y1: p.y + half };
-      case "left": return { x0: p.x - GAP - p.w, y0: p.y - half, x1: p.x - GAP, y1: p.y + half };
-      case "above": return { x0: cx - p.w / 2, y0: p.y - GAP - LABEL_H, x1: cx + p.w / 2, y1: p.y - GAP };
-      case "below": return { x0: cx - p.w / 2, y0: p.y + GAP, x1: cx + p.w / 2, y1: p.y + GAP + LABEL_H };
-    }
-  };
-  const hits = (a: { x0: number; y0: number; x1: number; y1: number }, b: typeof a) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const dots = points.map((q) => ({ q, box: { x0: q.x - DOT, y0: q.y - DOT, x1: q.x + DOT, y1: q.y + DOT } }));
   for (const p of points) {
-    const side = (["right", "left", "above", "below"] as const).find((s) => {
-      const b = box(p, s);
+    const side = SIDES.find((s) => {
+      const b = labelBox(p, s, width);
       if (b.x0 < 0 || b.x1 > width || b.y0 < 0 || b.y1 > height) return false;
-      if (placed.some((o) => hits(b, o))) return false;
-      return !points.some((q) => q !== p && hits(b, { x0: q.x - DOT, y0: q.y - DOT, x1: q.x + DOT, y1: q.y + DOT }));
+      if (placed.some((o) => boxesMeet(b, o, LABEL_GAP))) return false;
+      return !dots.some((d) => d.q !== p && boxesMeet(b, d.box));
     });
-    out.set(p.id, side ? { side, x: side === "right" ? p.x + GAP : side === "left" ? p.x - GAP : centre(p) } : null);
-    if (side) placed.push(box(p, side));
+    if (!side) {
+      out.set(p.id, null);
+      continue;
+    }
+    const b = labelBox(p, side, width);
+    out.set(p.id, { side, x: side === "right" ? b.x0 : side === "left" ? b.x1 : (b.x0 + b.x1) / 2 });
+    placed.push(b);
   }
   return out;
 }

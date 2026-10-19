@@ -176,7 +176,7 @@ ai:
   model: default            # or a model id; default = the provider's default
   models: { editor: gpt-6-astra }   # optional: a model per job
   monthlyReplyCap: 2000     # 0 = no limit
-chat:                       # the chat widget (the Chat widget page)
+chat:                       # the chat widget (the Playground page)
   name: Acme                # "" = your workspace's name
   color: "#5b4cff"
   mode: island              # island | window (a corner button that opens a chat window)
@@ -207,7 +207,7 @@ inbox:
   assignment: { mode: round_robin, capacity: 5 }   # manual | round_robin; 0 = no limit
 ```
 
-Not in the file: logos (upload them on the Chat widget page), keys and secrets (identity secret, issue-tracker tokens, action keys, the OpenAI key, ChatGPT sign-in), the AI provider itself, team members and invites, notification preferences, knowledge sources and the install snippet.
+Not in the file: logos (upload them on the Playground page), keys and secrets (identity secret, issue-tracker tokens, action keys, the OpenAI key, ChatGPT sign-in), the AI provider itself, team members and invites, notification preferences, knowledge sources and the install snippet.
 
 ### Connect your own AI (MCP)
 

@@ -1905,6 +1905,8 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 .topics-manage-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .topics-manage .list, .topics-manage p { margin: 0; }
 .topics-manage-bar p { flex: 1 1 240px; }
+form.topic-rename { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; margin: 0; }
+.topic-rename [data-slot="input"] { flex: 1; min-width: 0; height: 32px; }
 .team-table { margin: 10px 0 8px; font-variant-numeric: tabular-nums; }
 .team-table th:not(:first-child), .team-table td:not(:first-child) { text-align: right; }
 
