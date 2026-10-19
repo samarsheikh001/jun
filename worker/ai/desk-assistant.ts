@@ -40,6 +40,7 @@ import {
   stepInput,
   stepLabel,
   stepResult,
+  stepTable,
   type ActionTool,
   type DeskSettingKey,
   type Proposal,
@@ -1256,7 +1257,8 @@ export async function runAssistant(
         const input = callInput(part.input);
         const failed = typeof part.output === "string" && part.output.startsWith('{"error"');
         steps.push(stepLabel(part.toolName, input, true));
-        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output) } });
+        const table = failed ? undefined : stepTable(part.toolName, part.output);
+        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output), ...(table ? { table } : {}) } });
       } else if (part.type === "tool-error") {
         emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
       } else if (part.type === "error") {

@@ -33,7 +33,16 @@ const str = (v: unknown): v is string => typeof v === "string";
 
 function readStep(v: unknown): AskStep | null {
   if (!isObj(v) || !str(v.id) || !str(v.tool) || !str(v.label) || !STEP_STATUS.has(v.status as string)) return null;
-  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}) };
+  const table = readTable(v.table);
+  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}) };
+}
+
+const TABLE_KINDS = new Set(["chats", "people", "companies"]);
+/** D-134: a step's Records Table back, if it still looks like one. */
+function readTable(v: unknown): AskStep["table"] | undefined {
+  if (!isObj(v) || !TABLE_KINDS.has(v.kind as string) || !Array.isArray(v.rows)) return undefined;
+  const rows = v.rows.filter((r) => isObj(r) && str(r.id) && str(r.name)).slice(0, 25);
+  return rows.length ? ({ ...v, rows } as AskStep["table"]) : undefined;
 }
 
 function readProposal(v: unknown): ProposedAction | null {

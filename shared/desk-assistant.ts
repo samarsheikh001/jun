@@ -1006,7 +1006,17 @@ export interface AskStep {
   input?: string;
   /** D-129: what came back, one short line ("10 of 23 conversations", or the error). */
   result?: string;
+  /** D-134: a list of chats or contacts it found, for a Records Table under the turn. */
+  table?: StepTable;
 }
+
+/** D-134: a read tool's list as table rows (≤ MAX_TABLE_ROWS), only what the desk already shows members. */
+export type StepTable =
+  | { kind: "chats"; total?: number; rows: { id: string; name: string; status: string; assignee: string | null; topic: string | null; last: number | null }[] }
+  | { kind: "people"; rows: { id: string; name: string; email: string | null; company: string | null; chats: number; last: number | null }[] }
+  | { kind: "companies"; rows: { id: string; name: string; people: number; chats: number; last: number | null }[] };
+
+export const MAX_TABLE_ROWS = 25;
 
 export type AskTurn =
   | { role: "user"; text: string }
@@ -1144,6 +1154,42 @@ export function stepResult(output: unknown): string | undefined {
   // One record read (a conversation, a contact): whose it is first.
   const who = typeof o.customer === "string" ? `${clip(o.customer, 40)} · ` : typeof o.name === "string" ? `${clip(o.name, 40)} · ` : "";
   return total !== null ? `${n} of ${total} ${many}` : `${who}${n} ${n === 1 ? one : many}${o.truncated ? "+" : ""}`;
+}
+
+/** "2026-10-20T14:03Z" (iso above) → epoch ms, or null. */
+const ms = (v: unknown): number | null => {
+  const t = typeof v === "string" ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+const text = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+const count = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+/** D-134: a step's table for the Records Table, from search_conversations or find_contacts' result; else nothing. */
+export function stepTable(tool: string, output: unknown): StepTable | undefined {
+  let value = output;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  const list = (key: string) => (Array.isArray(o[key]) ? (o[key] as unknown[]).filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === "object" && typeof (r as { id?: unknown }).id === "string").slice(0, MAX_TABLE_ROWS) : []);
+  if (tool === "search_conversations") {
+    const rows = list("conversations").map((r) => ({ id: r.id as string, name: text(r.customer) ?? "Visitor", status: text(r.status) ?? "", assignee: text(r.assignee), topic: text(r.topic), last: ms(r.lastMessage) }));
+    if (!rows.length) return undefined;
+    const total = typeof o.total === "number" && o.total > rows.length ? o.total : undefined;
+    return { kind: "chats", ...(total ? { total } : {}), rows };
+  }
+  if (tool === "find_contacts") {
+    const people = list("people").map((r) => ({ id: r.id as string, name: text(r.name) ?? text(r.email) ?? "Unnamed", email: text(r.email), company: text((r.company as { name?: unknown } | null)?.name), chats: count(r.chats), last: ms(r.lastSeen) }));
+    if (people.length) return { kind: "people", rows: people };
+    const companies = list("companies").map((r) => ({ id: r.id as string, name: text(r.name) ?? "Unnamed", people: count(r.people), chats: count(r.chats), last: ms(r.lastActivity) }));
+    if (companies.length) return { kind: "companies", rows: companies };
+  }
+  return undefined;
 }
 
 /** D-129: the line a card shows once it's settled ("Tagged · export-issue", "Cancelled"). */
