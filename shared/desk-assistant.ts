@@ -1008,7 +1008,16 @@ export interface AskStep {
   result?: string;
   /** D-134: a list of chats or contacts it found, for a Records Table under the turn. */
   table?: StepTable;
+  /** D-134: the knowledge passages search_knowledge found, for Context Cards under the turn. */
+  passages?: StepPassages;
 }
+
+/** D-134: what search_knowledge found, as cards: the source, where in it, a bit of the text. */
+export interface StepPassages {
+  query: string;
+  hits: { title: string; heading: string; source: string; kind: string; url: string | null; text: string }[];
+}
+export const MAX_PASSAGES = 5;
 
 /** D-134: a read tool's list as table rows (≤ MAX_TABLE_ROWS), only what the desk already shows members. */
 export type StepTable =
@@ -1190,6 +1199,25 @@ export function stepTable(tool: string, output: unknown): StepTable | undefined 
     if (companies.length) return { kind: "companies", rows: companies };
   }
   return undefined;
+}
+
+/** D-134: a search_knowledge step's passages for the Context Cards; else nothing. */
+export function stepPassages(tool: string, input: Record<string, unknown>, output: unknown): StepPassages | undefined {
+  if (tool !== "search_knowledge") return undefined;
+  let value = output;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  const raw = value && typeof value === "object" && Array.isArray((value as { hits?: unknown }).hits) ? ((value as { hits: unknown[] }).hits as Record<string, unknown>[]) : [];
+  const hits = raw
+    .filter((h) => h && typeof h === "object" && typeof h.text === "string")
+    .slice(0, MAX_PASSAGES)
+    .map((h) => ({ title: text(h.title) ?? "Untitled", heading: text(h.heading) ?? "", source: text(h.source) ?? text(h.title) ?? "Knowledge", kind: text(h.kind) ?? "website", url: text(h.url), text: clip(h.text as string, 500)! }));
+  return hits.length ? { query: clip(typeof input.query === "string" ? input.query : "", 200)!, hits } : undefined;
 }
 
 /** D-129: the line a card shows once it's settled ("Tagged · export-issue", "Cancelled"). */

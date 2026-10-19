@@ -34,7 +34,15 @@ const str = (v: unknown): v is string => typeof v === "string";
 function readStep(v: unknown): AskStep | null {
   if (!isObj(v) || !str(v.id) || !str(v.tool) || !str(v.label) || !STEP_STATUS.has(v.status as string)) return null;
   const table = readTable(v.table);
-  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}) };
+  const passages = readPassages(v.passages);
+  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}), ...(passages ? { passages } : {}) };
+}
+
+/** D-134: a step's Context Cards back, if they still look like them. */
+function readPassages(v: unknown): AskStep["passages"] | undefined {
+  if (!isObj(v) || !str(v.query) || !Array.isArray(v.hits)) return undefined;
+  const hits = v.hits.filter((h) => isObj(h) && str(h.title) && str(h.text) && str(h.source) && str(h.kind)).slice(0, 5);
+  return hits.length ? ({ query: v.query, hits } as AskStep["passages"]) : undefined;
 }
 
 const TABLE_KINDS = new Set(["chats", "people", "companies"]);

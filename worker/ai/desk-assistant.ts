@@ -40,6 +40,7 @@ import {
   stepInput,
   stepLabel,
   stepResult,
+  stepPassages,
   stepTable,
   type ActionTool,
   type DeskSettingKey,
@@ -528,7 +529,16 @@ export function readTools(ctx: AssistantContext): ToolSet {
     execute: run(async (raw) => {
       const { query } = readQuery(raw);
       const hits = await searchKnowledge(env, workspaceId, query, 5);
-      return { link: "/knowledge", hits: hits.map((h) => ({ title: h.title, heading: h.heading, url: h.url, text: clip(h.text, 500) })) };
+      // D-134: each passage's source (name and kind), for the page's Context Cards.
+      const sources = hits.length
+        ? new Map(
+            (await db.prepare(`SELECT c.id, s.title, s.kind FROM kb_chunks c JOIN kb_sources s ON s.id = c.source_id WHERE s.workspace_id = ? AND c.id IN (${hits.map(() => "?").join(",")})`).bind(workspaceId, ...hits.map((h) => h.id)).all<{ id: string; title: string; kind: string }>()).results.map((r) => [r.id, r]),
+          )
+        : new Map<string, { title: string; kind: string }>();
+      return {
+        link: "/knowledge",
+        hits: hits.map((h) => ({ title: h.title, heading: h.heading, url: h.url, source: sources.get(h.id)?.title ?? null, kind: sources.get(h.id)?.kind ?? null, text: clip(h.text, 500) })),
+      };
     }),
   });
 
@@ -1258,7 +1268,8 @@ export async function runAssistant(
         const failed = typeof part.output === "string" && part.output.startsWith('{"error"');
         steps.push(stepLabel(part.toolName, input, true));
         const table = failed ? undefined : stepTable(part.toolName, part.output);
-        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output), ...(table ? { table } : {}) } });
+        const passages = failed ? undefined : stepPassages(part.toolName, input, part.output);
+        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output), ...(table ? { table } : {}), ...(passages ? { passages } : {}) } });
       } else if (part.type === "tool-error") {
         emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
       } else if (part.type === "error") {

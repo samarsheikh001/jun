@@ -63,6 +63,7 @@ import {
 import { runBulk, runProposal, type BulkRowState } from "./actions.ts";
 import { BulkCard } from "./BulkCard.tsx";
 import { RecordsTable } from "./RecordsTable.tsx";
+import { ContextCards } from "./ContextCards.tsx";
 import { AskInput, highlight, type AskInputHandle } from "./AskInput.tsx";
 import { DeskLink } from "./DeskLink.tsx";
 
@@ -727,6 +728,7 @@ function AssistantRow({ ws, turn, live, thread, latest }: { ws: string; turn: As
     <>
       {(steps.length > 0 || working) && <StepTrace steps={traceSteps(steps)} working={working} since={live?.startedAt} header={stepsHeader(steps, turn?.took)} />}
       {steps.map((s) => s.table && <RecordsTable key={`t-${s.id}`} table={s.table} />)}
+      {steps.map((s) => s.passages && <ContextCards key={`k-${s.id}`} passages={s.passages} />)}
       {text && <Answer text={text} streaming={Boolean(live)} />}
       {turn?.stopped && <p className="ask-stopped">Stopped</p>}
       {latest && turn && !turn.proposal && turn.followUps && turn.followUps.length > 0 && <NextQuestions ws={ws} questions={turn.followUps} busy={Boolean(thread.running)} />}

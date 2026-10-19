@@ -2634,6 +2634,26 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
   .rec-table .opt { display: none; }
   .rec-table th > button, .rec-table td { padding: 0 8px; }
 }
+/* D-134, after beautifului.dev's Context Cards: the knowledge passages a search found. */
+.ctx { width: 100%; min-width: 0; }
+/* A row that scrolls sideways, so five passages don't push the answer away. */
+.ctx-list { display: flex; gap: 8px; margin: 4px -2px 0; padding: 2px 2px 6px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; list-style: none; }
+.ctx-card { flex: none; width: min(260px, 82%); scroll-snap-align: start; display: grid; grid-template-rows: auto auto 1fr auto; gap: 4px; min-width: 0; padding: 10px 12px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border); animation: approval-in 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.ctx-top { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
+.ctx-favicon { width: 14px; height: 14px; flex: none; border-radius: 3px; }
+.ctx-kind { display: inline-flex; flex: none; }
+.ctx-kind > svg { width: 13px; height: 13px; }
+.ctx-source { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-size { flex: none; margin-left: auto; font-size: 11.5px; }
+.ctx-title { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 18px; font-weight: 500; }
+.ctx-heading { color: var(--muted-foreground); font-weight: 400; }
+.ctx-text { display: -webkit-box; margin: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: 12.5px; line-height: 18px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.ctx-text mark { padding: 0 1px; border-radius: 3px; background: color-mix(in oklab, oklch(0.78 0.15 85) 30%, transparent); color: var(--foreground); }
+.ctx-links { display: flex; gap: 10px; margin-top: 2px; }
+.ctx-link { display: inline-flex; align-items: center; gap: 3px; color: var(--muted-foreground); font-size: 12px; text-decoration: none; }
+.ctx-link:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
+.ctx-link > svg { width: 11px; height: 11px; }
+@media (prefers-reduced-motion: reduce) { .ctx-card { animation: none; } }
 /* Starter prompts: chips above the prompt bar while the thread is empty. */
 .ask-starters { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 2px; }
 .ask-starter { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms; }
