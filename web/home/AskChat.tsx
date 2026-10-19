@@ -35,6 +35,7 @@ import {
   EditIcon,
   FileIcon,
   GlobeIcon,
+  HistoryIcon,
   KeyIcon,
   MailIcon,
   NotificationIcon,
@@ -46,9 +47,12 @@ import {
   StopIcon,
   TagIcon,
   ToolIcon,
+  TrashIcon,
   UsersIcon,
 } from "../components/icons.tsx";
-import { addRecent, askKey, restoreAsk, serialiseAsk, type Turn } from "../lib/ask-store.ts";
+import { formatTime } from "../lib/thread.ts";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
+import { addRecent, askKey, mergeThreads, newThreadId, restoreAsk, serialiseAsk, upsertThread, type AskState, type SavedThread, type Turn } from "../lib/ask-store.ts";
 import { ApprovalCard, ApprovalOutcome } from "@/components/approval-card.tsx";
 import { Chevron, Fold, StepTrace, type TraceStep } from "@/components/agent-steps.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -88,6 +92,8 @@ interface Live {
 }
 
 interface Thread {
+  /** D-134: which saved thread this is. */
+  id: string;
   turns: Turn[];
   /** The answer being written. */
   live: Live | null;
@@ -97,17 +103,25 @@ interface Thread {
   bulkRows: Record<string, BulkRowState> | null;
 }
 
-const EMPTY: Thread = { turns: [], live: null, running: null, bulkRows: null };
+const fresh = (): Thread => ({ id: newThreadId(), turns: [], live: null, running: null, bulkRows: null });
 const threads = new Map<string, Thread>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
-/** D-132: each workspace's localStorage key (set by AskChat from the member), its recent questions. */
+/** D-132: each workspace's localStorage key (set by AskChat from the member); D-134: its saved threads and recent questions. */
 const keys = new Map<string, string>();
-const recents = new Map<string, string[]>();
-const recentListeners = new Set<() => void>();
-const NO_RECENT: string[] = [];
+const stores = new Map<string, { threads: SavedThread[]; recent: string[] }>();
+/** Threads deleted in this tab (another tab's copy mustn't bring them back). */
+const gone = new Set<string>();
+/** The turns last written per workspace, so only a change moves a thread to the top. */
+const written = new Map<string, Turn[]>();
+const storeListeners = new Set<() => void>();
+const NO_STORE = { threads: [] as SavedThread[], recent: [] as string[] };
 let nextId = 1;
-const get = (ws: string) => threads.get(ws) ?? EMPTY;
+const get = (ws: string): Thread => {
+  let t = threads.get(ws);
+  if (!t) threads.set(ws, (t = fresh()));
+  return t;
+};
 const set = (ws: string, patch: Partial<Thread>) => {
   threads.set(ws, { ...get(ws), ...patch });
   listeners.forEach((l) => l());
@@ -118,37 +132,82 @@ const set = (ws: string, patch: Partial<Thread>) => {
 function useThread(ws: string): Thread {
   return useSyncExternalStore((cb) => (listeners.add(cb), () => listeners.delete(cb)), () => get(ws));
 }
+const storeOf = (ws: string) => stores.get(ws) ?? NO_STORE;
+const notifyStore = () => storeListeners.forEach((l) => l());
 
-function save(ws: string): void {
-  const key = keys.get(ws);
-  if (!key) return;
+function readStored(key: string): AskState {
   try {
-    localStorage.setItem(key, serialiseAsk(get(ws).turns, recents.get(ws) ?? []));
+    return restoreAsk(localStorage.getItem(key), () => nextId++);
   } catch {
-    // Storage full or blocked: the thread just doesn't outlive the tab.
+    return { current: null, threads: [], recent: [] };
   }
 }
 
-/** The member's thread from this browser, once per workspace, unless one is already in this tab. */
+/** Puts the open thread into the saved ones (merged with what other tabs saved) and writes them. */
+function save(ws: string): void {
+  const key = keys.get(ws);
+  if (!key) return;
+  const t = get(ws);
+  const store = storeOf(ws);
+  const had = store.threads.find((x) => x.id === t.id);
+  const changed = written.get(ws) !== t.turns;
+  written.set(ws, t.turns);
+  let list = mergeThreads(store.threads, readStored(key).threads, gone);
+  if (t.turns.length) list = upsertThread(list, { id: t.id, title: "", updatedAt: changed || !had ? Date.now() : had.updatedAt, turns: t.turns });
+  stores.set(ws, { threads: list, recent: store.recent });
+  notifyStore();
+  try {
+    localStorage.setItem(key, serialiseAsk({ current: t.id, threads: list, recent: store.recent }));
+  } catch {
+    // Storage full or blocked: the threads just don't outlive the tab.
+  }
+}
+
+/** The member's threads from this browser, once per workspace; the one open last comes back unless this tab has one. */
 function bind(ws: string, userId: string): void {
   const key = askKey(ws, userId);
   if (keys.get(ws) === key) return;
   keys.set(ws, key);
-  let raw: string | null = null;
-  try {
-    raw = localStorage.getItem(key);
-  } catch {
-    // No storage: start empty.
-  }
-  const stored = restoreAsk(raw, () => nextId++);
-  recents.set(ws, stored.recent);
-  recentListeners.forEach((l) => l());
+  const stored = readStored(key);
+  stores.set(ws, { threads: stored.threads, recent: stored.recent });
+  notifyStore();
   const t = get(ws);
-  if (!t.turns.length && !t.live && stored.turns.length) set(ws, { turns: stored.turns });
+  const open = stored.threads.find((x) => x.id === stored.current);
+  if (!t.turns.length && !t.live && open) {
+    written.set(ws, open.turns);
+    set(ws, { id: open.id, turns: open.turns });
+  }
 }
 
-function useRecent(ws: string): string[] {
-  return useSyncExternalStore((cb) => (recentListeners.add(cb), () => recentListeners.delete(cb)), () => recents.get(ws) ?? NO_RECENT);
+function useStore(ws: string): { threads: SavedThread[]; recent: string[] } {
+  return useSyncExternalStore((cb) => (storeListeners.add(cb), () => storeListeners.delete(cb)), () => storeOf(ws));
+}
+const useRecent = (ws: string): string[] => useStore(ws).recent;
+
+/** D-134: the saved threads and the open one, for the header's list. */
+export function useAskThreads(ws: string): { threads: SavedThread[]; current: string; busy: boolean } {
+  const store = useStore(ws);
+  const t = useThread(ws);
+  return { threads: store.threads, current: t.id, busy: Boolean(t.live || t.running) };
+}
+
+/** D-134: opens a saved thread (not while an answer is written or a card runs). */
+export function openAskThread(ws: string, id: string): void {
+  const t = get(ws);
+  if (t.live || t.running || t.id === id) return;
+  const saved = storeOf(ws).threads.find((x) => x.id === id);
+  if (!saved) return;
+  written.set(ws, saved.turns);
+  set(ws, { id: saved.id, turns: saved.turns, bulkRows: null });
+}
+
+/** D-134: deletes a saved thread; the open one gives way to a new chat. */
+export function deleteAskThread(ws: string, id: string): void {
+  gone.add(id);
+  const store = storeOf(ws);
+  stores.set(ws, { ...store, threads: store.threads.filter((x) => x.id !== id) });
+  if (get(ws).id === id) newAskChat(ws);
+  else save(ws);
 }
 
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -239,19 +298,70 @@ export function askDesk(ws: string, text: string): void {
   const t = get(ws);
   if (t.live || t.running || !text.trim()) return;
   const turns = t.turns.map((x): Turn => (x.role === "assistant" && x.proposal && !x.outcome ? { ...x, outcome: { status: "cancelled", detail: "not confirmed" } } : x));
-  recents.set(ws, addRecent(recents.get(ws) ?? [], text));
-  recentListeners.forEach((l) => l());
+  stores.set(ws, { ...storeOf(ws), recent: addRecent(storeOf(ws).recent, text) });
+  notifyStore();
   save(ws);
   void answer(ws, [...turns, { id: nextId++, role: "user", text: text.trim() }]);
 }
 
 const stop = (ws: string) => controllers.get(ws)?.abort();
 
-/** The header's New chat: stops any answer and clears the thread. */
+/** The header's New chat: stops any answer and starts a new thread (D-134: the old one stays saved). */
 export function newAskChat(ws: string): void {
   stop(ws);
   controllers.delete(ws);
-  set(ws, { turns: [], live: null, running: null, bulkRows: null });
+  save(ws);
+  set(ws, fresh());
+}
+
+/** D-134: the header's list of saved threads (a shadcn menu): open one, or delete it (its × or the Delete key). */
+export function AskThreads({ ws }: { ws: string }) {
+  const { threads: list, current, busy } = useAskThreads(ws);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<button type="button" className="home-ask-tool" aria-label="Chats" title="Chats" disabled={!list.length} />}>
+        <HistoryIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="ask-threads w-80">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Chats · {list.length}</DropdownMenuLabel>
+          {list.map((t) => (
+            <DropdownMenuItem
+              key={t.id}
+              className="ask-thread"
+              data-current={t.id === current ? "" : undefined}
+              disabled={busy && t.id !== current}
+              aria-keyshortcuts="Delete"
+              onClick={() => openAskThread(ws, t.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Delete" || e.key === "Backspace") {
+                  e.preventDefault();
+                  deleteAskThread(ws, t.id);
+                }
+              }}
+            >
+              <span className="ask-thread-title" title={t.title}>{t.title}</span>
+              <span className="ask-thread-time">{formatTime(t.updatedAt)}</span>
+              <button
+                type="button"
+                data-plain
+                className="ask-thread-delete"
+                aria-label={`Delete “${t.title}”`}
+                title="Delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  deleteAskThread(ws, t.id);
+                }}
+              >
+                <TrashIcon />
+              </button>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 /** Whether the thread has anything to clear (the header's New chat is off on an empty one). */

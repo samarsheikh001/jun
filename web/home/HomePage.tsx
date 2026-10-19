@@ -5,7 +5,7 @@ import type { Hub } from "../Shell.tsx";
 import { ArrowRightIcon, AsteriskIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoffeeIcon, EditIcon, HandoffIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
 import { SkelText } from "@/components/ui/skeleton.tsx";
-import { AskChat, askDesk, newAskChat, useAskStarted } from "./AskChat.tsx";
+import { AskChat, askDesk, AskThreads, newAskChat, useAskStarted } from "./AskChat.tsx";
 
 // I-19 (D-127): Home, the page a workspace opens on. The daily brief (numbers worked out on the
 // server, worded by the AI when it's on, else written in code; cached per member per day) and,
@@ -375,6 +375,7 @@ export function HomePage({ workspaceId, me, role, hub }: { workspaceId: string; 
         <div className="home-ask-head">
           <h2 id="ask-title" title="Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm."><AsteriskIcon aria-hidden="true" />Assistant</h2>
           <div className="home-ask-tools">
+            <AskThreads ws={workspaceId} />
             <button type="button" className="home-ask-tool" aria-label="New chat" title="New chat" disabled={!started} onClick={() => newAskChat(workspaceId)}><EditIcon /></button>
             {role !== "agent" && <a className="home-ask-tool" href={deskHref("/settings/ai")} aria-label="AI settings" title="AI settings" onClick={(e) => { e.preventDefault(); navigate("/settings/ai"); }}><SettingsIcon /></a>}
           </div>

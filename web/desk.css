@@ -2654,6 +2654,17 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .ctx-link:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
 .ctx-link > svg { width: 11px; height: 11px; }
 @media (prefers-reduced-motion: reduce) { .ctx-card { animation: none; } }
+/* D-134: the saved threads' menu: title, time, delete on hover or focus. */
+.ask-thread { gap: 8px; }
+.ask-thread[data-current] { font-weight: 500; }
+.ask-thread[data-current]::before { content: ""; flex: none; width: 6px; height: 6px; margin-left: -2px; border-radius: 50%; background: var(--foreground); }
+.ask-thread-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-thread-time { flex: none; color: var(--muted-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ask-thread-delete { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 22px; margin-right: -4px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); cursor: pointer; opacity: 0; pointer-events: auto; }
+.ask-thread:hover .ask-thread-delete, .ask-thread[data-highlighted] .ask-thread-delete { opacity: 1; }
+.ask-thread-delete:hover { background: color-mix(in oklch, var(--destructive) 12%, transparent); color: var(--destructive); }
+.ask-thread-delete > svg { width: 13px !important; height: 13px !important; pointer-events: none; }
+@media (hover: none) { .ask-thread-delete { opacity: 1; } }
 /* Starter prompts: chips above the prompt bar while the thread is empty. */
 .ask-starters { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 2px; }
 .ask-starter { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms; }
