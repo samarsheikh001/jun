@@ -6,7 +6,8 @@ import { PageTabs } from "../components/PageTabs.tsx";
 import { BehaviourPanel, hostOf, IdentityPanel, InstallTab, type InstallState } from "./InstallPanels.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
 import { SkelText } from "@/components/ui/skeleton.tsx";
-import { Button } from "@/components/ui/button.tsx";
+import { Button, buttonVariants } from "@/components/ui/button.tsx";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -16,11 +17,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.tsx";
 import { DeskCode } from "./DeskCode.tsx";
 import { UploadIcon } from "../components/icons.tsx";
 
-// The Chat widget page, at /appearance* (/widget itself is the chat iframe the Worker serves). D-113:
-// one sidebar entry, tabs Install (/appearance/install), Appearance (/appearance: the look, as a
-// form or as desk.yaml) and Behaviour (/appearance/behaviour); whether the widget is on a site yet
-// sits in the header (D-91).
+// The Chat widget page, at /appearance* (/widget itself is the chat iframe the Worker serves). D-115:
+// a playground: the settings' tabs Appearance (/appearance: the look, as a form or as desk.yaml) and
+// Behaviour (/appearance/behaviour) beside the real widget, and Install (/appearance/install) as a
+// sheet; whether the widget is on a site yet sits in the header (D-91).
 export type WidgetTab = "install" | "appearance" | "behaviour";
+type WidgetPanel = "appearance" | "behaviour";
 
 /** The Chat widget page: install it, its look, how it behaves. */
 export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, reloadInstall }: {
@@ -45,54 +47,57 @@ export function WidgetPage({ workspaceId, workspaceName, canEdit, tab, install, 
   // D-84: the look's Form / Code (Code is desk.yaml). Its own switch, opening on Form (the look is
   // picked by eye; the Agent pages' remembered Code view doesn't carry over).
   const [code, setCode] = useState(false);
+  // D-115: a playground, after Chatbase's: settings on the left (Appearance · Behaviour), the real
+  // widget on the right for both; Install is a sheet over it (/appearance/install keeps its address).
+  const panel: WidgetPanel = tab === "behaviour" ? "behaviour" : "appearance";
+  const widgetKey = install?.widgetKey ?? null;
   return (
-    <PageTabs
-      title="Chat widget"
-      value={tab}
-      className="widget-page"
-      aside={<InstallChip install={install} />}
-      actions={
-        tab === "appearance" ? (
-          <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
-            <TabsList className="kb-tabs agent-view-switch" aria-label="View">
-              <TabsTrigger value="form">Form</TabsTrigger>
-              <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        ) : undefined
-      }
-      tabs={[
-        {
-          // D-113: the look is a tab of the widget, not a page of its own (/appearance keeps its address).
-          // D-114: first, since its preview is where you try the agent as customers see it.
-          value: "appearance",
-          label: "Appearance",
+    <>
+      <PageTabs
+        title="Chat widget"
+        tabsHidden
+        value="widget"
+        className="widget-page"
+        aside={<InstallChip install={install} />}
+        actions={
+          <>
+            {panel === "appearance" && (
+              <Tabs value={code ? "code" : "form"} onValueChange={(v) => setCode(v === "code")}>
+                <TabsList className="kb-tabs agent-view-switch" aria-label="View">
+                  <TabsTrigger value="form">Form</TabsTrigger>
+                  <TabsTrigger value="code" title="The same settings as a file (desk.yaml), as in git">Code</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            )}
+            {widgetKey && (
+              <a data-slot="button" className={buttonVariants({ variant: "outline", size: "sm" })} href={`/demo.html?key=${widgetKey}`} target="_blank" rel="noreferrer" title="The saved widget on a test page, in a new tab">Preview</a>
+            )}
+            <Button size="sm" variant={install && !install.installed ? "default" : "outline"} onClick={() => navigate("/appearance/install", { replace: true })}>Install</Button>
+          </>
+        }
+        tabs={[{
+          value: "widget",
+          label: "Chat widget",
           path: "/appearance",
-          content: code ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} /> : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} />,
-        },
-        {
-          value: "install",
-          label: "Install",
-          path: "/appearance/install",
-          content: (
-            <div className="page-settings settings-sections">
+          content: code && panel === "appearance"
+            ? <DeskCode workspaceId={workspaceId} canEdit={canEdit} />
+            : <LookTab workspaceId={workspaceId} workspaceName={workspaceName} canEdit={canEdit} panel={panel} />,
+        }]}
+      />
+      <Sheet open={tab === "install"} onOpenChange={(o) => { if (!o) navigate("/appearance", { replace: true }); }}>
+        <SheetContent side="right" className="install-sheet">
+          <SheetHeader>
+            <SheetTitle>Install</SheetTitle>
+            <SheetDescription>Add the widget to your website. It shows the look you saved here.</SheetDescription>
+          </SheetHeader>
+          <ScrollArea className="install-sheet-body">
+            <div className="settings-sections">
               <InstallTab workspaceId={workspaceId} canEdit={canEdit} install={install} reload={reloadInstall} />
             </div>
-          ),
-        },
-        {
-          value: "behaviour",
-          label: "Behaviour",
-          path: "/appearance/behaviour",
-          content: (
-            <div className="page-settings settings-sections">
-              <BehaviourPanel workspaceId={workspaceId} canEdit={canEdit} />
-              {canEdit && <IdentityPanel workspaceId={workspaceId} />}
-            </div>
-          ),
-        },
-      ]}
-    />
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 
@@ -150,7 +155,7 @@ const pick = (s: Draft): Draft => Object.fromEntries(FIELDS.filter((f) => s[f] !
 const withMode = (s: Draft): Draft => ({ ...s, ...modeOf(s as Record<string, unknown>) });
 const same = (a: Draft, b: Draft) => FIELDS.every((f) => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 
-function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string; workspaceName: string; canEdit: boolean }) {
+function LookTab({ workspaceId, workspaceName, canEdit, panel }: { workspaceId: string; workspaceName: string; canEdit: boolean; panel: WidgetPanel }) {
   const [widgetKey, setWidgetKey] = useState<string | null>(null);
   const [saved, setSaved] = useState<Draft>({});
   const [draft, setDraft] = useState<Draft>({});
@@ -227,8 +232,20 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
 
   return (
     <div className="appear-page">
-      <aside className="appear-controls" aria-label="Widget look">
+      <aside className="appear-controls" aria-label="Widget settings">
+        <Tabs value={panel} onValueChange={(v) => navigate(v === "behaviour" ? "/appearance/behaviour" : "/appearance", { replace: true })} className="appear-panels">
+          <TabsList className="kb-tabs appear-panel-tabs" aria-label="Settings">
+            <TabsTrigger value="appearance">Appearance</TabsTrigger>
+            <TabsTrigger value="behaviour">Behaviour</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {/* Both panels stay mounted, so a half-made look survives a look at Behaviour. */}
         <ScrollArea className="appear-scroll" contentClassName="appear-body">
+          <div className="appear-panel settings-sections appear-behaviour" hidden={panel !== "behaviour"}>
+            <BehaviourPanel workspaceId={workspaceId} canEdit={canEdit} />
+            {canEdit && <IdentityPanel workspaceId={workspaceId} />}
+          </div>
+          <div className="appear-panel" hidden={panel !== "appearance"}>
           {!canEdit && <p className="muted small">Only owners and admins can change the widget's look.</p>}
 
           <section className="appear-group">
@@ -356,8 +373,9 @@ function LookTab({ workspaceId, workspaceName, canEdit }: { workspaceId: string;
             />
             <SwitchRow title="Ask for a rating" hint={'"How did we do?" when a conversation is resolved.'} checked={draft.csat !== false} disabled={off} onChange={(checked) => edit({ csat: checked })} />
           </section>
+          </div>
         </ScrollArea>
-        {canEdit && (
+        {canEdit && panel === "appearance" && (
           <div className="appear-actions">
             <Button disabled={busy || !dirty} onClick={save}>Save</Button>
             {dirty && <Button variant="ghost" disabled={busy} onClick={() => { setDraft(pick(saved)); setStatus(null); }}>Discard</Button>}

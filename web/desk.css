@@ -1493,6 +1493,21 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 .appear-page { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 4fr) minmax(0, 5fr); }
 .appear-controls { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
 .appear-scroll { flex: 1; }
+.appear-panels { flex: none; padding: 16px 24px 4px; }
+.appear-panel-tabs { width: 100%; }
+.appear-panel-tabs > * { flex: 1; }
+.appear-panel { display: grid; }
+.appear-panel[hidden] { display: none; }
+/* Behaviour's settings cards, flush in the column like the look's sections. */
+.appear-behaviour { padding: 4px 0 8px; gap: 0; }
+.appear-behaviour .settings-card-head { padding: 22px 0 18px; }
+.appear-behaviour .settings-card-head h2 { font-size: 14px; line-height: 20px; letter-spacing: 0; }
+.appear-behaviour .settings-card-body { padding: 0 0 22px; }
+.appear-behaviour.settings-sections > .settings-card ~ .settings-card { padding-top: 0; }
+.appear-behaviour.settings-sections > .settings-card ~ .settings-card::before { left: 0; right: 0; }
+.install-sheet { width: 100%; max-width: 640px; gap: 0; background: var(--background); }
+.install-sheet-body { flex: 1; min-height: 0; }
+.install-sheet-body .settings-sections { padding: 0 16px 24px; }
 .appear-body { display: grid; padding: 4px 24px 24px; }
 .appear-group { display: grid; gap: 18px; padding: 22px 0; border-top: 1px solid var(--border); }
 .appear-group:first-of-type { border-top: 0; }
