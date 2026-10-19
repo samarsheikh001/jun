@@ -50,7 +50,7 @@ export interface ReplyRow {
 
 export interface MetricsInput {
   now: number;
-  days: MetricPeriod;
+  days: number;
   timezone: string;
   /** The workspace's AI replies are on right now. */
   aiEnabled: boolean;
@@ -355,7 +355,7 @@ export const MAX_HANDOFF_REASONS = 20;
 export const MAX_REASON_CHATS = 25;
 
 export interface MetricsReport {
-  days: MetricPeriod;
+  days: number;
   timezone: string;
   since: number;
   until: number;

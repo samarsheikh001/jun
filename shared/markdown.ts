@@ -28,6 +28,8 @@ export type MdBlock =
 export interface MarkdownOptions {
   /** The text is still being written: hold back unfinished markers at its end. */
   streaming?: boolean;
+  /** I-19: relative links this returns true for (desk pages in the Home assistant's answers) are links too. */
+  paths?: (href: string) => boolean;
 }
 
 /** http(s) URLs only; anything else (javascript:, data:, relative) is not a link. */
@@ -63,7 +65,7 @@ export function parseMarkdown(body: string, options: MarkdownOptions = {}): MdBl
   let indents: number[] = [];
   const close = () => {
     if (!open) return;
-    const tokens = parseInline(open.lines.join("\n"), streaming);
+    const tokens = parseInline(open.lines.join("\n"), streaming, options.paths);
     if (tokens.length) {
       if (open.kind === "li") blocks.push({ kind: "li", ordered: open.ordered!, n: open.n!, depth: open.depth!, tokens });
       else blocks.push({ kind: open.kind, tokens });
@@ -103,7 +105,7 @@ export function parseMarkdown(body: string, options: MarkdownOptions = {}): MdBl
     if (heading) {
       close();
       indents = [];
-      const tokens = parseInline(heading[2] ?? "", streaming);
+      const tokens = parseInline(heading[2] ?? "", streaming, options.paths);
       if (tokens.length) blocks.push({ kind: "h", tokens });
       blank = false;
       continue;
@@ -199,11 +201,11 @@ function text(s: string): Item {
 }
 
 /** Inline Markdown → word tokens. */
-export function parseInline(source: string, streaming = false): MdToken[] {
-  return toTokens(parseItems(source.trim(), streaming));
+export function parseInline(source: string, streaming = false, paths?: (href: string) => boolean): MdToken[] {
+  return toTokens(parseItems(source.trim(), streaming, paths));
 }
 
-function parseItems(src: string, streaming: boolean): Item[] {
+function parseItems(src: string, streaming: boolean, paths?: (href: string) => boolean): Item[] {
   // Held back while streaming: a trailing marker run or backslash, which may yet close or open something.
   if (streaming) src = src.replace(/(?:[*_]+|\\)$/, "");
   const items: Item[] = [];
@@ -258,7 +260,7 @@ function parseItems(src: string, streaming: boolean): Item[] {
       }
       const link = LINK.exec(rest);
       if (link) {
-        const href = safeHref(link[2]!);
+        const href = safeHref(link[2]!) ?? (paths?.(link[2]!) ? link[2]! : null);
         if (href) {
           flush();
           for (const it of settle(parseItems(link[1]!, false))) items.push({ ...it, href });

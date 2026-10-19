@@ -17,14 +17,14 @@ contacts.use("/workspaces/:id/people/*", requireUser);
 contacts.use("/workspaces/:id/companies/*", requireUser);
 
 /** People on the list: identified by the host app, or anonymous with an email or a name an agent gave. */
-const KNOWN = "(ct.external_id IS NOT NULL OR ct.email IS NOT NULL OR ct.name IS NOT NULL)";
+export const KNOWN = "(ct.external_id IS NOT NULL OR ct.email IS NOT NULL OR ct.name IS NOT NULL)";
 
-const PERSON_COLUMNS = `ct.id, ct.name, ct.email, ct.external_id, ct.verified_at, ct.last_seen_at,
+export const PERSON_COLUMNS = `ct.id, ct.name, ct.email, ct.external_id, ct.verified_at, ct.last_seen_at,
   co.id AS company_id, co.name AS company_name, co.external_id AS company_external_id,
   (SELECT COUNT(*) FROM conversations cv WHERE cv.contact_id = ct.id) AS conversations,
   (SELECT COUNT(*) FROM conversations cv WHERE cv.contact_id = ct.id AND cv.status != 'resolved') AS open`;
 
-interface PersonDbRow {
+export interface PersonDbRow {
   id: string;
   name: string | null;
   email: string | null;
@@ -38,7 +38,7 @@ interface PersonDbRow {
   open: number;
 }
 
-const personRow = (r: PersonDbRow): PersonRow => ({
+export const personRow = (r: PersonDbRow): PersonRow => ({
   id: r.id,
   name: r.name,
   email: r.email,
@@ -111,14 +111,14 @@ contacts.get("/workspaces/:id/people/:contactId/trail", async (c) => {
   });
 });
 
-const COMPANY_COLUMNS = `co.id, co.external_id, co.name, co.attributes, co.updated_at,
+export const COMPANY_COLUMNS = `co.id, co.external_id, co.name, co.attributes, co.updated_at,
   (SELECT COUNT(*) FROM contacts ct WHERE ct.company_id = co.id) AS people,
   (SELECT MAX(ct.last_seen_at) FROM contacts ct WHERE ct.company_id = co.id) AS last_seen_at,
   (SELECT COUNT(*) FROM conversations cv JOIN contacts ct ON ct.id = cv.contact_id WHERE ct.company_id = co.id) AS conversations,
   (SELECT COUNT(*) FROM conversations cv JOIN contacts ct ON ct.id = cv.contact_id WHERE ct.company_id = co.id AND cv.status != 'resolved') AS open,
   (SELECT MAX(cv.last_message_at) FROM conversations cv JOIN contacts ct ON ct.id = cv.contact_id WHERE ct.company_id = co.id) AS last_message_at`;
 
-interface CompanyDbRow {
+export interface CompanyDbRow {
   id: string;
   external_id: string;
   name: string | null;
@@ -131,7 +131,7 @@ interface CompanyDbRow {
   last_message_at: number | null;
 }
 
-const companyRow = (r: CompanyDbRow): CompanyRow => ({
+export const companyRow = (r: CompanyDbRow): CompanyRow => ({
   id: r.id,
   externalId: r.external_id,
   name: r.name,

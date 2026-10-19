@@ -110,3 +110,11 @@ test("token count and plain text for copying", () => {
   assert.equal(tokenCount(parseMarkdown(body)), 1 + 1 + 2 + 3 + 2 + 1);
   assert.equal(markdownToPlain(body), "Prices:\n\n- GPT: $4 / $20\n- Docs x_y\n\n> note");
 });
+
+test("markdown: relative links only when the caller allows them (I-19 desk links)", () => {
+  const href = (body: string, paths?: (h: string) => boolean) =>
+    parseMarkdown(body, paths ? { paths } : {}).flatMap((b) => b.tokens).map((t) => (t.kind === "word" || t.kind === "code" ? t.href ?? null : null)).filter(Boolean);
+  assert.deepEqual(href("See [Ana's chat](/inbox/cv_1)."), []);
+  assert.deepEqual(href("See [Ana's chat](/inbox/cv_1).", (h) => h.startsWith("/inbox/")), ["/inbox/cv_1", "/inbox/cv_1"]);
+  assert.deepEqual(href("[x](/api/secret)", (h) => h.startsWith("/inbox/")), []);
+});

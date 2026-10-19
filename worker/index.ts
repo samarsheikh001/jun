@@ -6,6 +6,7 @@ import { auth } from "./routes/auth.ts";
 import { contacts } from "./routes/contacts.ts";
 import { conversations } from "./routes/conversations.ts";
 import { email } from "./routes/email.ts";
+import { home } from "./routes/home.ts";
 import { files } from "./routes/files.ts";
 import { inbox } from "./routes/inbox.ts";
 import { issues } from "./routes/issues.ts";
@@ -68,6 +69,7 @@ app.route("/", topics);
 app.route("/", issues);
 app.route("/", notifications);
 app.route("/", email);
+app.route("/", home);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 
