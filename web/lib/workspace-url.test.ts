@@ -38,7 +38,7 @@ const at = (href: string) => {
 test("a prefixed URL picks its workspace and stays as it is", () => {
   assert.deepEqual(deskLocation(all, at("/w/beta/agent/tasks"), "ws_a"), { workspace: all[1], url: null });
   assert.deepEqual(deskLocation(all, at("/w/beta/settings/team#invites"), null), { workspace: all[1], url: null });
-  assert.deepEqual(deskLocation(all, at("/w/beta"), null), { workspace: all[1], url: "/w/beta/inbox" });
+  assert.deepEqual(deskLocation(all, at("/w/beta"), null), { workspace: all[1], url: "/w/beta/home" });
 });
 
 test("old URLs move under a workspace: ?ws=, else the last one used, else the first", () => {
@@ -51,21 +51,21 @@ test("old URLs move under a workspace: ?ws=, else the last one used, else the fi
   assert.deepEqual(deskLocation(all, at("/w/acme/inbox/cv_1?ws=ws_b"), null), { workspace: all[1], url: "/w/beta/inbox/cv_1" });
 });
 
-test("an unknown slug opens the first workspace's inbox", () => {
-  assert.deepEqual(deskLocation(all, at("/w/nope/agent"), "ws_b"), { workspace: all[0], url: "/w/acme/inbox" });
+test("an unknown slug opens the first workspace's Home", () => {
+  assert.deepEqual(deskLocation(all, at("/w/nope/agent"), "ws_b"), { workspace: all[0], url: "/w/acme/home" });
   assert.deepEqual(deskLocation([], at("/inbox"), null), { workspace: undefined, url: null });
 });
 
-test("the desk's home: / with two or more workspaces, the inbox with one", () => {
+test("the desk's home: / with two or more workspaces, Home with one", () => {
   assert.deepEqual(deskLocation(all, at("/"), "ws_b"), { workspace: undefined, url: null, home: true });
   assert.deepEqual(deskLocation(all, at("/settings/account"), null), { workspace: undefined, url: null, home: true });
   assert.deepEqual(deskLocation(all, at("/settings/desk/"), null), { workspace: undefined, url: null, home: true });
   // The workspace's own sections and ?ws= links still open a workspace.
   assert.deepEqual(deskLocation(all, at("/settings/team"), "ws_b"), { workspace: all[1], url: "/w/beta/settings/team" });
-  assert.deepEqual(deskLocation(all, at("/?ws=ws_b"), null), { workspace: all[1], url: "/w/beta/inbox" });
+  assert.deepEqual(deskLocation(all, at("/?ws=ws_b"), null), { workspace: all[1], url: "/w/beta/home" });
   // Inside a workspace the same sections stay there.
   assert.deepEqual(deskLocation(all, at("/w/acme/settings/account"), null), { workspace: all[0], url: null });
   const one = [all[0]!];
-  assert.deepEqual(deskLocation(one, at("/"), null), { workspace: all[0], url: "/w/acme/inbox" });
+  assert.deepEqual(deskLocation(one, at("/"), null), { workspace: all[0], url: "/w/acme/home" });
   assert.deepEqual(deskLocation(one, at("/settings/desk"), null), { workspace: all[0], url: "/w/acme/settings/desk" });
 });

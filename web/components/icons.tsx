@@ -32,6 +32,7 @@ import {
   FlashIcon as HugeFlashIcon,
   Globe02Icon,
   HelpCircleIcon,
+  Home01Icon,
   InformationCircleIcon,
   InboxIcon as HugeInboxIcon,
   Key01Icon,
@@ -105,6 +106,7 @@ export const FileIcon = make(File01Icon);
 export const FlashIcon = make(HugeFlashIcon);
 export const GlobeIcon = make(Globe02Icon);
 export const HelpIcon = make(HelpCircleIcon);
+export const HomeIcon = make(Home01Icon);
 export const InfoIcon = make(InformationCircleIcon);
 export const InboxIcon = make(HugeInboxIcon);
 export const KeyIcon = make(Key01Icon);

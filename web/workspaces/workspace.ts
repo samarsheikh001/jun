@@ -50,13 +50,13 @@ export function onDeskHome(me: Me): boolean {
   return home;
 }
 
-/** The desk's home, a fresh page load (only with two or more workspaces; one goes to its inbox). */
+/** The desk's home, a fresh page load (only with two or more workspaces; one goes to its Home). */
 export function goHome() {
   window.location.assign("/");
 }
 
-/** Open another workspace (a fresh page load), on `path`. */
-export function switchWorkspace(target: { workspaceId: string; workspaceSlug?: string | null }, path = "/inbox") {
+/** Open another workspace (a fresh page load), on `path` (its Home by default, I-19). */
+export function switchWorkspace(target: { workspaceId: string; workspaceSlug?: string | null }, path = "/home") {
   remember(target.workspaceId);
   window.location.assign(target.workspaceSlug ? withWorkspace(path, target.workspaceSlug) : `${path}?ws=${encodeURIComponent(target.workspaceId)}`);
 }

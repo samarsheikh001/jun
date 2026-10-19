@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, ContactsIcon, KeyIcon, FlashIcon, HelpIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, ContactsIcon, KeyIcon, FlashIcon, HelpIcon, HomeIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -23,6 +23,7 @@ import { deskServiceWorker, listenForNotificationClicks, notificationPermission,
 import { LiveSocket } from "./lib/socket.ts";
 import { playChime, unlockSoundOnInteraction } from "./lib/sound.ts";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
+import { HomePage } from "./home/HomePage.tsx";
 import { deskHref, deskPathname, navigate, usePath } from "./lib/router.ts";
 import { slugOf, withoutWorkspace } from "./lib/workspace-url.ts";
 import { movedFromSettings, SettingsDialog } from "./SettingsDialog.tsx";
@@ -37,13 +38,15 @@ import { WorkspaceSwitcher, WorkspaceSwitcherSkeleton } from "./workspaces/Works
 import { currentWorkspace, goHome, switchWorkspace } from "./workspaces/workspace.ts";
 
 /**
- * D-113: the sidebar by job. The day's work first (the desk opens on Inbox), then setting up what
- * customers meet, then developers. The icon rail drops the group labels.
+ * D-113: the sidebar by job. The day's work first, then setting up what customers meet, then
+ * developers. The icon rail drops the group labels. I-19 (D-127): a workspace opens on Home (the
+ * daily brief and the desk assistant), its first entry.
  */
 const NAV_GROUPS = [
   {
     label: null,
     items: [
+      { id: "home", label: "Home", Icon: HomeIcon },
       { id: "inbox", label: "Inbox", Icon: InboxIcon },
       { id: "visitors", label: "Visitors", Icon: UsersIcon },
       // V-16 (D-118): every person and company the desk knows; companies at /contacts/companies.
@@ -73,7 +76,8 @@ const NAV_GROUPS = [
 
 /** Which sidebar entry a path belongs to. */
 function sectionOf(pagePath: string) {
-  return pagePath.startsWith("/knowledge") ? "knowledge"
+  return pagePath.startsWith("/home") ? "home"
+    : pagePath.startsWith("/knowledge") ? "knowledge"
     : pagePath.startsWith("/agent") ? "agent"
     : pagePath.startsWith("/connect") ? "connect"
     : pagePath.startsWith("/playground") ? "widget"
@@ -263,7 +267,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // Settings is a dialog over the page you were on (Town's): /settings… opens it, and the page
   // behind keeps the last other path (the inbox when you land on /settings directly).
   const settingsOpen = path.startsWith("/settings");
-  const pageBehind = useRef("/inbox");
+  const pageBehind = useRef("/home");
   if (!settingsOpen) pageBehind.current = path;
   const pagePath = settingsOpen ? pageBehind.current : path;
   // Opened from inside the desk (a history entry to go back over) or by loading a /settings URL.
@@ -310,7 +314,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   }, [path, workspace, reloadOnboarding]);
 
   useEffect(() => {
-    if (path === "/" || path === "") navigate("/inbox", { replace: true });
+    if (path === "/" || path === "") navigate("/home", { replace: true });
   }, [path]);
 
   useEffect(() => {
@@ -392,6 +396,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       switch (command) {
         case "palette": return overlay === "palette" ? closeOverlay() : openOverlay("palette");
         case "help": return openOverlay("help");
+        case "go-home": return navigate("/home");
         case "go-inbox": return navigate("/inbox");
         case "go-visitors": return navigate("/visitors");
         case "go-dashboard": return navigate("/dashboard");
@@ -629,7 +634,9 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       </header>
       <ScrollArea render={<main />} className="desk-main" contentClassName="desk-main-body">
       <PageErrorBoundary key={section}>
-      {section === "knowledge" ? (
+      {section === "home" ? (
+        <HomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} me={me.user} role={workspace.role} />
+      ) : section === "knowledge" ? (
         <KnowledgePage workspaceId={workspace.workspaceId} canEdit={canEdit} />
       ) : section === "welcome" ? (
         <WelcomePage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} onboarding={onboarding.state} reload={onboarding.reload} />

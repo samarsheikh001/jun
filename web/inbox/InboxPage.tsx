@@ -11,6 +11,7 @@ import { deskHref, navigate } from "../lib/router.ts";
 import { DebugPanel } from "./DebugPanel.tsx";
 import { ToolCalls } from "./ToolCalls.tsx";
 import { configuredProviders, IssueDialog, type FiledIssue } from "./IssueDialog.tsx";
+import { takeInboxIntent } from "./intents.ts";
 import { ConversationDrawer, DrawerClose } from "./ConversationDrawer.tsx";
 import {
   COLUMNS, ColumnPicker, ConversationRows, DEFAULT_SORT, isUnread, nextSort, PageHeader, PAGE_SIZE, Pager,
@@ -63,13 +64,22 @@ function IntentBadge({ intent }: { intent: ConversationSummary["intent"] }) {
 
 /** A-02: Reports links to /inbox?topic=<id>; the topic's chats are mostly resolved, so show all. */
 const initialTopic = () => new URLSearchParams(window.location.search).get("topic") ?? "";
+/** I-19: Home's brief links to /inbox?assignee=unassigned|me and /inbox?rating=bad. */
+const initialAssignee = (): AssigneeFilter => {
+  const a = new URLSearchParams(window.location.search).get("assignee");
+  return a === "me" || a === "unassigned" ? a : "all";
+};
+const initialRating = (): RatingFilter => {
+  const r = new URLSearchParams(window.location.search).get("rating");
+  return r === "good" || r === "bad" ? r : "";
+};
 
 export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId }: { workspaceId: string; workspaceName: string; me: { id: string; name: string }; hub: Hub; conversationId: string | null }) {
   const [topicFilter, setTopicFilter] = useState(initialTopic);
-  const [status, setStatus] = useState<StatusFilter>(() => (initialTopic() ? "all" : "open"));
-  const [assignee, setAssignee] = useState<AssigneeFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(() => (initialTopic() || initialRating() ? "all" : "open"));
+  const [assignee, setAssignee] = useState<AssigneeFilter>(initialAssignee);
   const [tagFilter, setTagFilter] = useState("");
-  const [ratingFilter, setRatingFilter] = useState<RatingFilter>("");
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>(initialRating);
   const [list, setList] = useState<ConversationSummary[] | null>(null);
   // Per-status totals for the tabs, under the other filters (from the server, not just the loaded rows).
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -393,6 +403,18 @@ function Thread({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  // I-19: Home's assistant opened this chat with a reply to put in the composer (never sent) or to file an issue.
+  const loaded = Boolean(conversation && initial);
+  useEffect(() => {
+    if (!loaded) return;
+    const intent = takeInboxIntent(conversationId);
+    if (!intent) return;
+    if ("draft" in intent) {
+      composer.current?.focus("reply");
+      composer.current?.insert(intent.draft);
+    } else setIssueOpen(true);
+  }, [conversationId, loaded]);
 
   useEffect(() => {
     api<{ savedReplies: SavedReply[] }>(`/workspaces/${workspaceId}/saved-replies`).then((r) => setSavedReplies(r.savedReplies), () => {});

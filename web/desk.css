@@ -2452,3 +2452,73 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
 .settings-scope { margin: 0 24px -16px; padding: 8px 12px; border-radius: 8px; background: var(--muted); color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
 .settings-scope b { color: var(--foreground); font-weight: 600; }
 @media (max-width: 767px) { .settings-scope { margin: 0 0 -8px; } }
+
+/* I-19 (D-127): Home. The daily brief (three columns of points, each linking to its chats or page) over
+   the desk assistant's ask box, flat sections like Reports. */
+.home-head { align-items: baseline; gap: 12px; }
+.home-greeting { color: var(--muted-foreground); font-size: 15px; }
+.home-brief-tools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.home-brief-tools .dash-caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-headline { margin: 2px 0 20px; max-width: 70ch; font-size: 20px; line-height: 28px; font-weight: 525; letter-spacing: -0.01em; text-wrap: pretty; }
+.brief-headline.writing { color: var(--muted-foreground); }
+.brief-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px 40px; align-items: start; }
+.brief-col h3 { margin: 0 0 10px; font-size: 13px; line-height: 20px; font-weight: 600; color: var(--muted-foreground); text-transform: none; letter-spacing: normal; }
+.brief-points { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.brief-point { display: flex; gap: 10px; min-width: 0; }
+.brief-mark { flex: none; width: 6px; height: 6px; margin-top: 8px; border-radius: 50%; background: var(--muted-foreground); opacity: 0.6; }
+.brief-point.warn .brief-mark { background: var(--warning); opacity: 1; }
+.brief-point.ok .brief-mark { background: var(--success); opacity: 1; }
+.brief-body { display: grid; gap: 6px; min-width: 0; }
+.brief-body p { margin: 0; font-size: 14px; line-height: 21px; text-wrap: pretty; overflow-wrap: anywhere; }
+.brief-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.brief-link { display: inline-flex; align-items: center; gap: 3px; color: var(--foreground); font-weight: 525; text-decoration: none; }
+.brief-link svg { width: 13px; height: 13px; }
+.brief-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.brief-chat { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted-foreground); text-decoration: none; }
+.brief-chat:hover { color: var(--foreground); background: var(--muted); }
+.brief-more { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 12px; }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* The ask box: the Agent page's chat pieces (Message Scroller, wchat-*) in a bordered box of its own height. */
+.home-chat { display: flex; flex-direction: column; height: min(640px, 72vh); margin-top: 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); overflow: hidden; }
+.home-chat.empty { height: auto; }
+.home-chat .wchat-rows { padding: 16px 16px 12px; }
+.ask-starters { display: flex; flex-wrap: wrap; gap: 6px; padding: 16px 16px 4px; }
+.ask-off { margin: 0; padding: 16px 16px 4px; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
+.ask-off a { color: var(--foreground); }
+.home-chat form.wchat-composer { margin: 12px; }
+.skel-composer { margin: 12px; min-height: 42px; align-items: center; }
+.ask-ai { max-width: min(760px, 100%); gap: 8px; }
+.ask-text { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.ask-text > * { margin: 0; }
+.ask-text > * + * { margin-top: 0.5em; }
+.ask-steps { font-size: 12.5px; line-height: 18px; color: var(--muted-foreground); }
+.ask-steps summary { cursor: pointer; width: fit-content; list-style: none; }
+.ask-steps summary::-webkit-details-marker { display: none; }
+.ask-steps summary::before { content: "▸ "; }
+.ask-steps[open] summary::before { content: "▾ "; }
+.ask-steps-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+details.ask-steps .ask-steps-list { margin-top: 4px; padding-left: 12px; }
+.ask-step { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ask-step span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-step svg { flex: none; width: 13px; height: 13px; }
+.ask-step.done svg { color: var(--success); }
+.ask-step.error svg { color: var(--destructive); }
+.ask-step-dot { flex: none; width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ask-step-dot { animation: none; } }
+.ask-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.ask-card-summary { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
+.ask-card-body { margin: 0; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); background: var(--muted); font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
+.ask-card-hint { margin: 0; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.ask-card-actions { display: flex; gap: 6px; }
+.ask-card-outcome { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--muted-foreground); }
+.ask-card-outcome svg { flex: none; width: 14px; height: 14px; }
+.ask-card.done .ask-card-outcome { color: var(--success); }
+.ask-card.failed .ask-card-outcome { color: var(--destructive); }
+@media (max-width: 640px) {
+  .brief-headline { font-size: 17px; line-height: 24px; }
+  .home-brief-tools .dash-caption { display: none; }
+  .home-chat { height: min(560px, 70vh); border-radius: var(--radius); }
+}

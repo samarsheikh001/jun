@@ -101,6 +101,7 @@ export type ShortcutCommand =
   | "assign-me"
   | "tag"
   | "search"
+  | "go-home"
   | "go-inbox"
   | "go-visitors"
   | "go-dashboard"
@@ -138,7 +139,7 @@ export const INITIAL_SHORTCUT_STATE: ShortcutState = { prefix: null, at: 0 };
 /** How long "g" waits for its second key. */
 export const PREFIX_TIMEOUT_MS = 1500;
 
-const GO: Record<string, ShortcutCommand> = { i: "go-inbox", v: "go-visitors", d: "go-dashboard", r: "go-dashboard", s: "go-settings" };
+const GO: Record<string, ShortcutCommand> = { h: "go-home", i: "go-inbox", v: "go-visitors", d: "go-dashboard", r: "go-dashboard", s: "go-settings" };
 const INBOX: Record<string, ShortcutCommand> = {
   j: "next",
   k: "previous",
@@ -185,6 +186,7 @@ export const SHORTCUT_HELP: { group: string; keys: { keys: string[]; alt?: strin
     keys: [
       { keys: ["Ctrl", "K"], label: "Command palette" },
       { keys: ["?"], label: "Keyboard shortcuts" },
+      { keys: ["g", "h"], label: "Go to Home" },
       { keys: ["g", "i"], label: "Go to Inbox" },
       { keys: ["g", "v"], label: "Go to Visitors" },
       { keys: ["g", "d"], label: "Go to Dashboard" },

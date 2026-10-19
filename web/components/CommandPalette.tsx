@@ -27,6 +27,7 @@ interface Group { label: string; items: Item[]; limit?: number }
 interface Page { title: string; placeholder: string; groups: (query: string) => Group[] }
 
 const NAVIGATION: { label: string; path: string; hint?: string }[] = [
+  { label: "Home", path: "/home", hint: "g h" },
   { label: "Inbox", path: "/inbox", hint: "g i" },
   { label: "Visitors", path: "/visitors", hint: "g v" },
   { label: "Contacts", path: "/contacts" },

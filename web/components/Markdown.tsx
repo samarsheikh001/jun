@@ -13,13 +13,15 @@ export interface MarkdownProps {
   wordClass?: string;
   /** A citation `[n]`. */
   cite: (n: number) => ReactNode;
+  /** I-19: draws a relative (desk) link; without it every link opens in a new tab. */
+  renderLink?: (href: string, children: ReactNode) => ReactNode;
   /** Drawn at the end of the last shown block (the caret). */
   tail?: ReactNode;
 }
 
 type Item = Extract<MdToken, { kind: "word" | "code" }>;
 
-function Inline({ tokens, wordClass, cite }: { tokens: MdToken[]; wordClass: string | undefined; cite: (n: number) => ReactNode }) {
+function Inline({ tokens, wordClass, cite, renderLink }: { tokens: MdToken[]; wordClass: string | undefined; cite: (n: number) => ReactNode; renderLink?: MarkdownProps["renderLink"] }) {
   const word = (t: Item, key: number, space: string) => {
     let node: ReactNode = t.kind === "code" ? <code>{t.text}</code> : t.text;
     if (t.em) node = <em>{node}</em>;
@@ -43,7 +45,11 @@ function Inline({ tokens, wordClass, cite }: { tokens: MdToken[]; wordClass: str
       const run = tokens.slice(i, j) as Item[];
       out.push(
         <Fragment key={i}>
-          <a className="md-a" href={href} target="_blank" rel="noopener noreferrer nofollow">{run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space))}</a>
+          {href.startsWith("/") && renderLink ? (
+            renderLink(href, run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space)))
+          ) : (
+            <a className="md-a" href={href} target="_blank" rel="noopener noreferrer nofollow">{run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space))}</a>
+          )}
           {run.at(-1)!.space}
         </Fragment>,
       );
@@ -55,7 +61,7 @@ function Inline({ tokens, wordClass, cite }: { tokens: MdToken[]; wordClass: str
   return <>{out}</>;
 }
 
-export function Markdown({ blocks, shown = Infinity, wordClass, cite, tail }: MarkdownProps) {
+export function Markdown({ blocks, shown = Infinity, wordClass, cite, tail, renderLink }: MarkdownProps) {
   // The blocks in view, each with its shown tokens.
   const visible: { block: MdBlock; tokens: MdToken[] }[] = [];
   let budget = shown;
@@ -70,7 +76,7 @@ export function Markdown({ blocks, shown = Infinity, wordClass, cite, tail }: Ma
   for (let i = 0; i <= last; i++) {
     const { block, tokens } = visible[i]!;
     const end = i === last ? tail : null;
-    const inline = <Inline tokens={tokens} wordClass={wordClass} cite={cite} />;
+    const inline = <Inline tokens={tokens} wordClass={wordClass} cite={cite} renderLink={renderLink} />;
     if (block.kind === "li") {
       // Consecutive items make one list (nested ones by their depth).
       const items: ReactNode[] = [];
@@ -83,7 +89,7 @@ export function Markdown({ blocks, shown = Infinity, wordClass, cite, tail }: Ma
         items.push(
           <li key={j} className={`md-li md-d${b.depth}`}>
             {b.ordered ? <span className="md-mark">{b.n}.</span> : <span className="md-mark" aria-hidden="true">{b.depth ? "◦" : "•"}</span>}
-            <span className="md-li-body"><Inline tokens={v.tokens} wordClass={wordClass} cite={cite} />{j === last ? tail : null}</span>
+            <span className="md-li-body"><Inline tokens={v.tokens} wordClass={wordClass} cite={cite} renderLink={renderLink} />{j === last ? tail : null}</span>
           </li>,
         );
       }

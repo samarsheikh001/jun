@@ -12,7 +12,7 @@ import { ChatgptConnect, type DevChatgpt } from "./ChatgptConnect.tsx";
 import { DeskFileNote } from "../components/DeskFileNote.tsx";
 
 export type ProviderId = "openai" | "workers-ai" | "chatgpt";
-type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups" | "editor";
+type AiJob = "answer" | "brief" | "nudge" | "draft" | "topics" | "judge" | "suggestions" | "followups" | "editor" | "assistant";
 
 interface AiState {
   settings: { enabled: boolean; provider: ProviderId; model: string | null; models: Partial<Record<AiJob, string>>; instructions: string; monthlyReplyCap: number };
@@ -42,6 +42,7 @@ const JOBS: { job: AiJob; label: string; hint: string }[] = [
   { job: "judge", label: "Eval grading", hint: "Checks eval replies against your criteria." },
   { job: "suggestions", label: "Suggested questions", hint: "Drafts the chat widget's suggested questions from your knowledge (Appearance page)." },
   { job: "editor", label: "Agent page editing", hint: "Changes a widget, action or task when you ask in its AI chat." },
+  { job: "assistant", label: "Home assistant", hint: "Writes the daily brief on Home and answers questions about your desk." },
 ];
 // "Suggested for ChatGPT": the small model for fast jobs, the workspace model for the rest.
 const CHATGPT_FAST_MODEL = "gpt-6-luna";

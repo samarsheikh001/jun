@@ -40,8 +40,9 @@ export const HOME_PATHS = ["/", "/settings/account", "/settings/desk"];
  * Which workspace a page load shows, and the address it should have (null: already right).
  * The URL's slug; an old link without one (bookmarks, `?ws=<id>` from older notifications)
  * goes to `?ws=`'s workspace, else `picked` (the last one used on this browser), else the first;
- * an unknown slug goes to the first workspace's inbox. D-97: with two or more workspaces, `/`
- * (and its settings) is the desk's home (`home`, no workspace); with one, `/` is its inbox.
+ * an unknown slug goes to the first workspace's Home. D-97: with two or more workspaces, `/`
+ * (and its settings) is the desk's home (`home`, no workspace); with one, `/` is its Home page.
+ * I-19 (D-127): a workspace opens on Home (/w/<slug>/home), no longer on the inbox.
  */
 export function deskLocation<M extends WorkspaceRef>(
   all: M[],
@@ -58,10 +59,10 @@ export function deskLocation<M extends WorkspaceRef>(
   const search = rest ? `?${rest}` : "";
   const slug = slugOf(location.pathname);
   const named = slug === null ? undefined : all.find((m) => m.workspaceSlug === slug);
-  if (slug !== null && !named) return { workspace: first, url: withWorkspace("/inbox", first.workspaceSlug) };
+  if (slug !== null && !named) return { workspace: first, url: withWorkspace("/home", first.workspaceSlug) };
   const byId = all.find((m) => m.workspaceId === asked);
   const workspace = byId ?? named ?? all.find((m) => m.workspaceId === picked) ?? first;
   const page = withoutWorkspace(location.pathname);
-  const url = withWorkspace((page === "/" ? "/inbox" : page) + search, workspace.workspaceSlug) + location.hash;
+  const url = withWorkspace((page === "/" ? "/home" : page) + search, workspace.workspaceSlug) + location.hash;
   return { workspace, url: url === location.pathname + location.search + location.hash ? null : url };
 }

@@ -123,7 +123,7 @@ function DeskHomeFrame({ user, onSignOut, children }: { user: { name: string; em
 }
 
 function WorkspaceCard({ workspace: w }: { workspace: WorkspaceSummary }) {
-  const href = `/w/${encodeURIComponent(w.workspaceSlug)}/inbox`;
+  const href = `/w/${encodeURIComponent(w.workspaceSlug)}/home`;
   const open = (e: MouseEvent) => {
     // A new tab or window keeps the browser's own behaviour.
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
