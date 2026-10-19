@@ -2667,6 +2667,57 @@ form.ask-bar { display: flex; align-items: flex-end; gap: 8px; margin: 12px; pad
 .ask-invite-link { display: flex; align-items: center; gap: 8px; max-width: 440px; margin-top: 6px; padding: 6px 6px 6px 10px; border-radius: 10px; background: var(--muted); }
 .ask-invite-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; }
 @media (prefers-reduced-motion: reduce) { .ask-word, .approval-card, .approval-outcome { animation: none; } }
+/* D-134, after beautifului.dev's Diff Table and Task Rows: a bulk card's chats, then their live states. */
+.approval-card:has(.bulk-table-wrap, .task-rows) { max-width: 520px; }
+/* Its Confirm names the count, so the key hints give way. */
+.approval-card:has(.bulk-table-wrap, .task-rows) .approval-keys { display: none; }
+.approval-card:has(.bulk-table-wrap, .task-rows) .approval-foot { justify-content: flex-end; }
+.bulk-table-wrap { max-height: 280px; overflow: auto; margin: 0 -4px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--border); }
+.bulk-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 18px; }
+.bulk-table th { position: sticky; top: 0; z-index: 1; height: 30px; padding: 0 10px; background: var(--card); box-shadow: inset 0 -1px var(--border); color: var(--muted-foreground); font-size: 11.5px; font-weight: 500; text-align: left; white-space: nowrap; }
+.bulk-table td { height: 34px; padding: 0 10px; border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent); vertical-align: middle; }
+.bulk-table tbody tr:first-child td { border-top: 0; }
+.bulk-table tbody tr { animation: bulk-row-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both; transition: opacity 150ms; }
+@keyframes bulk-row-in { from { opacity: 0; transform: translateY(4px); } }
+.bulk-table tr.out td:not(.bulk-check) { opacity: 0.45; }
+.bulk-table tr.out .now { background: transparent; color: var(--muted-foreground); }
+.bulk-check { width: 34px; padding-right: 0 !important; }
+.bulk-who { max-width: 0; width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-who a { color: var(--foreground); font-weight: 500; text-decoration: none; }
+.bulk-who a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.bulk-change { overflow-wrap: anywhere; }
+.bulk-change .was { color: var(--muted-foreground); text-decoration: line-through; text-decoration-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent); }
+.bulk-arrow { color: var(--muted-foreground); }
+.bulk-change .now { padding: 1px 5px; border-radius: 5px; background: color-mix(in oklch, var(--success) 14%, transparent); color: var(--success); font-weight: 500; }
+.task-rows { display: grid; gap: 6px; min-width: 0; }
+.task-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.task-count { font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.task-bar { height: 3px; border-radius: 2px; background: var(--muted); overflow: hidden; }
+.task-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--success); transition: width 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+.task-rows ul { display: grid; max-height: 260px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.task-row { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 12.5px; line-height: 18px; }
+.task-row > .step-spin { flex: none; }
+.task-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 14px; height: 14px; border-radius: 50%; }
+.task-mark.queued, .task-mark.skipped { box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--muted-foreground) 55%, transparent); }
+.task-mark.skipped { opacity: 0.5; }
+.task-mark.done { background: var(--success); color: var(--background); }
+.task-mark.failed { background: var(--destructive); color: var(--background); }
+.task-name { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-weight: 500; text-decoration: none; }
+.task-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.task-row.queued .task-name, .task-row.skipped .task-name { color: var(--muted-foreground); font-weight: 400; }
+.task-state { flex: none; margin-left: auto; color: var(--muted-foreground); font-size: 12px; }
+.task-row.running .task-state { color: var(--foreground); }
+.task-error { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--destructive); font-size: 12px; }
+.task-retry { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: var(--muted); color: var(--foreground); font: inherit; font-size: 12px; cursor: pointer; }
+.task-retry:hover:not(:disabled) { background: var(--accent); }
+.task-retry:disabled { opacity: 0.5; cursor: default; }
+.task-retry > svg { width: 12px; height: 12px; }
+.bulk-settled { display: grid; gap: 4px; justify-items: start; width: 100%; max-width: 520px; }
+.bulk-settled > .grid { width: 100%; }
+.bulk-settled .task-rows { padding: 8px 10px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs); }
+.bulk-toggle { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12px; cursor: pointer; }
+.bulk-toggle:hover { background: var(--accent); color: var(--foreground); }
+@media (prefers-reduced-motion: reduce) { .bulk-table tbody tr { animation: none; } }
 /* Entity chips: the chat (links to it), tags (+ / −), the teammate, the page. */
 .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ask-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; padding: 0 9px 0 7px; border-radius: 999px; background: var(--background); box-shadow: var(--shadow-sm); color: var(--foreground); font-size: 12.5px; font-weight: 500; text-decoration: none; }

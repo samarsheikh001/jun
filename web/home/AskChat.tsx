@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import {
   agentFileLink,
+  bulkOutcome,
   isDeskLink,
   outcomeTitle,
   proposalCard,
@@ -47,7 +48,6 @@ import {
   UsersIcon,
 } from "../components/icons.tsx";
 import { addRecent, askKey, restoreAsk, serialiseAsk, type Turn } from "../lib/ask-store.ts";
-import { deskHref, navigate } from "../lib/router.ts";
 import { ApprovalCard, ApprovalOutcome } from "@/components/approval-card.tsx";
 import { Chevron, Fold, StepTrace, type TraceStep } from "@/components/agent-steps.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -59,7 +59,9 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller.tsx";
-import { runProposal } from "./actions.ts";
+import { runBulk, runProposal, type BulkRowState } from "./actions.ts";
+import { BulkCard } from "./BulkCard.tsx";
+import { DeskLink } from "./DeskLink.tsx";
 
 // I-19 (D-127): Home's ask box. A streamed chat with the desk assistant (POST …/home/ask, NDJSON): its
 // read steps, answers that link to the desk's own pages, and a proposed change as a card with Confirm /
@@ -87,9 +89,11 @@ interface Thread {
   live: Live | null;
   /** A card being confirmed. */
   running: string | null;
+  /** D-134: the running bulk card's rows. */
+  bulkRows: Record<string, BulkRowState> | null;
 }
 
-const EMPTY: Thread = { turns: [], live: null, running: null };
+const EMPTY: Thread = { turns: [], live: null, running: null, bulkRows: null };
 const threads = new Map<string, Thread>();
 const controllers = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
@@ -229,7 +233,7 @@ const stop = (ws: string) => controllers.get(ws)?.abort();
 export function newAskChat(ws: string): void {
   stop(ws);
   controllers.delete(ws);
-  set(ws, { turns: [], live: null, running: null });
+  set(ws, { turns: [], live: null, running: null, bulkRows: null });
 }
 
 /** Whether the thread has anything to clear (the header's New chat is off on an empty one). */
@@ -239,18 +243,37 @@ export const useAskStarted = (ws: string): boolean => {
 };
 
 /** Confirm or Cancel on a card; then the model hears how it went and carries on. */
-async function decide(ws: string, turnId: number, confirm: boolean): Promise<void> {
+async function decide(ws: string, turnId: number, confirm: boolean, chosen?: string[]): Promise<void> {
   const t = get(ws);
   const turn = t.turns.find((x) => x.id === turnId);
   if (!turn || turn.role !== "assistant" || !turn.proposal || turn.outcome || t.running || t.live) return;
   let outcome: ProposalOutcome = { status: "cancelled" };
   if (confirm) {
-    set(ws, { running: turn.proposal.callId });
-    outcome = await runProposal(ws, turn.proposal);
+    const action = turn.proposal;
+    set(ws, { running: action.callId, bulkRows: action.proposal.kind === "bulk" ? {} : null });
+    outcome =
+      action.proposal.kind === "bulk" && chosen
+        ? await runBulk(ws, action, chosen, (id, state) => set(ws, { bulkRows: { ...get(ws).bulkRows, [id]: state } }))
+        : await runProposal(ws, action);
   }
   const turns = get(ws).turns.map((x) => (x.id === turnId ? ({ ...x, outcome } as Turn) : x));
-  set(ws, { running: null, turns });
+  set(ws, { running: null, bulkRows: null, turns });
   void answer(ws, turns);
+}
+
+/** D-134: one failed chat of a settled bulk card again; the outcome the model gets next time is updated. */
+async function retryBulkRow(ws: string, turnId: number, conversationId: string): Promise<void> {
+  const turn = get(ws).turns.find((x) => x.id === turnId);
+  if (!turn || turn.role !== "assistant" || turn.proposal?.proposal.kind !== "bulk" || !turn.outcome?.results) return;
+  const action = turn.proposal;
+  const again = await runBulk(ws, action, [conversationId], () => {});
+  const row = again.results?.find((r) => r.conversationId === conversationId);
+  if (!row) return;
+  const current = get(ws).turns.find((x) => x.id === turnId);
+  if (!current || current.role !== "assistant" || !current.outcome?.results) return;
+  const results = current.outcome.results.map((r) => (r.conversationId === conversationId ? row : r));
+  const outcome = bulkOutcome((action.proposal as Extract<Proposal, { kind: "bulk" }>).items, results);
+  set(ws, { turns: get(ws).turns.map((x) => (x.id === turnId ? ({ ...x, outcome } as Turn) : x)) });
 }
 
 const STARTERS = [
@@ -351,24 +374,6 @@ function workingLabel(live: Live): string | null {
 }
 
 // ---------- the answer ----------
-
-/** A desk link in an answer: a real href (new tabs keep the workspace), in-app on a plain click. */
-function DeskLink({ href, className, children, title }: { href: string; className?: string; children: ReactNode; title?: string }) {
-  return (
-    <a
-      className={className}
-      href={deskHref(href)}
-      title={title}
-      onClick={(e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        navigate(href);
-      }}
-    >
-      {children}
-    </a>
-  );
-}
 
 /** A cited chat or page inline: its icon and the answer's own words for it. */
 function SourceChip({ href, children }: { href: string; children: ReactNode }) {
@@ -627,9 +632,23 @@ function InviteLink({ url }: { url: string }) {
   );
 }
 
-function ProposalCard({ ws, turn, running, blocked, latest }: { ws: string; turn: AssistantTurn; running: boolean; blocked: boolean; latest: boolean }) {
+function ProposalCard({ ws, turn, running, blocked, latest, bulkRows }: { ws: string; turn: AssistantTurn; running: boolean; blocked: boolean; latest: boolean; bulkRows: Record<string, BulkRowState> | null }) {
   const action = turn.proposal!;
   const p = action.proposal;
+  if (p.kind === "bulk")
+    return (
+      <BulkCard
+        action={action}
+        outcome={turn.outcome}
+        running={running}
+        rows={bulkRows}
+        blocked={blocked}
+        latest={latest}
+        onConfirm={(chosen) => settle(ws, turn.id, true, chosen)}
+        onCancel={() => settle(ws, turn.id, false)}
+        onRetry={(id) => retryBulkRow(ws, turn.id, id)}
+      />
+    );
   if (turn.outcome) {
     return (
       <>
@@ -661,9 +680,9 @@ function ProposalCard({ ws, turn, running, blocked, latest }: { ws: string; turn
 }
 
 /** Confirm or Cancel, then the keyboard goes back to the prompt bar. */
-function settle(ws: string, turnId: number, confirm: boolean) {
+function settle(ws: string, turnId: number, confirm: boolean, chosen?: string[]) {
   document.querySelector<HTMLTextAreaElement>(".ask-bar textarea")?.focus({ preventScroll: true });
-  void decide(ws, turnId, confirm);
+  void decide(ws, turnId, confirm, chosen);
 }
 
 // ---------- the turn ----------
@@ -678,7 +697,7 @@ function AssistantRow({ ws, turn, live, thread, latest }: { ws: string; turn: As
       {(steps.length > 0 || working) && <StepTrace steps={traceSteps(steps)} working={working} since={live?.startedAt} header={stepsHeader(steps, turn?.took)} />}
       {text && <Answer text={text} streaming={Boolean(live)} />}
       {turn?.stopped && <p className="ask-stopped">Stopped</p>}
-      {turn?.proposal && <ProposalCard ws={ws} turn={turn} running={thread.running === turn.proposal.callId} blocked={Boolean(thread.live || (thread.running && thread.running !== turn.proposal.callId))} latest={latest} />}
+      {turn?.proposal && <ProposalCard ws={ws} turn={turn} running={thread.running === turn.proposal.callId} blocked={Boolean(thread.live || (thread.running && thread.running !== turn.proposal.callId))} latest={latest} bulkRows={thread.running === turn.proposal.callId ? thread.bulkRows : null} />}
     </>
   );
 }

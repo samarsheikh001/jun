@@ -1,4 +1,4 @@
-import { nextTags, type Proposal, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
+import { bulkOutcome, bulkSingle, nextTags, runPool, type BulkResult, type Proposal, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
 import type { ConversationSummary } from "../../shared/protocol.ts";
 import { api, ApiError, describeError } from "../api.ts";
 import { queueInboxIntent } from "../inbox/intents.ts";
@@ -146,6 +146,8 @@ export async function runProposal(workspaceId: string, action: ProposedAction): 
       case "identity_off":
         await api(`${w}/identity`, { method: "DELETE" });
         return done("identity verification is off; turning it on again (Playground → Behaviour) makes a new secret");
+      case "bulk":
+        return await runBulk(workspaceId, action, p.items.map((i) => i.conversationId), () => {});
     }
   } catch (error) {
     return { status: "failed", detail: describeError(error) };
@@ -178,4 +180,29 @@ async function saveAgentFile(w: string, action: ProposedAction, p: Extract<Propo
       throw error;
     }
   }
+}
+
+export type BulkRowState = { status: "queued" | "running" | "done" | "failed"; error?: string };
+/** Chats run at once on a bulk card. */
+const BULK_CONCURRENCY = 3;
+
+/**
+ * D-134: a bulk card's chats, each through its single action's route (so the same checks apply),
+ * three at a time; `onRow` reports each row's state as it goes. The rows not in `chosen` are left out.
+ */
+export async function runBulk(workspaceId: string, action: ProposedAction, chosen: string[], onRow: (id: string, state: BulkRowState) => void): Promise<ProposalOutcome> {
+  const p = action.proposal;
+  if (p.kind !== "bulk") return { status: "failed", detail: "not a bulk change" };
+  const results = new Map<string, BulkResult>();
+  for (const item of p.items) if (!chosen.includes(item.conversationId)) results.set(item.conversationId, { conversationId: item.conversationId, status: "skipped" });
+  const todo = p.items.filter((i) => chosen.includes(i.conversationId));
+  todo.forEach((i) => onRow(i.conversationId, { status: "queued" }));
+  await runPool(todo, BULK_CONCURRENCY, async (item) => {
+    onRow(item.conversationId, { status: "running" });
+    const outcome = await runProposal(workspaceId, { ...action, proposal: bulkSingle(p, item.conversationId), labels: { ...action.labels, conversation: item.customer } });
+    const ok = outcome.status === "done";
+    results.set(item.conversationId, { conversationId: item.conversationId, status: ok ? "done" : "failed", ...(ok ? {} : { error: outcome.detail ?? "failed" }) });
+    onRow(item.conversationId, ok ? { status: "done" } : { status: "failed", error: outcome.detail ?? "failed" });
+  });
+  return bulkOutcome(p.items, p.items.map((i) => results.get(i.conversationId)!));
 }

@@ -27,6 +27,7 @@ export const askKey = (workspaceId: string, userId: string) => `jun:ask:${worksp
 const KINDS = new Set<string>(PROPOSAL_KINDS);
 const STEP_STATUS = new Set(["running", "done", "error"]);
 const OUTCOME_STATUS = new Set(["done", "cancelled", "failed"]);
+const RESULT_STATUS = new Set(["done", "failed", "skipped"]);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): v is string => typeof v === "string";
 
@@ -40,6 +41,7 @@ function readProposal(v: unknown): ProposedAction | null {
   const p = v.proposal;
   if (p.kind === "tags" && (!Array.isArray(p.add) || !Array.isArray(p.remove))) return null;
   if ("changes" in p && !Array.isArray(p.changes)) return null;
+  if (p.kind === "bulk" && (!Array.isArray(p.items) || !p.items.every((i) => isObj(i) && str(i.conversationId) && str(i.customer) && str(i.before) && str(i.after)))) return null;
   const text = (x: unknown) => x === null || str(x);
   if (p.kind === "agent_file" && (!str(p.path) || !text(p.before) || !text(p.after))) return null;
   return v as unknown as ProposedAction;
@@ -47,7 +49,8 @@ function readProposal(v: unknown): ProposedAction | null {
 
 function readOutcome(v: unknown): ProposalOutcome | null {
   if (!isObj(v) || !OUTCOME_STATUS.has(v.status as string)) return null;
-  return { status: v.status as ProposalOutcome["status"], ...(str(v.detail) ? { detail: v.detail } : {}) };
+  const results = Array.isArray(v.results) ? v.results.filter((r): r is NonNullable<ProposalOutcome["results"]>[number] => isObj(r) && str(r.conversationId) && RESULT_STATUS.has(r.status as string)) : [];
+  return { status: v.status as ProposalOutcome["status"], ...(str(v.detail) ? { detail: v.detail } : {}), ...(results.length ? { results } : {}) };
 }
 
 /** One stored turn back, or null when it doesn't look like one. A waiting card comes back expired. */

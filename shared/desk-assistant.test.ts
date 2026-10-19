@@ -241,3 +241,37 @@ test("assistant: settings changes, risk and the card's words (D-133)", () => {
   // An invite link never reaches the model.
   assert.doesNotMatch(outcomeLine({ status: "done", detail: "made an invite link for an agent", link: "https://x/invite/secret" }), /secret/);
 });
+
+test("assistant: bulk proposals (D-134)", async () => {
+  const { bulkOutcome, bulkSingle, bulkVerb, runPool } = await import("./desk-assistant.ts");
+  const p = readProposal("propose_bulk", { op: "status", status: "resolved", conversationIds: ["cv_1aa", "cv_2bb", "cv_1aa"] }, "usr_me");
+  assert.deepEqual(p, { kind: "bulk", op: "status", conversationIds: ["cv_1aa", "cv_2bb"], items: [], status: "resolved" });
+  assert.throws(() => readProposal("propose_bulk", { op: "status", status: "resolved", conversationIds: ["cv_1aa"] }, "usr_me"), /at least 2/);
+  assert.throws(() => readProposal("propose_bulk", { op: "status", status: "resolved", conversationIds: Array.from({ length: 51 }, (_, i) => `cv_${i}xx`) }, "usr_me"), /At most 50/);
+  assert.throws(() => readProposal("propose_bulk", { op: "status", status: "resolved", conversationIds: ["cv_1aa", "x y"] }, "usr_me"), /conversation ids/);
+  assert.throws(() => readProposal("propose_bulk", { op: "delete", conversationIds: ["cv_1aa", "cv_2bb"] }, "usr_me"), /op must be/);
+  assert.equal((readProposal("propose_bulk", { op: "assign", assignee: "me", conversationIds: ["cv_1aa", "cv_2bb"] }, "usr_me") as { assigneeId: string }).assigneeId, "usr_me");
+  assert.throws(() => readProposal("propose_bulk", { op: "tags", conversationIds: ["cv_1aa", "cv_2bb"] }, "usr_me"), /tags to add/);
+  const bulk = { ...(p as Extract<typeof p, { kind: "bulk" }>), items: [{ conversationId: "cv_1aa", customer: "Hana Kim", before: "open", after: "resolved" }, { conversationId: "cv_2bb", customer: "Zane", before: "pending", after: "resolved" }] };
+  assert.equal(bulkVerb(bulk, 2), "Resolve 2 chats");
+  assert.equal(proposalCard(bulk).confirm, "Resolve 2 chats");
+  assert.equal(proposalSummary(bulk, {}), "Resolve 2 chats");
+  assert.deepEqual(bulkSingle(bulk, "cv_2bb"), { kind: "status", conversationId: "cv_2bb", status: "resolved" });
+  assert.deepEqual(proposalForModel(bulk), { kind: "bulk", op: "status", status: "resolved", conversationIds: ["cv_1aa", "cv_2bb"] });
+  const out = bulkOutcome(bulk.items, [{ conversationId: "cv_1aa", status: "done" }, { conversationId: "cv_2bb", status: "failed", error: "Not found" }]);
+  assert.equal(out.status, "done");
+  assert.equal(out.detail, "1 done, 1 failed: Zane (Not found)");
+  assert.equal(outcomeTitle(bulk, {}, out), "Resolved · 1 chat · 1 failed");
+  assert.equal(bulkOutcome(bulk.items, [{ conversationId: "cv_1aa", status: "skipped" }, { conversationId: "cv_2bb", status: "failed", error: "x" }]).status, "failed");
+  // At most 3 at once, every item once.
+  let running = 0, peak = 0;
+  const seen: number[] = [];
+  await runPool([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+    peak = Math.max(peak, ++running);
+    await new Promise((r) => setTimeout(r, 5));
+    seen.push(n);
+    running--;
+  });
+  assert.equal(peak, 3);
+  assert.deepEqual(seen.sort(), [1, 2, 3, 4, 5, 6, 7]);
+});

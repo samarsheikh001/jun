@@ -77,3 +77,17 @@ test("serialise: an invite link made on a card isn't stored (D-133); new kinds c
   assert.deepEqual(back[1]!.role === "assistant" && back[1]!.outcome, { status: "done", detail: "made" });
   assert.equal(back[2]!.role === "assistant" && back[2]!.proposal?.proposal.kind, "agent_file");
 });
+
+test("ask store: a bulk card's rows come back (D-134)", () => {
+  const bulk = { kind: "bulk", op: "status", status: "resolved", conversationIds: ["cv_1", "cv_2"], items: [{ conversationId: "cv_1", customer: "Hana", before: "open", after: "resolved" }] };
+  const turns = [
+    { id: 1, role: "user" as const, text: "resolve them" },
+    { id: 2, role: "assistant" as const, text: "", proposal: { callId: "abcdefghi", tool: "propose_bulk" as const, proposal: bulk as never, labels: {}, summary: "Resolve 1 chat" }, outcome: { status: "done" as const, detail: "1 done", results: [{ conversationId: "cv_1", status: "done" as const }] } },
+  ];
+  let id = 0;
+  const back = restoreAsk(serialiseAsk(turns, []), () => ++id);
+  const a = back.turns[1] as Extract<(typeof back.turns)[number], { role: "assistant" }>;
+  assert.deepEqual(a.outcome?.results, [{ conversationId: "cv_1", status: "done" }]);
+  const broken = restoreAsk(serialiseAsk([turns[0]!, { ...turns[1]!, proposal: { ...turns[1]!.proposal, proposal: { ...bulk, items: "x" } as never } } as Turn], []), () => ++id);
+  assert.equal((broken.turns[1] as { proposal?: unknown }).proposal, undefined);
+});

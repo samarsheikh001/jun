@@ -14,6 +14,8 @@ import {
   NOTIFICATION_LABELS,
   proposalForModel,
   settingChanges,
+  nextTags,
+  type BulkItem,
   callInput,
   capResult,
   clip,
@@ -848,6 +850,22 @@ export function actionTools(role: Role): ToolSet {
       description: "Propose changing the email replies' settings (op settings: enabled, from, fromName, replyDomain) or sending a test email from them (op test, to: an address or the reader's own). A test sends a real email.",
       input: obj({ op: opOf(["settings", "test"], "What to do."), enabled: b("settings: email replies on or off."), from: s("settings: the address replies come from."), fromName: s("settings: the sender's name."), replyDomain: s("settings: the domain customers' replies go to."), to: s("test: where to send it (default: the reader).") }, ["op"]),
     },
+    propose_bulk: {
+      description:
+        "Propose one change on several conversations at once (2–50 ids from tool results): op status (resolve, reopen, pending), assign (a teammate's id, me or nobody), tags (add / remove) or handling (ai or human). The person sees a table of the chats with each one's value before → after, can leave some out, and confirms once. Use it instead of several single proposals.",
+      input: obj(
+        {
+          op: opOf(["status", "assign", "tags", "handling"], "What to change."),
+          conversationIds: { type: "array", items: { type: "string" }, description: "The conversation ids (cv_…), 2–50." },
+          status: s("op status: resolved, open or pending.", { enum: ["resolved", "open", "pending"] }),
+          assignee: s("op assign: a teammate's id, me, or nobody."),
+          add: strings("op tags: tags to add."),
+          remove: strings("op tags: tags to remove."),
+          handling: s("op handling: ai or human.", { enum: ["ai", "human"] }),
+        },
+        ["op", "conversationIds"],
+      ),
+    },
     propose_identity_off: { description: "Propose turning identity verification off: the secret is deleted and signed-in customers become anonymous. Can't be undone (turning it on again needs a new secret, in the desk).", input: obj({}) },
   };
   const out: ToolSet = {};
@@ -878,6 +896,7 @@ How you work:
 
 Changing things:
 - You can't change anything yourself. To change something, call one propose_ tool: the person sees a card and presses Confirm or Cancel, and you're told which. Write one short sentence saying what it will do, then call it. One proposal per reply; after an outcome you may propose the next step.
+- For the same change on several chats (resolve, assign, tag, hand to or from the AI), call propose_bulk once with all their ids (up to 50), never one proposal per chat.
 - You can propose most of what a person does in the desk: a chat's status, assignee, tags, notes, a reply draft, handing it to or from the AI, an issue; inviting a live visitor; a contact's name or email; the support agent's files (instructions.md, tasks, actions, widgets, tests); the chat widget's settings; the AI settings; knowledge; saved replies, tags and topics; the team; your notifications; the workspace's name; email replies.
 - Read before you change: read_agent_file before propose_agent_file (copy find texts exactly), read_settings before a settings proposal, list_inbox_setup, read_knowledge_source or list_teammates for ids. If a proposal comes back with problems, fix them and propose again, or tell the person.
 - Propose only what they asked for or clearly agreed to, and never say it's done until you're told it was. Removing or deleting can't be undone: say so in your sentence.
@@ -1145,6 +1164,33 @@ async function resolveProposal(ctx: AssistantContext, p: Proposal, labels: Propo
     }
     case "identity_off":
       return (await loadIdentitySecret(db, workspaceId)) === null ? "Identity verification is already off." : null;
+    case "bulk": {
+      // D-134: every chat must be in this workspace; the card lists only those the change would change.
+      const rows = await db.prepare(`${SUMMARY_SELECT} WHERE c.workspace_id = ? AND c.id IN (${p.conversationIds.map(() => "?").join(",")})`).bind(workspaceId, ...p.conversationIds).all<SummaryRow>();
+      const found = new Map(rows.results.map((r) => [r.id, toSummary(r)]));
+      const missing = p.conversationIds.filter((id) => !found.has(id));
+      if (missing.length) return `No conversation ${missing.slice(0, 5).join(", ")} in this workspace: use ids from a tool result.`;
+      const names = new Map((await db.prepare("SELECT u.id, u.name FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ?").bind(workspaceId).all<{ id: string; name: string }>()).results.map((m) => [m.id, m.name]));
+      if (p.op === "assign" && p.assigneeId) {
+        if (!names.has(p.assigneeId)) return "The assignee must be a teammate's id from list_teammates.";
+        labels.assignee = p.assigneeId === ctx.user.id ? "you" : names.get(p.assigneeId);
+      }
+      const who = (id: string | null) => (id ? (id === ctx.user.id ? "You" : (names.get(id) ?? "a former teammate")) : "Unassigned");
+      const tagText = (t: string[]) => (t.length ? t.join(", ") : "none");
+      const items: BulkItem[] = [];
+      for (const id of p.conversationIds) {
+        const c = found.get(id)!;
+        const [before, after] =
+          p.op === "status" ? [c.status, p.status!]
+          : p.op === "assign" ? [who(c.assigneeId), who(p.assigneeId ?? null)]
+          : p.op === "handling" ? [c.handling === "ai" ? "AI" : "Team", p.handling === "ai" ? "AI" : "Team"]
+          : [tagText(c.tags), tagText(nextTags(c.tags, p.add ?? [], p.remove ?? []))];
+        if (before !== after) items.push({ conversationId: id, customer: contactLabel(c.contact), before, after });
+      }
+      if (!items.length) return "Nothing would change: every one of those chats already has that.";
+      p.items = items;
+      return null;
+    }
     default:
       return null;
   }

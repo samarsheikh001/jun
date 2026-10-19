@@ -269,6 +269,7 @@ export const ACTION_TOOLS = [
   "propose_workspace",
   "propose_email",
   "propose_identity_off",
+  "propose_bulk",
 ] as const;
 export type ActionTool = (typeof ACTION_TOOLS)[number];
 export const isActionTool = (name: string): name is ActionTool => (ACTION_TOOLS as readonly string[]).includes(name);
@@ -288,6 +289,18 @@ export const ADMIN_ACTIONS: readonly ActionTool[] = [
 
 export const PROPOSAL_STATUSES = ["resolved", "open", "pending"] as const satisfies readonly ConversationStatus[];
 export const MAX_NOTE = 4000;
+/** D-134: most chats one bulk card changes. */
+export const MAX_BULK = 50;
+export const BULK_OPS = ["status", "assign", "tags", "handling"] as const;
+export type BulkOp = (typeof BULK_OPS)[number];
+
+/** One chat on a bulk card: who it's with and the field before → after (readable text, from the Worker). */
+export interface BulkItem {
+  conversationId: string;
+  customer: string;
+  before: string;
+  after: string;
+}
 export const MAX_AGENT_FILE = 60_000;
 
 /** One setting a card shows changing: its label, the value now and after (already readable text). */
@@ -386,14 +399,26 @@ export type Proposal =
   | { kind: "workspace_name"; name: string }
   | { kind: "email_settings"; patch: { enabled?: boolean; from?: string; fromName?: string; replyDomain?: string }; changes: SettingChange[] }
   | { kind: "email_test"; to: string | null }
-  | { kind: "identity_off" };
+  | { kind: "identity_off" }
+  /** D-134: one change on several chats; `items` are filled by the Worker (chats it wouldn't change are left out). */
+  | {
+      kind: "bulk";
+      op: BulkOp;
+      conversationIds: string[];
+      status?: (typeof PROPOSAL_STATUSES)[number];
+      assigneeId?: string | null;
+      add?: string[];
+      remove?: string[];
+      handling?: "ai" | "human";
+      items: BulkItem[];
+    };
 
 export type ProposalKind = Proposal["kind"];
 export const PROPOSAL_KINDS: readonly ProposalKind[] = [
   "assign", "status", "handling", "tags", "note", "reply_draft", "issue", "invite_visitor", "contact", "agent_file", "desk_settings", "ai_settings",
   "knowledge_website", "knowledge_text", "knowledge_resync", "knowledge_edit", "knowledge_remove_page", "knowledge_remove",
   "saved_reply_create", "saved_reply_edit", "saved_reply_delete", "tag_rename", "tag_delete", "topic_rename", "topic_merge", "topic_delete", "topic_label",
-  "team_invite", "team_revoke_invite", "team_role", "team_remove", "notifications", "workspace_name", "email_settings", "email_test", "identity_off",
+  "team_invite", "team_revoke_invite", "team_role", "team_remove", "notifications", "workspace_name", "email_settings", "email_test", "identity_off", "bulk",
 ];
 
 /** What the card names, filled in by the Worker: the conversation's customer, the teammate, the thing changed. */
@@ -638,7 +663,96 @@ export function readProposal(tool: ActionTool, rawInput: unknown, me: string): P
     }
     case "propose_identity_off":
       return { kind: "identity_off" };
+    case "propose_bulk": {
+      const what = op(input, BULK_OPS);
+      const v = input.conversationIds;
+      const given = typeof v === "string" ? v.split(",") : Array.isArray(v) ? v : fail("conversationIds must be a list of conversation ids.");
+      const ids: string[] = [];
+      for (const x of given as unknown[]) {
+        const one = typeof x === "string" ? x.trim() : "";
+        if (!ID.test(one)) fail("conversationIds must be conversation ids from a tool result (like cv_…).");
+        if (!ids.includes(one)) ids.push(one);
+      }
+      if (ids.length < 2) fail("Give at least 2 conversations (for one, use the single proposal).");
+      if (ids.length > MAX_BULK) fail(`At most ${MAX_BULK} conversations at once.`);
+      const base = { kind: "bulk" as const, op: what, conversationIds: ids, items: [] };
+      if (what === "status") return { ...base, status: oneOf(input, "status", PROPOSAL_STATUSES) ?? fail("status is required (resolved, open or pending).") };
+      if (what === "handling") return { ...base, handling: oneOf(input, "handling", ["ai", "human"] as const) ?? fail("handling is required (ai or human).") };
+      if (what === "assign") {
+        const who = str(input, "assignee", 80, true)!;
+        if (who === "nobody" || who === "unassigned") return { ...base, assigneeId: null };
+        if (who === "me") return { ...base, assigneeId: me };
+        if (!ID.test(who)) fail("assignee must be me, nobody or a teammate's id from list_teammates.");
+        return { ...base, assigneeId: who };
+      }
+      const add = list(input, "add", 10, 40);
+      const remove = list(input, "remove", 10, 40);
+      if (!add.length && !remove.length) fail("Give tags to add or remove.");
+      for (const t of [...add, ...remove]) if (!TAG.test(t)) fail("Tag names are 1 to 40 characters on one line.");
+      return { ...base, add, remove };
+    }
   }
+}
+
+type Bulk = Extract<Proposal, { kind: "bulk" }>;
+const BULK_FIELDS: Record<BulkOp, string> = { status: "Status", assign: "Assignee", tags: "Tags", handling: "Handled by" };
+export const bulkField = (op: BulkOp): string => BULK_FIELDS[op];
+
+/** A bulk card's verb for `n` chats: "Resolve 6 chats", "Assign 3 chats to Hana". */
+export function bulkVerb(p: Bulk, n: number, assignee?: string): string {
+  const chats = `${n} chat${n === 1 ? "" : "s"}`;
+  switch (p.op) {
+    case "status":
+      return p.status === "resolved" ? `Resolve ${chats}` : p.status === "open" ? `Reopen ${chats}` : `Mark ${chats} pending`;
+    case "assign":
+      return p.assigneeId === null ? `Unassign ${chats}` : `Assign ${chats}${assignee ? ` to ${assignee}` : ""}`;
+    case "handling":
+      return p.handling === "ai" ? `Hand ${chats} to the AI` : `Take over ${chats}`;
+    case "tags":
+      return `Update tags on ${chats}`;
+  }
+}
+
+/** One chat of a bulk card as its single proposal, so Confirm runs it through the same route. */
+export function bulkSingle(p: Bulk, conversationId: string): Proposal {
+  switch (p.op) {
+    case "status":
+      return { kind: "status", conversationId, status: p.status! };
+    case "assign":
+      return { kind: "assign", conversationId, assigneeId: p.assigneeId ?? null };
+    case "handling":
+      return { kind: "handling", conversationId, handling: p.handling! };
+    case "tags":
+      return { kind: "tags", conversationId, add: p.add ?? [], remove: p.remove ?? [] };
+  }
+}
+
+/** A bulk row after it ran (or was left out). */
+export interface BulkResult {
+  conversationId: string;
+  status: "done" | "failed" | "skipped";
+  error?: string;
+}
+
+/** What the model hears about a bulk run: "5 done, 1 failed: Hana Kim (not found), 2 left out by the person". */
+export function bulkOutcome(items: BulkItem[], results: BulkResult[]): ProposalOutcome {
+  const name = (id: string) => items.find((i) => i.conversationId === id)?.customer ?? id;
+  const done = results.filter((r) => r.status === "done");
+  const failed = results.filter((r) => r.status === "failed");
+  const skipped = results.filter((r) => r.status === "skipped");
+  const parts = [`${done.length} done`];
+  if (failed.length) parts.push(`${failed.length} failed: ${failed.slice(0, 5).map((r) => `${name(r.conversationId)} (${clip(r.error ?? "error", 80)})`).join("; ")}`);
+  if (skipped.length) parts.push(`${skipped.length} left out by the person`);
+  return { status: done.length ? "done" : skipped.length === results.length ? "cancelled" : "failed", detail: parts.join(", "), results };
+}
+
+/** Runs `run` over `items`, at most `limit` at a time, in order; resolves when all are done. */
+export async function runPool<T>(items: T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await run(items[next++]!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 /** The conversation a proposal is about, if any (the Worker checks it's in the workspace). */
@@ -770,6 +884,14 @@ export function proposalSummary(p: Proposal, labels: ProposalLabels): string {
       return `Send a test email to ${p.to ?? "your own address"}`;
     case "identity_off":
       return "Turn identity verification off";
+    case "bulk": {
+      const n = p.items.length;
+      if (p.op === "tags") {
+        const parts = [p.add?.length ? `add ${p.add.map((t) => `“${t}”`).join(", ")}` : "", p.remove?.length ? `remove ${p.remove.map((t) => `“${t}”`).join(", ")}` : ""].filter(Boolean).join(" and ");
+        return `${parts.charAt(0).toUpperCase()}${parts.slice(1)} on ${n} chats`;
+      }
+      return bulkVerb(p, n, labels.assignee);
+    }
   }
 }
 
@@ -840,12 +962,17 @@ export function proposalCard(p: Proposal): { title: string; confirm: string } {
     case "email_settings": return c("Change the email settings?", "Save email settings");
     case "email_test": return c("Send a test email?", "Send test email");
     case "identity_off": return c("Turn identity verification off?", "Turn off");
+    case "bulk": return c(`Change ${p.items.length} chats?`, bulkVerb(p, p.items.length));
   }
 }
 
 /** A proposal as the model sees its own call in the history: file texts left out (they can be long). */
 export function proposalForModel(p: Proposal): Record<string, unknown> {
   if (p && typeof p === "object" && p.kind === "agent_file") return { kind: p.kind, path: p.path, op: p.op };
+  if (p && typeof p === "object" && p.kind === "bulk") {
+    const { items, ...rest } = p;
+    return { ...rest, conversationIds: Array.isArray(items) ? items.map((i) => i.conversationId) : p.conversationIds };
+  }
   return p as unknown as Record<string, unknown>;
 }
 
@@ -858,7 +985,7 @@ export function nextTags(current: string[], add: string[], remove: string[]): st
 }
 
 /** `link`: an invite link the card shows with Copy; it stays in the page and never goes back to the model. */
-export type ProposalOutcome = { status: "done" | "cancelled" | "failed"; detail?: string; link?: string };
+export type ProposalOutcome = { status: "done" | "cancelled" | "failed"; detail?: string; link?: string; /** D-134: a bulk card's rows. */ results?: BulkResult[] };
 
 /** What the model is told after the person pressed Confirm or Cancel. */
 export function outcomeLine(outcome: ProposalOutcome): string {
@@ -1095,6 +1222,13 @@ export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: Propo
       return named("Test email sent", outcome.detail?.replace(/^sent to /, ""));
     case "identity_off":
       return "Identity verification off";
+    case "bulk": {
+      const r = outcome.results ?? [];
+      const done = r.filter((x) => x.status === "done").length;
+      const failed = r.filter((x) => x.status === "failed").length;
+      const verb = p.op === "status" ? (p.status === "resolved" ? "Resolved" : p.status === "open" ? "Reopened" : "Marked pending") : p.op === "assign" ? (p.assigneeId === null ? "Unassigned" : "Assigned") : p.op === "handling" ? (p.handling === "ai" ? "Handed to the AI" : "Taken over") : "Tags updated";
+      return `${verb} · ${done} chat${done === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
+    }
   }
 }
 

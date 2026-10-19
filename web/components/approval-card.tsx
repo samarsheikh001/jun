@@ -18,6 +18,7 @@ export function ApprovalCard({
   confirmLabel = "Confirm",
   running = false,
   disabled = false,
+  confirmDisabled = false,
   autoFocus = false,
   tone,
   warning,
@@ -30,6 +31,8 @@ export function ApprovalCard({
   confirmLabel?: string;
   running?: boolean;
   disabled?: boolean;
+  /** Only Confirm is off (a bulk card with every row left out). */
+  confirmDisabled?: boolean;
   autoFocus?: boolean;
   tone?: "destructive" | "external";
   warning?: ReactNode;
@@ -52,7 +55,7 @@ export function ApprovalCard({
         if (e.key === "Escape") {
           e.preventDefault();
           onCancel();
-        } else if (!tone && e.key === "Enter" && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLAnchorElement)) {
+        } else if (!tone && !confirmDisabled && e.key === "Enter" && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLAnchorElement)) {
           e.preventDefault();
           onConfirm();
         }
@@ -74,7 +77,7 @@ export function ApprovalCard({
           <Button ref={cancel} size="sm" variant="ghost" disabled={off} onClick={onCancel}>
             Cancel
           </Button>
-          <Button ref={confirm} size="sm" variant={tone ? "destructive" : "default"} disabled={off} onClick={onConfirm}>
+          <Button ref={confirm} size="sm" variant={tone ? "destructive" : "default"} disabled={off || confirmDisabled} onClick={onConfirm}>
             {running ? "Working…" : confirmLabel}
           </Button>
         </div>
