@@ -450,7 +450,7 @@ export function ReportsPage({ workspaceId, path, canEdit }: { workspaceId: strin
   const showMap = mapped.length >= MIN_MAP_TOPICS;
   const mapNote = !r || showMap || r.ai.off || r.topics.list.length === 0
     ? null
-    : `The topic map appears here once ${MIN_MAP_TOPICS} or more topics have AI chats in this period.`;
+    : "The topic map appears here once a topic has AI chats in this period.";
 
   return (
     <div className="content wide reports">

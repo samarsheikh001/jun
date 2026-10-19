@@ -4,8 +4,8 @@ import type { TopicCount } from "../../shared/metrics.ts";
 // counts spread widely), the colour field's blobs and the hue at a point, and where each label fits.
 // Plot coordinates are 0..1 with y up: x = chats, y = the share the AI resolved alone.
 
-/** Fewer topics with AI chats than this: Reports shows the rows only. */
-export const MIN_MAP_TOPICS = 5;
+/** Fewer topics with AI chats than this: Reports shows the rows only. One dot already says which side of the field a topic is on. */
+export const MIN_MAP_TOPICS = 1;
 
 export interface MapTopic {
   id: string;
