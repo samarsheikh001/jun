@@ -451,7 +451,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const showGetStarted = Boolean(ob && !ob.dismissed && obDone < STEP_ORDER.length && workspace.role !== "agent");
   const canEdit = workspace.role !== "agent";
   const conversationId = pagePath.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
-  // D-91: until the widget is on a site, its sidebar entry carries a dot and opens on Install.
+  // D-91: until the widget is on a site, its sidebar entry carries a dot (it still opens the Playground;
+  // D-121: opening straight on the Install sheet was confusing, the page's chip and button lead there).
   const install = ob ? { installed: ob.steps.install, host: ob.installedOn, widgetKey: ob.widgetKey } : null;
   const notInstalled = install !== null && !install.installed;
   const widgetTab: WidgetTab = pagePath.startsWith("/playground/behaviour") ? "behaviour" : pagePath.startsWith("/playground/install") ? "install" : "appearance";
@@ -474,7 +475,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                 const { id, label, Icon } = item;
                 const here = navOf(section) === id;
                 const dot = id === "widget" && notInstalled;
-                const href = dot ? "/playground/install" : "href" in item ? item.href : `/${id}`;
+                const href = "href" in item ? item.href : `/${id}`;
                 return (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
