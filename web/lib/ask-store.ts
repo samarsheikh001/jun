@@ -37,7 +37,8 @@ function readStep(v: unknown): AskStep | null {
   if (!isObj(v) || !str(v.id) || !str(v.tool) || !str(v.label) || !STEP_STATUS.has(v.status as string)) return null;
   const table = readTable(v.table);
   const passages = readPassages(v.passages);
-  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}), ...(passages ? { passages } : {}) };
+  const charts = Array.isArray(v.charts) ? v.charts.filter((c) => isObj(c) && ((c.kind === "days" && Array.isArray(c.series)) || (c.kind === "ranked" && Array.isArray(c.rows) && str(c.title)))) : [];
+  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}), ...(passages ? { passages } : {}), ...(charts.length ? { charts: charts as AskStep["charts"] } : {}) };
 }
 
 /** D-134: a step's Context Cards back, if they still look like them. */

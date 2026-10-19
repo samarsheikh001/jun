@@ -1010,7 +1010,15 @@ export interface AskStep {
   table?: StepTable;
   /** D-134: the knowledge passages search_knowledge found, for Context Cards under the turn. */
   passages?: StepPassages;
+  /** D-134: Reports' numbers as small charts (Insight Cards) under the turn. */
+  charts?: StepChart[];
 }
+
+/** D-134: a chart under a turn: chats per day (report_metrics), or ranked counts (topics, handoff reasons). */
+export type StepChart =
+  | { kind: "days"; days: number; total: number; change: number | null; series: { day: string; chats: number; ai: number; aiResolved: number }[] }
+  | { kind: "ranked"; title: string; rows: { label: string; value: number; href?: string; detail?: string }[] };
+export const MAX_CHART_ROWS = 8;
 
 /** D-134: what search_knowledge found, as cards: the source, where in it, a bit of the text. */
 export interface StepPassages {
@@ -1199,6 +1207,47 @@ export function stepTable(tool: string, output: unknown): StepTable | undefined 
     if (companies.length) return { kind: "companies", rows: companies };
   }
   return undefined;
+}
+
+/** D-134: a report_metrics or topics_and_handoffs step's charts; else nothing. */
+export function stepCharts(tool: string, output: unknown): StepChart[] | undefined {
+  if (tool !== "report_metrics" && tool !== "topics_and_handoffs") return undefined;
+  let value = output;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  const rows = (key: string) => (Array.isArray(o[key]) ? (o[key] as unknown[]).filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === "object") : []);
+  const out: StepChart[] = [];
+  if (tool === "report_metrics") {
+    const series = rows("perDay")
+      .filter((d) => typeof d.day === "string" && DAY.test(d.day))
+      .slice(-90)
+      .map((d) => ({ day: d.day as string, chats: count(d.chats), ai: count(d.ai), aiResolved: count(d.aiResolved) }));
+    const c = (o.conversations ?? {}) as Record<string, unknown>;
+    if (series.length > 1) out.push({ kind: "days", days: count(o.days) || series.length, total: count(c.total), change: typeof c.changePercent === "number" ? c.changePercent : null, series });
+  } else {
+    const topics = rows("topics").filter((t) => typeof t.name === "string" && count(t.chats) > 0).slice(0, MAX_CHART_ROWS);
+    if (topics.length)
+      out.push({
+        kind: "ranked",
+        title: "Topics",
+        rows: topics.map((t) => ({
+          label: t.name as string,
+          value: count(t.chats),
+          ...(typeof t.link === "string" && isDeskLink(t.link) ? { href: t.link } : {}),
+          ...(count(t.aiChats) ? { detail: `${count(t.aiChats)} with the AI · ${count(t.aiResolved)} resolved by it · ${count(t.handedOff)} handed off` } : {}),
+        })),
+      });
+    const reasons = rows("handoffReasons").filter((r) => typeof r.reason === "string" && count(r.chats) > 0).slice(0, MAX_CHART_ROWS);
+    if (reasons.length) out.push({ kind: "ranked", title: "Handoff reasons", rows: reasons.map((r) => ({ label: clip(r.reason as string, 80)!, value: count(r.chats) })) });
+  }
+  return out.length ? out : undefined;
 }
 
 /** D-134: a search_knowledge step's passages for the Context Cards; else nothing. */

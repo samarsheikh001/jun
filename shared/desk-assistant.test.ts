@@ -287,3 +287,16 @@ test("assistant: next questions are cleaned (D-134)", async () => {
   assert.deepEqual(readNextQuestions("x".repeat(90)), []);
   assert.match(nextQuestionsInput("q", "a", ["Searched conversations"]), /What it looked at: Searched conversations/);
 });
+
+test("assistant: Reports' numbers as step charts (D-134)", async () => {
+  const { stepCharts } = await import("./desk-assistant.ts");
+  const days = stepCharts("report_metrics", JSON.stringify({ days: 7, conversations: { total: 9, changePercent: -10 }, perDay: [{ day: "2026-10-19", chats: 4, ai: 3, aiResolved: 2 }, { day: "2026-10-20", chats: 5, ai: 5, aiResolved: 1 }, { day: "bad" }] }));
+  assert.deepEqual(days, [{ kind: "days", days: 7, total: 9, change: -10, series: [{ day: "2026-10-19", chats: 4, ai: 3, aiResolved: 2 }, { day: "2026-10-20", chats: 5, ai: 5, aiResolved: 1 }] }]);
+  assert.equal(stepCharts("report_metrics", { perDay: [{ day: "2026-10-19", chats: 1 }] }), undefined);
+  const ranked = stepCharts("topics_and_handoffs", { topics: [{ name: "Billing", chats: 4, aiChats: 3, aiResolved: 1, handedOff: 2, link: "/inbox?topic=top_1" }, { name: "Empty", chats: 0 }, { name: "Evil", chats: 1, link: "https://evil.example" }], handoffReasons: [{ reason: "Asked for a person", chats: 3 }] });
+  assert.equal(ranked?.length, 2);
+  assert.deepEqual(ranked?.[0], { kind: "ranked", title: "Topics", rows: [{ label: "Billing", value: 4, href: "/inbox?topic=top_1", detail: "3 with the AI · 1 resolved by it · 2 handed off" }, { label: "Evil", value: 1 }] });
+  assert.deepEqual(ranked?.[1], { kind: "ranked", title: "Handoff reasons", rows: [{ label: "Asked for a person", value: 3 }] });
+  assert.equal(stepCharts("topics_and_handoffs", { topics: [], handoffReasons: [] }), undefined);
+  assert.equal(stepCharts("search_conversations", { perDay: [] }), undefined);
+});
