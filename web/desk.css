@@ -700,9 +700,14 @@ button.small:not([data-slot]) { min-height: 28px; padding: 2px 10px; font-size: 
 .contact-history a { display: grid; gap: 1px; padding: 6px 8px; border-radius: var(--radius); background: var(--muted); color: var(--foreground); text-decoration: none; }
 .contact-history a:hover { background: var(--accent); }
 /* AI-11 tool chips (web/inbox/ToolCalls.tsx): rows rise in as calls arrive. */
-.tool-row-in { animation: tool-row-in 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-@keyframes tool-row-in { from { opacity: 0; transform: translateY(4px); } }
-@media (prefers-reduced-motion: reduce) { .tool-row-in { animation: none; } }
+/* D-129: the shared step trace (web/components/agent-steps.tsx): rows rise in, a running row spins and shimmers. */
+.step-row-in { animation: step-row-in 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes step-row-in { from { opacity: 0; transform: translateY(4px); } }
+.step-spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid color-mix(in oklch, currentColor 30%, transparent); border-top-color: var(--foreground); animation: spin 700ms linear infinite; }
+.step-shimmer { -webkit-text-fill-color: transparent; -webkit-background-clip: text; background-clip: text; background-image: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%); background-size: 200% 100%; animation: pixel-shimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .step-row-in, .step-spin, .step-shimmer { animation: none; } }
+.step-trace .pixel-status { max-width: 100%; min-width: 0; }
+.step-trace .pixel-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg > .tool-calls { max-width: 420px; margin-bottom: 4px; }
 
 /* ---------- AI settings ---------- */
@@ -2474,51 +2479,116 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
 .brief-link { display: inline-flex; align-items: center; gap: 3px; color: var(--foreground); font-weight: 525; text-decoration: none; }
 .brief-link svg { width: 13px; height: 13px; }
 .brief-link:hover { text-decoration: underline; text-underline-offset: 3px; }
-.brief-chat { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted-foreground); text-decoration: none; }
-.brief-chat:hover { color: var(--foreground); background: var(--muted); }
+/* D-129 (after beautifului.dev's Insight Cards): counts by the headings, numbers in mono, chats as entity chips, an "Ask about this" follow-up. */
+.brief-count { margin-left: 4px; font-family: var(--font-mono); font-weight: 400; font-variant-numeric: tabular-nums; opacity: 0.8; }
+.brief-num { font-family: var(--font-mono); font-size: 0.93em; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.brief-chat { display: inline-flex; align-items: center; gap: 4px; max-width: 170px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--foreground); text-decoration: none; transition: background-color 150ms; }
+.brief-chat > svg { flex: none; width: 12px; height: 12px; color: var(--muted-foreground); }
+.brief-chat > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-chat:hover { background: var(--muted); }
+.brief-ask { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; border: 0; border-radius: 999px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms, color 150ms, opacity 150ms; }
+.brief-ask > svg { width: 12px; height: 12px; }
+.brief-ask:hover, .brief-ask:focus-visible { background: var(--muted); color: var(--foreground); }
+/* On a pointer, it shows on the point's hover (or keyboard focus); touch screens always show it. */
+@media (hover: hover) { .brief-point:not(:hover, :focus-within) .brief-ask { opacity: 0; } }
 .brief-more { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 12px; }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 
-/* The ask box: the Agent page's chat pieces (Message Scroller, wchat-*) in a bordered box of its own height. */
+/* The ask box: the Agent page's chat pieces (Message Scroller, wchat-*) in a bordered box of its own height.
+   D-129, after beautifului.dev's primitives (patterns and measures, our tokens): source chips, copy and
+   "N sources" under an answer, approval cards for proposals, a pill prompt bar. */
 .home-chat { display: flex; flex-direction: column; height: min(640px, 72vh); margin-top: 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); overflow: hidden; }
 .home-chat.empty { height: auto; }
-.home-chat .wchat-rows { padding: 16px 16px 12px; }
-.ask-starters { display: flex; flex-wrap: wrap; gap: 6px; padding: 16px 16px 4px; }
+.home-chat .wchat-rows { padding: 16px 16px 12px; gap: 16px; }
 .ask-off { margin: 0; padding: 16px 16px 4px; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
 .ask-off a { color: var(--foreground); }
-.home-chat form.wchat-composer { margin: 12px; }
-.skel-composer { margin: 12px; min-height: 42px; align-items: center; }
+.skel-composer { display: flex; align-items: center; min-height: 44px; margin: 12px; padding: 0 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); }
 .ask-ai { max-width: min(760px, 100%); gap: 8px; }
 .ask-text { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .ask-text > * { margin: 0; }
 .ask-text > * + * { margin-top: 0.5em; }
-.ask-steps { font-size: 12.5px; line-height: 18px; color: var(--muted-foreground); }
-.ask-steps summary { cursor: pointer; width: fit-content; list-style: none; }
-.ask-steps summary::-webkit-details-marker { display: none; }
-.ask-steps summary::before { content: "▸ "; }
-.ask-steps[open] summary::before { content: "▾ "; }
-.ask-steps-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-details.ask-steps .ask-steps-list { margin-top: 4px; padding-left: 12px; }
-.ask-step { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.ask-step span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ask-step svg { flex: none; width: 13px; height: 13px; }
-.ask-step.done svg { color: var(--success); }
-.ask-step.error svg { color: var(--destructive); }
-.ask-step-dot { flex: none; width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.9s linear infinite; }
-@media (prefers-reduced-motion: reduce) { .ask-step-dot { animation: none; } }
-.ask-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
-.ask-card-summary { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
-.ask-card-body { margin: 0; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); background: var(--muted); font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
-.ask-card-hint { margin: 0; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
-.ask-card-actions { display: flex; gap: 6px; }
-.ask-card-outcome { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--muted-foreground); }
-.ask-card-outcome svg { flex: none; width: 14px; height: 14px; }
-.ask-card.done .ask-card-outcome { color: var(--success); }
-.ask-card.failed .ask-card-outcome { color: var(--destructive); }
+.ask-word { animation: ask-resolve 360ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes ask-resolve { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
+.ask-caret { display: inline-block; width: 2px; height: 0.95em; margin-left: 2px; border-radius: 1px; background: var(--foreground); vertical-align: -0.12em; }
+.ask-stopped { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+/* A cited chat or page inline: its icon and the answer's words, a small inset chip. */
+.ask-src { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 20px; margin: 0 1px; padding: 0 6px 0 4px; border-radius: 6px; background: var(--muted); box-shadow: var(--shadow-xs); color: var(--foreground); font-size: 12.5px; font-weight: 500; line-height: 20px; text-decoration: none; vertical-align: 1px; transition: background-color 150ms; }
+.ask-src:hover { background: color-mix(in oklch, var(--muted), var(--foreground) 8%); }
+.ask-src-icon { display: inline-flex; flex: none; color: var(--muted-foreground); }
+.ask-src-icon > svg { width: 12px; height: 12px; }
+.ask-src-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: -2px 0 0 -4px; }
+.ask-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); cursor: pointer; transition: background-color 100ms, color 100ms; }
+.ask-icon-btn:hover { background: var(--accent); color: var(--foreground); }
+.ask-icon-btn > svg { width: 14px; height: 14px; }
+.ask-sources-btn { display: inline-flex; align-items: center; gap: 6px; height: 26px; margin-left: 4px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12px; cursor: pointer; transition: background-color 150ms, color 150ms; }
+.ask-sources-btn:hover { background: var(--accent); color: var(--foreground); }
+.ask-stack { display: inline-flex; }
+.ask-stack > span { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 1.5px var(--background), var(--shadow-xs); color: var(--muted-foreground); }
+.ask-stack > span + span { margin-left: -4px; }
+.ask-stack svg { width: 10px; height: 10px; }
+.ask-sources-panel { flex-basis: 100%; }
+.ask-sources { display: flex; flex-direction: column; margin: 4px 0 0 4px; padding: 4px; max-width: 520px; border-radius: 10px; background: var(--muted); box-shadow: var(--shadow-xs); list-style: none; }
+.ask-source { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px; border-radius: 6px; color: var(--muted-foreground); font-size: 12px; text-decoration: none; transition: background-color 150ms, color 150ms; }
+.ask-source:hover { background: var(--accent); color: var(--foreground); }
+.ask-source-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); }
+.ask-source-path { margin-left: auto; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10.5px; }
+/* Starter prompts: chips above the prompt bar while the thread is empty. */
+.ask-starters { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 14px 2px; }
+.ask-starter { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms; }
+.ask-starter:hover { background: var(--muted); }
+.ask-starter > svg { width: 13px; height: 13px; flex: none; color: var(--muted-foreground); }
+/* The prompt bar: a pill that grows with the text; send turns into stop while an answer streams. */
+form.ask-bar { display: flex; align-items: flex-end; gap: 8px; margin: 12px; padding: 6px 6px 6px 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); transition: box-shadow 150ms; }
+.ask-bar:focus-within { box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground) 28%, transparent), 0 2px 8px #0000000f; }
+.ask-bar[data-disabled] { opacity: 0.7; }
+.ask-bar textarea { flex: 1; min-height: 32px; max-height: 160px; padding: 6px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--foreground); font: inherit; font-size: 14px; line-height: 20px; field-sizing: content; box-shadow: none; }
+.ask-bar textarea:focus, .ask-bar textarea:focus-visible { outline: none; box-shadow: none; }
+.ask-bar textarea::placeholder { color: var(--muted-foreground); }
+.ask-bar [data-slot="button"] { flex: none; width: 32px; height: 32px; border-radius: 999px; }
+.ask-bar [data-slot="button"] svg { width: 16px; height: 16px; }
+/* An approval card (web/components/approval-card.tsx): question, what changes as chips, Cancel / Confirm. */
+.approval-card { width: 100%; max-width: 440px; border-radius: 12px; background: var(--card); box-shadow: var(--shadow-md); overflow: hidden; animation: approval-in 380ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@keyframes approval-in { from { opacity: 0; transform: translateY(6px); } }
+.approval-body { display: grid; gap: 8px; padding: 12px 14px 4px; }
+.approval-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
+.approval-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); }
+.approval-icon > svg { width: 13px; height: 13px; }
+.approval-summary { margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-foreground); text-wrap: pretty; overflow-wrap: anywhere; }
+.approval-preview { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--muted); font-size: 13px; line-height: 19px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
+.approval-hint { margin: 0; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.approval-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 14px; }
+.approval-keys { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-size: 11.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; }
+.approval-keys kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: 4px; background: var(--muted); box-shadow: var(--shadow-xs); font-family: var(--font-mono); font-size: 10.5px; color: var(--foreground); }
+.approval-keys kbd:not(:first-child) { margin-left: 6px; }
+.approval-actions { display: flex; flex: none; gap: 6px; }
+.approval-actions [data-slot="button"] { height: 28px; padding: 0 12px; font-size: 13px; }
+.approval-outcome { display: inline-flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%; margin: 0; padding: 4px 10px 4px 4px; border-radius: 999px; font-size: 12.5px; line-height: 18px; font-weight: 500; animation: approval-in 260ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.approval-outcome-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 18px; height: 18px; border-radius: 50%; color: var(--background); }
+.approval-outcome-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approval-outcome.done { background: color-mix(in oklch, var(--success) 14%, transparent); color: var(--success); }
+.approval-outcome.done .approval-outcome-mark { background: var(--success); }
+.approval-outcome.cancelled { background: var(--muted); color: var(--muted-foreground); }
+.approval-outcome.cancelled .approval-outcome-mark { background: var(--muted-foreground); }
+.approval-outcome.failed { background: color-mix(in oklch, var(--destructive) 12%, transparent); color: var(--destructive); }
+.approval-outcome.failed .approval-outcome-mark { background: var(--destructive); }
+@media (prefers-reduced-motion: reduce) { .ask-word, .approval-card, .approval-outcome { animation: none; } }
+/* Entity chips: the chat (links to it), tags (+ / −), the teammate, the page. */
+.ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; padding: 0 9px 0 7px; border-radius: 999px; background: var(--background); box-shadow: var(--shadow-sm); color: var(--foreground); font-size: 12.5px; font-weight: 500; text-decoration: none; }
+a.ask-chip:hover { background: var(--muted); }
+.ask-chip-icon { display: inline-flex; flex: none; color: var(--muted-foreground); }
+.ask-chip-icon > svg { width: 12px; height: 12px; }
+.ask-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-chip.add { background: color-mix(in oklch, var(--success) 12%, var(--background)); color: var(--success); }
+.ask-chip.remove { background: color-mix(in oklch, var(--destructive) 10%, var(--background)); color: var(--destructive); }
+.ask-chip.add .ask-chip-icon, .ask-chip.remove .ask-chip-icon { color: inherit; }
 @media (max-width: 640px) {
   .brief-headline { font-size: 17px; line-height: 24px; }
   .home-brief-tools .dash-caption { display: none; }
   .home-chat { height: min(560px, 70vh); border-radius: var(--radius); }
+  .approval-keys { display: none; }
+  .approval-foot { justify-content: flex-end; }
 }

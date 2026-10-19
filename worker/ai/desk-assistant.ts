@@ -23,7 +23,9 @@ import {
   readIssueQuery,
   readProposal,
   readQuery,
+  stepInput,
   stepLabel,
+  stepResult,
   type ActionTool,
   type AskEvent,
   type AskTurn,
@@ -726,14 +728,14 @@ export async function runAssistant(ctx: AssistantContext, model: AgentModel, tur
         const prepared = await prepareProposal(ctx, part.toolName, input, newCallId());
         emit(typeof prepared === "string" ? { type: "rejected", tool: part.toolName, message: prepared } : { type: "proposal", proposal: prepared });
       } else {
-        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, false), status: "running" } });
+        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, false), status: "running", input: stepInput(input) } });
       }
     } else if (part.type === "tool-result") {
       const input = callInput(part.input);
       const failed = typeof part.output === "string" && part.output.startsWith('{"error"');
-      emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done" } });
+      emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output) } });
     } else if (part.type === "tool-error") {
-      emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error" } });
+      emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
     } else if (part.type === "error") {
       throw part.error instanceof Error ? part.error : new Error(String(part.error));
     }

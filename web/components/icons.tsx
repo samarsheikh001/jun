@@ -22,6 +22,7 @@ import {
   Cancel01Icon,
   ComputerIcon,
   Contact01Icon,
+  Copy01Icon,
   Delete02Icon,
   CursorDisabled01Icon,
   Download04Icon,
@@ -53,6 +54,7 @@ import {
   SidebarLeft01Icon,
   SourceCodeIcon,
   SparklesIcon,
+  StopIcon as HugeStopIcon,
   Tag01Icon,
   Sun03Icon,
   TextIcon as HugeTextIcon,
@@ -96,6 +98,7 @@ export const ChevronDownIcon = make(ArrowDown01Icon);
 export const ChevronRightIcon = make(ArrowRight01Icon);
 export const ChevronUpIcon = make(ArrowUp01Icon);
 export const ContactsIcon = make(Contact01Icon);
+export const CopyIcon = make(Copy01Icon);
 export const ColumnsIcon = make(LayoutThreeColumnIcon);
 export const DownloadIcon = make(Download04Icon);
 export const EditIcon = make(Edit02Icon);
@@ -121,6 +124,7 @@ export const SettingsIcon = make(Settings02Icon);
 export const SidebarIcon = make(SidebarLeft01Icon);
 export const SignOutIcon = make(Logout01Icon);
 export const SparkleIcon = make(SparklesIcon);
+export const StopIcon = make(HugeStopIcon);
 export const SunIcon = make(Sun03Icon);
 export const TextIcon = make(HugeTextIcon);
 export const ToolIcon = make(Wrench01Icon);

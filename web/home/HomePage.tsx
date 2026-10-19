@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Brief, BriefSection } from "../../shared/home-brief.ts";
 import { api, describeError } from "../api.ts";
-import { ArrowRightIcon, RefreshIcon } from "../components/icons.tsx";
+import { ArrowRightIcon, ChatIcon, RefreshIcon, SparkleIcon } from "../components/icons.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
-import { AskChat } from "./AskChat.tsx";
+import { AskChat, askDesk } from "./AskChat.tsx";
 
 // I-19 (D-127): Home, the page a workspace opens on. The daily brief (numbers worked out on the
 // server, worded by the AI when it's on, else written in code; cached per member per day) and,
@@ -45,13 +45,18 @@ function DeskLink({ path, className, children, title }: { path: string; classNam
   );
 }
 
+/** D-129 (after beautifului.dev's Insight Cards): a point's numbers in Geist Mono, the words as written. */
+function withNumbers(text: string): ReactNode[] {
+  return text.split(/(\d(?:[\d,.:]*\d)?(?:%|[hms]\b)?)/).map((part, i) => (i % 2 ? <span key={i} className="brief-num">{part}</span> : part));
+}
+
 function greeting(name: string): string {
   const h = new Date().getHours();
   const part = h < 5 ? "Good evening" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
   return `${part}, ${name.split(/\s+/)[0]}`;
 }
 
-function BriefView({ data, writing, refreshing, onRefresh, error }: { data: BriefResponse; writing: boolean; refreshing: boolean; onRefresh: () => void; error: string | null }) {
+function BriefView({ data, writing, refreshing, onRefresh, error, onAsk }: { data: BriefResponse; writing: boolean; refreshing: boolean; onRefresh: () => void; error: string | null; onAsk: ((question: string) => void) | null }) {
   const { brief } = data;
   const time = new Date(brief.generatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   const source = writing ? "Writing it up…" : brief.source === "ai" ? `Written by the AI from your desk's numbers at ${time}` : `From your desk's numbers at ${time}`;
@@ -74,14 +79,16 @@ function BriefView({ data, writing, refreshing, onRefresh, error }: { data: Brie
           if (!points.length) return null;
           return (
             <div key={section.id} className="brief-col">
-              <h3>{section.label}</h3>
+              <h3>
+                {section.label} <span className="brief-count">{points.length}</span>
+              </h3>
               <ul className="brief-points">
                 {points.map((p) => (
                   <li key={p.id} className={`brief-point ${p.tone}`}>
                     <span className="brief-mark" aria-hidden="true" />
                     <div className="brief-body">
-                      <p>{p.text}</p>
-                      {(p.link || p.chats.length > 0) && (
+                      <p>{withNumbers(p.text)}</p>
+                      {(p.link || p.chats.length > 0 || (onAsk && !writing)) && (
                         <div className="brief-links">
                           {p.link && (
                             <DeskLink path={p.link.path} className="brief-link">
@@ -90,10 +97,16 @@ function BriefView({ data, writing, refreshing, onRefresh, error }: { data: Brie
                           )}
                           {p.chats.slice(0, p.link?.path.startsWith("/inbox/") ? 0 : 3).map((id) => (
                             <DeskLink key={id} path={`/inbox/${id}`} className="brief-chat" title="Open this chat">
-                              {brief.chatNames?.[id] ?? "Chat"}
+                              <ChatIcon aria-hidden="true" />
+                              <span>{brief.chatNames?.[id] ?? "Chat"}</span>
                             </DeskLink>
                           ))}
                           {p.chats.length > 3 && !p.link?.path.startsWith("/inbox/") && <span className="brief-more">+{p.chats.length - 3}</span>}
+                          {onAsk && !writing && (
+                            <button type="button" data-plain className="brief-ask" title="Ask the assistant about this" onClick={() => onAsk(`Tell me more about this, and what I should do: “${p.text}”`)}>
+                              <SparkleIcon aria-hidden="true" /> Ask
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -192,19 +205,24 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
       ? <>The assistant needs the AI, which is off for this workspace: {settingsLink}.</>
       : <>{ai.message} {role === "agent" ? null : <DeskLink path="/settings/ai">Settings → AI</DeskLink>}</>;
 
+  const askAbout = (question: string) => {
+    askDesk(workspaceId, question);
+    document.getElementById("ask-title")?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  };
+
   return (
     <div className="content wide home">
       <div className="row reports-head home-head">
         <h1>Home</h1>
         <span className="home-greeting">{greeting(me.name)}</span>
       </div>
-      {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
+      {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
       <section className="dash-card home-ask" aria-labelledby="ask-title">
         <div className="dash-card-head">
           <h2 id="ask-title">Ask about your desk</h2>
           <span className="dash-caption">Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm.</span>
         </div>
-        {data ? <AskChat workspaceId={workspaceId} disabled={off} /> : <div className="home-chat empty"><div className="wchat-composer ask-composer skel-composer"><SkelText width={220} /></div></div>}
+        {data ? <AskChat workspaceId={workspaceId} disabled={off} /> : <div className="home-chat empty"><div className="skel-composer"><SkelText width={220} /></div></div>}
       </section>
     </div>
   );

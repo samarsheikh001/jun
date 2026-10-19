@@ -377,6 +377,10 @@ export interface AskStep {
   tool: string;
   label: string;
   status: "running" | "done" | "error";
+  /** D-129: what the model asked for, one short line (`text: export, limit: 10`). */
+  input?: string;
+  /** D-129: what came back, one short line ("10 of 23 conversations", or the error). */
+  result?: string;
 }
 
 export type AskTurn =
@@ -455,6 +459,81 @@ export function stepLabel(tool: string, input: Record<string, unknown>, done: bo
   const pair = map[tool];
   if (!pair) return done ? "Done" : "Working";
   return done ? pair[1] : `${pair[0]}…`;
+}
+
+/** D-129: a step's input as one short line for its open row: `text: export, limit: 10`. */
+export function stepInput(input: Record<string, unknown>): string | undefined {
+  const parts = Object.entries(input)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
+  return parts.length ? clip(parts.join(", "), 160)! : undefined;
+}
+
+const RESULT_NOUNS: Record<string, [string, string]> = {
+  hits: ["match", "matches"],
+  conversations: ["conversation", "conversations"],
+  messages: ["message", "messages"],
+  people: ["person", "people"],
+  companies: ["company", "companies"],
+  teammates: ["teammate", "teammates"],
+  visitors: ["visitor", "visitors"],
+  sources: ["source", "sources"],
+  files: ["file", "files"],
+  issues: ["issue", "issues"],
+  topics: ["topic", "topics"],
+  actions: ["action", "actions"],
+  spots: ["spot", "spots"],
+};
+
+/** D-129: a tool's result as one short line ("10 of 23 conversations", "3 matches", the error), or nothing when it has no list. */
+export function stepResult(output: unknown): string | undefined {
+  let value = output;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  if (typeof o.error === "string") return clip(o.error, 120)!;
+  // A known list first (a conversation's messages, not its tags), else the first list there is.
+  const lists = Object.entries(o).filter(([, v]) => Array.isArray(v));
+  const entry = lists.find(([k]) => k in RESULT_NOUNS) ?? lists[0];
+  if (!entry) return undefined;
+  const [key, list] = entry as [string, unknown[]];
+  const n = list.length;
+  const words = key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  const [one, many] = RESULT_NOUNS[key] ?? [words.replace(/s$/, ""), words];
+  const total = typeof o.total === "number" && o.total > n ? o.total : null;
+  // One record read (a conversation, a contact): whose it is first.
+  const who = typeof o.customer === "string" ? `${clip(o.customer, 40)} · ` : typeof o.name === "string" ? `${clip(o.name, 40)} · ` : "";
+  return total !== null ? `${n} of ${total} ${many}` : `${who}${n} ${n === 1 ? one : many}${o.truncated ? "+" : ""}`;
+}
+
+/** D-129: the line a card shows once it's settled ("Tagged · export-issue", "Cancelled"). */
+export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: ProposalOutcome): string {
+  if (outcome.status === "cancelled") return outcome.detail === "not confirmed" ? "Not confirmed" : "Cancelled";
+  if (outcome.status === "failed") return `Didn't work${outcome.detail ? `: ${outcome.detail}` : ""}`;
+  switch (p.kind) {
+    case "assign":
+      return p.assigneeId === null ? "Unassigned" : `Assigned · ${labels.assignee ?? "a teammate"}`;
+    case "status":
+      return p.status === "resolved" ? "Resolved" : p.status === "open" ? "Reopened" : "Marked pending";
+    case "tags":
+      return [p.add.length ? `Tagged · ${p.add.join(", ")}` : "", p.remove.length ? `Untagged · ${p.remove.join(", ")}` : ""].filter(Boolean).join(" · ");
+    case "note":
+      return "Note added";
+    case "reply_draft":
+      return "Draft opened in the chat";
+    case "issue":
+      return "Issue dialog opened";
+    case "knowledge_website":
+      return "Adding to knowledge";
+    case "knowledge_text":
+      return `Added · ${p.title}`;
+  }
 }
 
 // ---------- rate limit ----------

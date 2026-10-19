@@ -18,20 +18,25 @@ function Grid() {
   );
 }
 
-/** Time since mount: "4.2s", then "1m 3.0s". */
-function useElapsed(): string {
-  const [tenths, setTenths] = useState(0);
-  useEffect(() => {
-    const start = Date.now();
-    const timer = setInterval(() => setTenths(Math.floor((Date.now() - start) / 100)), 100);
-    return () => clearInterval(timer);
-  }, []);
-  const s = tenths / 10;
+/** A duration as "4.2s", then "1m 3.0s". */
+export function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 100)) / 10;
   return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${(s % 60).toFixed(1)}s`;
 }
 
-function Status({ label }: { label: string }) {
-  const elapsed = useElapsed();
+/** Time since `since` (else since mount). */
+function useElapsed(since?: number): string {
+  const [tenths, setTenths] = useState(() => (since ? Math.floor((Date.now() - since) / 100) : 0));
+  useEffect(() => {
+    const start = since ?? Date.now();
+    const timer = setInterval(() => setTenths(Math.floor((Date.now() - start) / 100)), 100);
+    return () => clearInterval(timer);
+  }, [since]);
+  return formatElapsed(tenths * 100);
+}
+
+function Status({ label, since }: { label: string; since?: number }) {
+  const elapsed = useElapsed(since);
   return (
     <span className="pixel-status">
       <Grid />
@@ -41,6 +46,7 @@ function Status({ label }: { label: string }) {
   );
 }
 
-export function PixelLoader({ label }: { label?: string }) {
-  return label ? <Status label={label} /> : <Grid />;
+/** `since` (epoch ms): count from then, so a remount doesn't restart the timer. */
+export function PixelLoader({ label, since }: { label?: string; since?: number }) {
+  return label ? <Status label={label} since={since} /> : <Grid />;
 }

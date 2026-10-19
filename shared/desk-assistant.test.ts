@@ -15,7 +15,10 @@ import {
   readConversationSearch,
   readDays,
   readProposal,
+  outcomeTitle,
+  stepInput,
   stepLabel,
+  stepResult,
   takeTurn,
 } from "./desk-assistant.ts";
 
@@ -128,4 +131,28 @@ test("assistant: desk links and step lines", () => {
   assert.equal(agentFileLink("instructions.md"), "/agent");
   assert.equal(stepLabel("search_conversations", { text: "export" }, false), "Searching conversations “export”…");
   assert.equal(stepLabel("search_conversations", {}, true), "Searched conversations");
+});
+
+test("assistant: a step's input and result as short lines (D-129)", () => {
+  assert.equal(stepInput({ text: "export", limit: 10, status: undefined, tag: "" }), "text: export, limit: 10");
+  assert.equal(stepInput({}), undefined);
+  assert.equal(stepResult(JSON.stringify({ total: 23, conversations: new Array(10).fill({}) })), "10 of 23 conversations");
+  assert.equal(stepResult({ total: 1, conversations: [{}] }), "1 conversation");
+  assert.equal(stepResult({ link: "/knowledge", hits: [{}, {}, {}] }), "3 matches");
+  assert.equal(stepResult({ openChats: [{}, {}], truncated: true }), "2 open chats+");
+  assert.equal(stepResult('{"error":"No conversation cv_1 in this workspace."}'), "No conversation cv_1 in this workspace.");
+  assert.equal(stepResult({ path: "instructions.md", text: "…" }), undefined);
+  assert.equal(stepResult({ customer: "Zane Rossi", tags: ["export-issue"], messages: [{}, {}] }), "Zane Rossi · 2 messages");
+  assert.equal(stepResult({ events: [{}] }), "1 event");
+  assert.equal(stepResult("not json"), undefined);
+});
+
+test("assistant: a settled card's line (D-129)", () => {
+  const done = { status: "done" } as const;
+  assert.equal(outcomeTitle({ kind: "tags", conversationId: "cv_1", add: ["export-issue"], remove: [] }, {}, done), "Tagged · export-issue");
+  assert.equal(outcomeTitle({ kind: "assign", conversationId: "cv_1", assigneeId: "usr_1" }, { assignee: "you" }, done), "Assigned · you");
+  assert.equal(outcomeTitle({ kind: "status", conversationId: "cv_1", status: "resolved" }, {}, done), "Resolved");
+  assert.equal(outcomeTitle({ kind: "note", conversationId: "cv_1", body: "x" }, {}, { status: "cancelled" }), "Cancelled");
+  assert.equal(outcomeTitle({ kind: "note", conversationId: "cv_1", body: "x" }, {}, { status: "cancelled", detail: "not confirmed" }), "Not confirmed");
+  assert.equal(outcomeTitle({ kind: "issue", conversationId: "cv_1" }, {}, { status: "failed", detail: "no tracker" }), "Didn't work: no tracker");
 });
