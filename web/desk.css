@@ -1733,7 +1733,7 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 /* Conversations per day as a ribbon (D-106, glow approved later): each day's parts stacked symmetrically
    around a centre line, resolved by the AI innermost in the strongest blue, outer layers lighter, a soft
    glow behind the busiest stretch. Hover or the arrow keys move one marker (pills: total, AI resolved). */
-:root { --ribbon-glow: 0.3; --ribbon-line: color-mix(in oklch, var(--foreground) 16%, transparent); --ribbon-pill: #fff; }
+:root { --ribbon-glow: 0.4;--ribbon-line: color-mix(in oklch, var(--foreground) 16%, transparent); --ribbon-pill: #fff; }
 :root[data-theme="dark"] { --ribbon-glow: 0.2; --ribbon-line: color-mix(in oklch, var(--foreground) 22%, transparent); --ribbon-pill: var(--popover); }
 .day-chart { margin-top: 4px; min-width: 0; }
 .day-skel { height: 268px; margin-top: 8px; border-radius: var(--radius); }
@@ -1767,7 +1767,6 @@ input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid
 }
 .ribbon-pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--stream-2); }
 .ribbon-pill small { font: 11px/1 var(--font-sans, inherit); color: var(--muted-foreground); }
-.ribbon-empty { position: absolute; left: 50%; top: calc(50% - 24px); transform: translateX(-50%); font-size: 13px; color: var(--muted-foreground); white-space: nowrap; }
 .day-axis { position: relative; height: 18px; margin-top: 6px; }
 .day-axis span { position: absolute; top: 0; width: 60px; text-align: center; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
 .day-axis span.on { z-index: 1; color: var(--foreground); background: var(--background); border-radius: 4px; }

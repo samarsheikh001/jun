@@ -252,6 +252,29 @@ function TopTopics({ topics, showAi, aiEnabled }: { topics: MetricsReport["topic
   );
 }
 
+/** The line over the chart: the picked day and its split, else the busiest day. Always the same height. */
+function DayReadout({ day, series, showAi }: { day: DayPoint | null; series: DayPoint[]; showAi: boolean }) {
+  const busiest = series.reduce<DayPoint | null>((b, d) => (d.conversations > (b?.conversations ?? 0) ? d : b), null);
+  const d = day ?? busiest;
+  return (
+    <p className="day-readout" aria-live="polite">
+      {!d ? (
+        "No conversations in this period"
+      ) : (
+        <>
+          <span className="strong">{day ? dayLabel(d.day, true) : `Busiest: ${dayLabel(d.day, true)}`}</span>
+          {` · ${d.conversations.toLocaleString()} conversation${d.conversations === 1 ? "" : "s"}`}
+          {showAi && d.conversations > 0 && (
+            <span className="day-readout-split">
+              {` · ${d.aiResolved.toLocaleString()} resolved by the AI · ${(d.ai - d.aiResolved).toLocaleString()} AI, then the team · ${(d.conversations - d.ai).toLocaleString()} team only`}
+            </span>
+          )}
+        </>
+      )}
+    </p>
+  );
+}
+
 /** A-01's headline card: the conversations stream over the headline numbers. */
 function Overview({ r }: { r: MetricsReport }) {
   const [day, setDay] = useState<DayPoint | null>(null);
@@ -267,24 +290,20 @@ function Overview({ r }: { r: MetricsReport }) {
   ].filter(Boolean);
   return (
     <section className="dash-card dash-hero">
-      <div className="dash-card-head">
+      <div className="conv-head">
         <h2>Conversations</h2>
-        {day && (
-          <span className="dash-caption" aria-live="polite">
-            <span className="strong">{dayLabel(day.day, true)}</span> · {day.conversations} conversation{day.conversations === 1 ? "" : "s"}
-            {showAi && ` · ${day.aiResolved} resolved by the AI`}
-          </span>
-        )}
+        <div className="conv-total">
+          <span className="kpi-value" title={`Conversations started in the last ${r.days} days.`}>{r.conversations.total.toLocaleString()}</span>
+          <Change change={r.conversations.change} days={r.days} />
+        </div>
+        <p className="conv-compare">
+          {prev === null ? "" : prev === 0 ? `None the ${r.days} days before · ` : `Compared to ${prev.toLocaleString()} the ${r.days} days before · `}
+          {r.conversations.resolved.toLocaleString()} marked resolved
+        </p>
       </div>
+      <DayReadout day={day} series={r.conversations.series} showAi={showAi} />
       <DayChart key={r.days} series={r.conversations.series} showAi={showAi} onHover={setDay} />
       <div className="kpis">
-        <Kpi
-          label="Conversations"
-          hint={`Conversations started in the last ${r.days} days.${prev === null ? "" : ` The ${r.days} days before had ${prev.toLocaleString()}.`}`}
-          value={r.conversations.total.toLocaleString()}
-          change={<Change change={r.conversations.change} days={r.days} />}
-          detail={prev === 0 ? `None the ${r.days} days before` : `${r.conversations.resolved.toLocaleString()} marked resolved`}
-        />
         {r.ai.off ? (
           <Kpi
             label="AI assistant"
@@ -331,14 +350,17 @@ const reportCache = new Map<string, MetricsReport>();
 
 /** The loading page: the hero card's own parts and sizes, so the report drops in without moving anything. */
 function DashboardSkeleton({ aiOff }: { aiOff: boolean }) {
-  const kpis = aiOff ? ["Conversations", "AI assistant", "First response", "CSAT"] : ["Conversations", "AI resolved", "Handed off", "First response", "CSAT"];
+  const kpis = aiOff ? ["AI assistant", "First response", "CSAT"] : ["AI resolved", "Handed off", "First response", "CSAT"];
   return (
     // A fragment: the sections sit straight in the page, with its gaps, like the real ones.
     <>
       <section className="dash-card dash-hero" aria-busy="true" aria-label="Loading the dashboard">
-        <div className="dash-card-head">
+        <div className="conv-head">
           <h2>Conversations</h2>
+          <div className="conv-total"><span className="kpi-value"><SkelText width="3ch" /></span></div>
+          <p className="conv-compare"><SkelText width={220} /></p>
         </div>
+        <p className="day-readout"><SkelText width={180} /></p>
         <Skeleton className="day-skel" />
         <div className="kpis">
           {kpis.map((label) => (
