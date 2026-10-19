@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Brief, BriefSection } from "../../shared/home-brief.ts";
 import { api, describeError } from "../api.ts";
-import { ArrowRightIcon, ChatIcon, EditIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
+import { ArrowRightIcon, AsteriskIcon, ChatIcon, EditIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
@@ -223,7 +223,7 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
       </div>
       <section className="dash-card home-ask" aria-labelledby="ask-title">
         <div className="home-ask-head">
-          <h2 id="ask-title" title="Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm."><SparkleIcon aria-hidden="true" />Assistant</h2>
+          <h2 id="ask-title" title="Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm."><AsteriskIcon aria-hidden="true" />Assistant</h2>
           <div className="home-ask-tools">
             <button type="button" className="home-ask-tool" aria-label="New chat" title="New chat" disabled={!started} onClick={() => newAskChat(workspaceId)}><EditIcon /></button>
             {role !== "agent" && <a className="home-ask-tool" href={deskHref("/settings/ai")} aria-label="AI settings" title="AI settings" onClick={(e) => { e.preventDefault(); navigate("/settings/ai"); }}><SettingsIcon /></a>}

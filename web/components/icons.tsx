@@ -124,6 +124,10 @@ export const SettingsIcon = make(Settings02Icon);
 export const SidebarIcon = make(SidebarLeft01Icon);
 export const SignOutIcon = make(Logout01Icon);
 export const SparkleIcon = make(SparklesIcon);
+/** The desk assistant's mark: an eight-armed asterisk (Hugeicons' free set has only six arms), drawn on the same grid. */
+export const AsteriskIcon = make([
+  ["path", { d: "M12 3.5V20.5M3.5 12H20.5M6 6L18 18M18 6L6 18", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "0" }],
+] as IconSvgElement);
 export const StopIcon = make(HugeStopIcon);
 export const SunIcon = make(Sun03Icon);
 export const TextIcon = make(HugeTextIcon);
