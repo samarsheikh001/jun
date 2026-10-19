@@ -2507,7 +2507,7 @@ a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens);
    colour with a small gap between them. No shadow: they sit together, nothing floats. */
 @media (min-width: 1180px) {
   .content.home {
-    display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 32vw, 480px); gap: 8px; align-items: stretch;
+    display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 32vw, 480px); grid-template-rows: minmax(0, 1fr); gap: 8px; align-items: stretch;
     height: 100dvh; padding: 8px; background: var(--sidebar);
   }
   .home-main-col, .home-ask { min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background); }
