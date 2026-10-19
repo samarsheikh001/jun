@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import type { Brief, BriefSection } from "../../shared/home-brief.ts";
+import type { Brief } from "../../shared/home-brief.ts";
 import { api, describeError } from "../api.ts";
-import { ArrowRightIcon, AsteriskIcon, ChatIcon, EditIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
+import { ArrowRightIcon, AsteriskIcon, ChatIcon, ChevronDownIcon, CoffeeIcon, EditIcon, HandoffIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
-import { Button } from "@/components/ui/button.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { AskChat, askDesk, newAskChat, useAskStarted } from "./AskChat.tsx";
 
@@ -22,11 +21,23 @@ interface BriefResponse {
 const cache = new Map<string, BriefResponse>();
 const timezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-const SECTIONS: { id: BriefSection; label: string }[] = [
-  { id: "yesterday", label: "Since yesterday" },
-  { id: "needs", label: "Needs you" },
-  { id: "unusual", label: "What's unusual" },
-];
+type Point = Brief["points"][number];
+type Tag = { label: string; hue: "red" | "amber" | "blue" | "violet" | "green" };
+
+/** The pill on a row, after the reference's "2nd ping" / "Today" / "CI failed": what kind of thing it is. */
+function tagOf(p: Point): Tag {
+  switch (p.id.split(":")[0]) {
+    case "unassigned": return { label: "unassigned", hue: "red" };
+    case "mine": return { label: "your reply", hue: "amber" };
+    case "bad_csat": return { label: "bad rating", hue: "red" };
+    case "topic": return { label: "topic spike", hue: "amber" };
+    case "page": return { label: "page spike", hue: "amber" };
+    case "struggle": return { label: "struggle", hue: "amber" };
+    case "error": return { label: "new error", hue: "violet" };
+    case "gap": return { label: "knowledge gap", hue: "blue" };
+    default: return { label: "all clear", hue: "green" };
+  }
+}
 
 function DeskLink({ path, className, children, title }: { path: string; className?: string; children: ReactNode; title?: string }) {
   return (
@@ -45,9 +56,11 @@ function DeskLink({ path, className, children, title }: { path: string; classNam
   );
 }
 
-/** D-129 (after beautifului.dev's Insight Cards): a point's numbers in Geist Mono, the words as written. */
-function withNumbers(text: string): ReactNode[] {
-  return text.split(/(\d(?:[\d,.:]*\d)?(?:%|[hms]\b)?)/).map((part, i) => (i % 2 ? <span key={i} className="brief-num">{part}</span> : part));
+/** D-130 (after the user's "Morning digest" reference): the headline's counts as soft blue chips, a number with the word after it. */
+function withChips(text: string): ReactNode[] {
+  return text
+    .split(/(\d(?:[\d,.:]*\d)?%?(?:\s+(?!and\b|or\b|of\b|to\b|on\b|in\b|the\b)[A-Za-z’'-]+)?)/)
+    .map((part, i) => (i % 2 ? <span key={i} className="digest-chip">{part}</span> : part));
 }
 
 function greeting(name: string): string {
@@ -56,96 +69,115 @@ function greeting(name: string): string {
   return `${part}, ${name.split(/\s+/)[0]}`;
 }
 
-function BriefView({ data, writing, refreshing, onRefresh, error, onAsk }: { data: BriefResponse; writing: boolean; refreshing: boolean; onRefresh: () => void; error: string | null; onAsk: ((question: string) => void) | null }) {
-  const { brief } = data;
-  const time = new Date(brief.generatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  const source = writing ? "Writing it up…" : brief.source === "ai" ? `Written by the AI from your desk's numbers at ${time}` : `From your desk's numbers at ${time}`;
+function dayLabel(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y ?? 2000, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+const today = () => new Date().toLocaleDateString("en-CA");
+
+function DigestHead({ day, refresh }: { day: string; refresh?: ReactNode }) {
   return (
-    <section className="dash-card dash-hero home-brief" aria-labelledby="brief-title" aria-busy={writing || refreshing}>
-      <div className="dash-card-head">
-        <h2 id="brief-title">Today's brief</h2>
-        <div className="home-brief-tools">
-          <span className="dash-caption">{source}</span>
-          <Button variant="ghost" size="sm" onClick={onRefresh} disabled={writing || refreshing} title="Count everything again and write a new brief">
-            <RefreshIcon className={refreshing ? "spin" : undefined} /> Refresh
-          </Button>
-        </div>
+    <div className="digest-head">
+      <h1><CoffeeIcon aria-hidden="true" />Today's brief<span className="digest-day"> · {day}</span></h1>
+      {refresh}
+    </div>
+  );
+}
+
+/** A row of "What needs you" / "What's unusual": the sentence (the whole row opens its link), its pill, then its chats. */
+function DigestRow({ p, names, onAsk }: { p: Point; names: Record<string, string> | undefined; onAsk: ((question: string) => void) | null }) {
+  const tag = tagOf(p);
+  const chats = p.link?.path.startsWith("/inbox/") ? [] : p.chats.slice(0, 3);
+  const askButton = onAsk && (
+    <button type="button" data-plain className="brief-ask" title="Ask the assistant about this" onClick={() => onAsk(`Tell me more about this, and what I should do: “${p.text}”`)}>
+      <SparkleIcon aria-hidden="true" /> Ask
+    </button>
+  );
+  return (
+    <li className={`digest-row${p.link ? " linked" : ""}`}>
+      <div className="digest-row-main">
+        {p.link ? <DeskLink path={p.link.path} className="digest-row-text" title={p.link.label}>{p.text}</DeskLink> : <span className="digest-row-text">{p.text}</span>}
+        <span className="digest-row-side">
+          {!chats.length && askButton}
+          <span className={`digest-tag ${tag.hue}`}>{tag.label}</span>
+        </span>
       </div>
-      <p className={`brief-headline${writing ? " writing" : ""}`}>{brief.headline}</p>
-      {error && <p className="error small">{error}</p>}
-      <div className="brief-grid">
-        {SECTIONS.map((section) => {
-          const points = brief.points.filter((p) => p.section === section.id);
-          if (!points.length) return null;
-          return (
-            <div key={section.id} className="brief-col">
-              <h3>
-                {section.label} <span className="brief-count">{points.length}</span>
-              </h3>
-              <ul className="brief-points">
-                {points.map((p) => (
-                  <li key={p.id} className={`brief-point ${p.tone}`}>
-                    <span className="brief-mark" aria-hidden="true" />
-                    <div className="brief-body">
-                      <p>{withNumbers(p.text)}</p>
-                      {(p.link || p.chats.length > 0 || (onAsk && !writing)) && (
-                        <div className="brief-links">
-                          {p.link && (
-                            <DeskLink path={p.link.path} className="brief-link">
-                              {p.link.label} <ArrowRightIcon aria-hidden="true" />
-                            </DeskLink>
-                          )}
-                          {p.chats.slice(0, p.link?.path.startsWith("/inbox/") ? 0 : 3).map((id) => (
-                            <DeskLink key={id} path={`/inbox/${id}`} className="brief-chat" title="Open this chat">
-                              <ChatIcon aria-hidden="true" />
-                              <span>{brief.chatNames?.[id] ?? "Chat"}</span>
-                            </DeskLink>
-                          ))}
-                          {p.chats.length > 3 && !p.link?.path.startsWith("/inbox/") && <span className="brief-more">+{p.chats.length - 3}</span>}
-                          {onAsk && !writing && (
-                            <button type="button" data-plain className="brief-ask" title="Ask the assistant about this" onClick={() => onAsk(`Tell me more about this, and what I should do: “${p.text}”`)}>
-                              <SparkleIcon aria-hidden="true" /> Ask
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
+      {chats.length > 0 && (
+        <div className="digest-row-extra">
+          {chats.map((id) => (
+            <DeskLink key={id} path={`/inbox/${id}`} className="brief-chat" title="Open this chat">
+              <ChatIcon aria-hidden="true" />
+              <span>{names?.[id] ?? "Chat"}</span>
+            </DeskLink>
+          ))}
+          {p.chats.length > 3 && <span className="brief-more">+{p.chats.length - 3}</span>}
+          {askButton}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function DigestGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="digest-group" open>
+      <summary><ChevronDownIcon aria-hidden="true" />{label}</summary>
+      <ul className="digest-rows">{children}</ul>
+    </details>
+  );
+}
+
+function BriefView({ data, me, writing, refreshing, onRefresh, error, onAsk }: { data: BriefResponse; me: string; writing: boolean; refreshing: boolean; onRefresh: () => void; error: string | null; onAsk: ((question: string) => void) | null }) {
+  const { brief } = data;
+  const time = new Date(brief.generatedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }).toLowerCase().replace(/\s/g, "");
+  const ask = writing ? null : onAsk;
+  const of = (section: Point["section"]) => brief.points.filter((p) => p.section === section);
+  const needs = of("needs");
+  const unusual = of("unusual");
+  const yesterday = of("yesterday");
+  return (
+    <section className="digest" aria-labelledby="brief-title" aria-busy={writing || refreshing}>
+      <DigestHead
+        day={dayLabel(brief.day)}
+        refresh={
+          <button type="button" className="home-ask-tool" onClick={onRefresh} disabled={writing || refreshing} aria-label="Refresh" title="Count everything again and write a new brief">
+            <RefreshIcon className={refreshing ? "spin" : undefined} />
+          </button>
+        }
+      />
+      <div className="digest-sheet">
+        <div className="digest-meta">
+          <span id="brief-title">{greeting(me)}</span>
+          <span title={brief.source === "ai" ? "Written by the AI from your desk's numbers" : "From your desk's numbers"}>{writing ? "writing…" : `as of ${time}`}</span>
+        </div>
+        <p className={`digest-headline${writing ? " writing" : ""}`}>{withChips(brief.headline)}</p>
+        {error && <p className="error small">{error}</p>}
+        {needs.length > 0 && <DigestGroup label="What needs you">{needs.map((p) => <DigestRow key={p.id} p={p} names={brief.chatNames} onAsk={ask} />)}</DigestGroup>}
+        {unusual.length > 0 && <DigestGroup label="What's unusual">{unusual.map((p) => <DigestRow key={p.id} p={p} names={brief.chatNames} onAsk={ask} />)}</DigestGroup>}
+        {yesterday.length > 0 && (
+          <ul className="digest-list" aria-label="Since yesterday">
+            {yesterday.map((p) => {
+              const Icon = p.id === "reasons" ? HandoffIcon : ChatIcon;
+              const body = <><Icon aria-hidden="true" /><span>{p.text}</span>{p.link && <ArrowRightIcon className="digest-arrow" aria-hidden="true" />}</>;
+              return <li key={p.id}>{p.link ? <DeskLink path={p.link.path} className="digest-item" title={p.link.label}>{body}</DeskLink> : <div className="digest-item">{body}</div>}</li>;
+            })}
+          </ul>
+        )}
       </div>
     </section>
   );
 }
 
-function BriefSkeleton() {
+function BriefSkeleton({ me }: { me: string }) {
   return (
-    <section className="dash-card dash-hero home-brief" aria-hidden="true">
-      <div className="dash-card-head">
-        <h2>Today's brief</h2>
-        <div className="home-brief-tools"><span className="dash-caption"><SkelText width={180} /></span></div>
-      </div>
-      <p className="brief-headline"><SkelText width="min(520px, 90%)" /></p>
-      <div className="brief-grid">
-        {SECTIONS.map((section) => (
-          <div key={section.id} className="brief-col">
-            <h3>{section.label}</h3>
-            <ul className="brief-points">
-              {[0, 1].map((i) => (
-                <li key={i} className="brief-point info">
-                  <span className="brief-mark" />
-                  <div className="brief-body">
-                    <p><SkelText width="100%" /><br /><SkelText width="70%" /></p>
-                    <div className="brief-links"><span className="brief-link"><SkelText width={80} /></span></div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+    <section className="digest" aria-hidden="true">
+      <DigestHead day={dayLabel(today())} />
+      <div className="digest-sheet">
+        <div className="digest-meta"><span>{greeting(me)}</span><span><SkelText width={70} /></span></div>
+        <p className="digest-headline"><SkelText width="90%" /><br /><SkelText width="50%" /></p>
+        <DigestGroup label="What needs you">
+          {[0, 1].map((i) => <li key={i} className="digest-row"><div className="digest-row-main"><span className="digest-row-text"><SkelText width="80%" /></span></div></li>)}
+        </DigestGroup>
       </div>
     </section>
   );
@@ -215,11 +247,7 @@ export function HomePage({ workspaceId, me, role }: { workspaceId: string; works
     <div className="content wide home">
       {/* The brief on the left, the assistant docked on the right (stacked under it on narrow screens). */}
       <div className="home-main-col">
-        <div className="row reports-head home-head">
-          <h1>Home</h1>
-          <span className="home-greeting">{greeting(me.name)}</span>
-        </div>
-        {data ? <BriefView data={data} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="dash-card dash-hero"><p className="error">{error}</p></section> : <BriefSkeleton />}
+        {data ? <BriefView data={data} me={me.name} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="digest"><DigestHead day={dayLabel(today())} /><div className="digest-sheet"><p className="error">{error}</p></div></section> : <BriefSkeleton me={me.name} />}
       </div>
       <section className="dash-card home-ask" aria-labelledby="ask-title">
         <div className="home-ask-head">

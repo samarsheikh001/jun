@@ -19,6 +19,7 @@ import {
   Bug01Icon,
   BubbleChatIcon,
   Clock01Icon,
+  Coffee02Icon,
   Cancel01Icon,
   ComputerIcon,
   Contact01Icon,
@@ -84,6 +85,7 @@ export const BotIcon = make(HugeBotIcon);
 export const BugIcon = make(Bug01Icon);
 export const ChatIcon = make(BubbleChatIcon);
 export const ClockIcon = make(Clock01Icon);
+export const CoffeeIcon = make(Coffee02Icon);
 export const ChannelsIcon = make(MessageMultiple01Icon);
 export const MailIcon = make(Mail01Icon);
 export const SlackIcon = make(HugeSlackIcon);
