@@ -1057,6 +1057,8 @@ export type AskEvent =
   /** The model proposed something that didn't pass the checks; nothing to confirm. */
   | { type: "rejected"; tool: string; message: string }
   | { type: "done" }
+  /** D-134: after `done`, 2–3 next questions for chips under the answer (a separate small call). */
+  | { type: "followups"; questions: string[] }
   | { type: "error"; message: string };
 
 /** What a step's line says while it runs ("Searching conversations…") and once done. */
@@ -1230,6 +1232,40 @@ export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: Propo
       return `${verb} · ${done} chat${done === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
     }
   }
+}
+
+// ---------- follow-up questions (D-134) ----------
+
+export const MAX_NEXT_QUESTIONS = 3;
+const NEXT_MAX_CHARS = 70;
+
+/** The small call after an answer: what the person might ask next. As the widget's follow-ups (D-42), never asked of the answer itself. */
+export const NEXT_QUESTIONS_SYSTEM = `You suggest what a support team member might ask their desk assistant next. The assistant reads the desk (chats, customers, companies, Reports, topics, errors, knowledge, the support agent's files, the team) and proposes changes for them to confirm.
+Write 2 or 3 short follow-up questions (under 60 characters each) in the person's words and language, each one the natural next step after the answer: dig into something it named, compare, or act on it. Don't repeat the question or ask what the answer already says.
+One question per line, nothing else: no numbering, no quotes, no introduction.`;
+
+/** The call's input: the question, the answer and the tools it used (labels only). */
+export function nextQuestionsInput(question: string, answer: string, steps: string[]): string {
+  return `Their question:
+${question.slice(0, 1000)}
+
+The assistant's answer:
+${answer.slice(0, 2500)}${steps.length ? `
+
+What it looked at: ${steps.slice(0, 8).join("; ")}` : ""}`;
+}
+
+/** The call's output as chips: one per line, cleaned, distinct, not the question again, ≤ 3. */
+export function readNextQuestions(text: string, question = ""): string[] {
+  const out: string[] = [];
+  const same = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim() === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  for (const line of text.split(/\n/)) {
+    const q = line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").replace(/^["'“‘]+|["'”’]+$/g, "").replace(/\*\*/g, "").trim();
+    if (q.length < 4 || q.length > NEXT_MAX_CHARS || /[\[\]()]|https?:/.test(q) || same(q, question) || out.some((o) => same(o, q))) continue;
+    out.push(q);
+    if (out.length === MAX_NEXT_QUESTIONS) break;
+  }
+  return out;
 }
 
 // ---------- rate limit ----------

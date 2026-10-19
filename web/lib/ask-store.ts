@@ -5,7 +5,7 @@ import { PROPOSAL_KINDS, type AskStep, type AskTurn, type ProposalOutcome, type 
 // questions shown on an empty pane. Never the answer being written; a card still waiting comes back
 // settled as expired, so Confirm can't run a stale change.
 
-export type Turn = (AskTurn & { id: number; /** ms the answer took. */ took?: number; stopped?: boolean }) | { id: number; role: "error"; text: string };
+export type Turn = (AskTurn & { id: number; /** ms the answer took. */ took?: number; stopped?: boolean; /** D-134: next questions, chips under the newest answer. */ followUps?: string[] }) | { id: number; role: "error"; text: string };
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
 type StoredTurn = WithoutId<Turn>;
 
@@ -69,6 +69,7 @@ function readTurn(v: unknown, id: number): Turn | null {
     ...(proposal ? { proposal, outcome: outcome! } : {}),
     ...(typeof v.took === "number" ? { took: v.took } : {}),
     ...(v.stopped === true ? { stopped: true } : {}),
+    ...(Array.isArray(v.followUps) && v.followUps.every(str) ? { followUps: v.followUps.slice(0, 3) } : {}),
   };
 }
 

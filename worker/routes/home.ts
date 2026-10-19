@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { readAskTurns, AssistantInputError, type AskEvent } from "../../shared/desk-assistant.ts";
 import { briefWindows, freshBrief, needsPoints, type LiveNeeds } from "../../shared/home-brief.ts";
 import { validTimezone } from "../../shared/hours.ts";
-import { runAssistant } from "../ai/desk-assistant.ts";
+import { nextQuestions, runAssistant } from "../ai/desk-assistant.ts";
 import { assistantModel, chatNames, loadBriefInput, loadNeedsInput, storeBrief, wordBrief } from "../ai/home-brief.ts";
 import { loadAiSettings } from "../ai/providers.ts";
 import { recordUsage } from "../ai/topics.ts";
@@ -106,9 +106,19 @@ home.post("/workspaces/:id/home/ask", async (c) => {
   const ctx = { env: c.env, workspaceId, workspaceName, user: { id: user.id, name: user.name }, role, timezone, now: Date.now() };
   c.executionCtx.waitUntil(
     runAssistant(ctx, available.model, turns, emit)
-      .then((usage) => {
+      .then(async (result) => {
         emit({ type: "done" });
-        return recordUsage(c.env, workspaceId, usage);
+        await recordUsage(c.env, workspaceId, result);
+        // D-134: chips under the answer, after it's done (the page shows the answer meanwhile).
+        const question = turns.findLast((t) => t.role === "user")?.text ?? "";
+        if (result.proposed || !result.text.trim()) return;
+        try {
+          const next = await nextQuestions(available.model, question, result.text, result.steps);
+          if (next.questions.length) emit({ type: "followups", questions: next.questions });
+          await recordUsage(c.env, workspaceId, next.usage);
+        } catch (error) {
+          console.warn("[home] follow-ups failed:", (error as Error).message?.slice(0, 200));
+        }
       })
       .catch((error: unknown) => {
         console.warn("[home] ask failed:", (error as Error).message?.slice(0, 300));

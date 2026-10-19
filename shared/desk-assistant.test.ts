@@ -275,3 +275,15 @@ test("assistant: bulk proposals (D-134)", async () => {
   assert.equal(peak, 3);
   assert.deepEqual(seen.sort(), [1, 2, 3, 4, 5, 6, 7]);
 });
+
+test("assistant: next questions are cleaned (D-134)", async () => {
+  const { readNextQuestions, nextQuestionsInput } = await import("./desk-assistant.ts");
+  assert.deepEqual(readNextQuestions('1. "Which chats were about billing?"\n- **Who handles export errors?**\n\nWhat broke on /pricing?\nSee [this](/inbox/cv_1)\nWhich chats were about billing\nA fourth one here?', "what broke on /pricing?"), [
+    "Which chats were about billing?",
+    "Who handles export errors?",
+    "A fourth one here?",
+  ]);
+  assert.deepEqual(readNextQuestions(""), []);
+  assert.deepEqual(readNextQuestions("x".repeat(90)), []);
+  assert.match(nextQuestionsInput("q", "a", ["Searched conversations"]), /What it looked at: Searched conversations/);
+});

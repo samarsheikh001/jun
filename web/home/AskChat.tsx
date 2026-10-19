@@ -21,6 +21,7 @@ import { ApiError } from "../api.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { formatElapsed } from "../components/PixelLoader.tsx";
 import {
+  ArrowRightIcon,
   ArrowUpIcon,
   BookOpenIcon,
   BotIcon,
@@ -163,8 +164,12 @@ async function answer(ws: string, turns: Turn[]): Promise<void> {
   let steps: AskStep[] = [];
   let proposal: ProposedAction | undefined;
   let rejected: string | null = null;
-  const finish = (extra: Partial<AssistantTurn>, said: string) =>
+  let finished = false;
+  const finish = (extra: Partial<AssistantTurn>, said: string) => {
+    finished = true;
     set(ws, { turns: [...turns, { id: live.id, role: "assistant", text: said, took: Date.now() - live.startedAt, ...(steps.length ? { steps } : {}), ...(proposal ? { proposal } : {}), ...extra }], live: null });
+  };
+  const said = () => text || (rejected ? `I couldn't set that up: ${rejected}` : proposal ? "" : "I don't have an answer to that.");
   try {
     const response = await fetch(`/api/workspaces/${ws}/home/ask`, {
       method: "POST",
@@ -189,18 +194,28 @@ async function answer(ws: string, turns: Turn[]): Promise<void> {
       for (const line of lines) {
         if (!line.trim()) continue;
         const event = JSON.parse(line) as AskEvent;
+        // D-134: the answer is finished at `done`; next questions may follow and go on its turn.
+        if (event.type === "followups") {
+          if (finished) set(ws, { turns: get(ws).turns.map((t) => (t.id === live.id && t.role === "assistant" ? { ...t, followUps: event.questions } : t)) });
+          continue;
+        }
+        if (finished) continue;
         if (event.type === "text") text = event.text;
         else if (event.type === "step") steps = [...steps.filter((s) => s.id !== event.step.id), event.step];
         else if (event.type === "proposal") proposal = event.proposal;
         else if (event.type === "rejected") rejected = event.message;
         else if (event.type === "error") throw new Error(event.message);
-        else if (event.type === "done") done = true;
+        else if (event.type === "done") {
+          done = true;
+          finish({}, said());
+          continue;
+        }
         set(ws, { live: { ...live, text, steps } });
       }
     }
     if (!done) throw new Error("The answer stopped before it finished. Try again.");
-    finish({}, text || (rejected ? `I couldn't set that up: ${rejected}` : proposal ? "" : "I don't have an answer to that."));
   } catch (error) {
+    if (finished) return;
     if (controller.signal.aborted) {
       // New chat cleared the thread: nothing to keep.
       if (controllers.get(ws) !== controller) return;
@@ -685,6 +700,20 @@ function settle(ws: string, turnId: number, confirm: boolean, chosen?: string[])
   void decide(ws, turnId, confirm, chosen);
 }
 
+/** D-134: the newest answer's next questions as chips; one asks it. */
+function NextQuestions({ ws, questions, busy }: { ws: string; questions: string[]; busy: boolean }) {
+  return (
+    <div className="ask-next" role="group" aria-label="Ask next">
+      {questions.map((q, i) => (
+        <button key={q} type="button" data-plain className="ask-next-chip" style={{ animationDelay: `${i * 60}ms` }} disabled={busy} onClick={() => askDesk(ws, q)}>
+          <ArrowRightIcon aria-hidden="true" />
+          <span>{q}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ---------- the turn ----------
 
 /** One answer, live or finished (the same component, so its reveal carries on when it finishes). */
@@ -697,6 +726,7 @@ function AssistantRow({ ws, turn, live, thread, latest }: { ws: string; turn: As
       {(steps.length > 0 || working) && <StepTrace steps={traceSteps(steps)} working={working} since={live?.startedAt} header={stepsHeader(steps, turn?.took)} />}
       {text && <Answer text={text} streaming={Boolean(live)} />}
       {turn?.stopped && <p className="ask-stopped">Stopped</p>}
+      {latest && turn && !turn.proposal && turn.followUps && turn.followUps.length > 0 && <NextQuestions ws={ws} questions={turn.followUps} busy={Boolean(thread.running)} />}
       {turn?.proposal && <ProposalCard ws={ws} turn={turn} running={thread.running === turn.proposal.callId} blocked={Boolean(thread.live || (thread.running && thread.running !== turn.proposal.callId))} latest={latest} bulkRows={thread.running === turn.proposal.callId ? thread.bulkRows : null} />}
     </>
   );

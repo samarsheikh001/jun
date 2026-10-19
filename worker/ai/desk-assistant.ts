@@ -22,7 +22,10 @@ import {
   iso,
   isActionTool,
   newCallId,
+  nextQuestionsInput,
+  NEXT_QUESTIONS_SYSTEM,
   outcomeLine,
+  readNextQuestions,
   proposalConversation,
   proposalSummary,
   readAgentFilePath,
@@ -65,7 +68,7 @@ import { readModel, readReplyCap } from "./desk-file.ts";
 import { runEval, type EvalEvent } from "./eval.ts";
 import { DEFAULT_MAX_PAGES, type SourceSettings } from "./knowledge.ts";
 import { listSources } from "./knowledge-sources.ts";
-import { AiUnavailableError, createModel, loadAiSettings, type AgentModel } from "./providers.ts";
+import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge } from "./search.ts";
 
@@ -1204,11 +1207,18 @@ const MAX_PROPOSAL_RETRIES = 2;
  * proposal that doesn't pass the checks (a file with problems, a setting that wouldn't save) goes back
  * to the model as that call's result, so it can fix it and propose again in the same answer.
  */
-export async function runAssistant(ctx: AssistantContext, model: AgentModel, turns: AskTurn[], emit: (event: AskEvent) => void): Promise<{ inputTokens: number; outputTokens: number }> {
+export async function runAssistant(
+  ctx: AssistantContext,
+  model: AgentModel,
+  turns: AskTurn[],
+  emit: (event: AskEvent) => void,
+): Promise<{ inputTokens: number; outputTokens: number; text: string; proposed: boolean; steps: string[] }> {
   const tools: ToolSet = { ...readTools(ctx), ...actionTools(ctx.role) };
   const messages = toModelMessages(turns);
   const reply = new ReplyText();
   const used = { inputTokens: 0, outputTokens: 0 };
+  let shown = false;
+  const steps: string[] = [];
   for (let attempt = 0; ; attempt++) {
     const result = streamText({
       model: model.model,
@@ -1236,6 +1246,7 @@ export async function runAssistant(ctx: AssistantContext, model: AgentModel, tur
           proposed = true;
           const prepared = await prepareProposal(ctx, part.toolName, input, newCallId());
           if (typeof prepared === "string") rejected = { toolCallId: part.toolCallId, toolName: part.toolName, message: prepared };
+          else shown = true;
           emit(typeof prepared === "string" ? { type: "rejected", tool: part.toolName, message: prepared } : { type: "proposal", proposal: prepared });
         } else {
           emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, false), status: "running", input: stepInput(input) } });
@@ -1243,6 +1254,7 @@ export async function runAssistant(ctx: AssistantContext, model: AgentModel, tur
       } else if (part.type === "tool-result") {
         const input = callInput(part.input);
         const failed = typeof part.output === "string" && part.output.startsWith('{"error"');
+        steps.push(stepLabel(part.toolName, input, true));
         emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output) } });
       } else if (part.type === "tool-error") {
         emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
@@ -1253,7 +1265,7 @@ export async function runAssistant(ctx: AssistantContext, model: AgentModel, tur
     const usage = await result.totalUsage;
     used.inputTokens += usage.inputTokens ?? 0;
     used.outputTokens += usage.outputTokens ?? 0;
-    if (!rejected || attempt >= MAX_PROPOSAL_RETRIES) return used;
+    if (!rejected || attempt >= MAX_PROPOSAL_RETRIES) return { ...used, text: reply.text, proposed: shown, steps };
     // The calls so far (the proposal's included), then the checks' answer as its result.
     messages.push(...(await result.response).messages);
     messages.push({
@@ -1264,4 +1276,16 @@ export async function runAssistant(ctx: AssistantContext, model: AgentModel, tur
       ],
     });
   }
+}
+
+/** D-134: 2–3 next questions for chips under a finished answer, from a small separate call; none on failure. */
+export async function nextQuestions(model: AgentModel, question: string, answer: string, steps: string[]): Promise<{ questions: string[]; usage: { inputTokens: number; outputTokens: number } }> {
+  const { text, totalUsage } = await completeText({
+    model: model.model,
+    ...model.prompt(NEXT_QUESTIONS_SYSTEM),
+    messages: [{ role: "user", content: nextQuestionsInput(question, answer, steps) }],
+    maxOutputTokens: 200,
+    temperature: 0.4,
+  });
+  return { questions: readNextQuestions(text, question), usage: { inputTokens: totalUsage.inputTokens ?? 0, outputTokens: totalUsage.outputTokens ?? 0 } };
 }
