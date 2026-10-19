@@ -1,11 +1,11 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { deskHref, navigate } from "../lib/router.ts";
-import { chatScale, FIELD_BLOBS, fieldHue, labelWidth, placeLabels, shortLabel, spreadDots, type MapTopic } from "../lib/topic-map.ts";
+import { chatScale, FIELD_BLOBS, labelWidth, mapHues, placeLabels, shortLabel, spreadDots, type MapTopic } from "../lib/topic-map.ts";
 
 // D-120: the topic map. One dot per topic: x = its chats (log when they spread widely), y = the share
 // of its AI chats the AI resolved alone (computeMetrics' rate). Behind the dots a grainy rainbow field
 // (blurred blobs + feTurbulence grain), laid out by meaning (web/lib/topic-map.ts FIELD_BLOBS); each
-// dot takes the hue under it. Plain SVG at the measured width. A dot opens the inbox on its topic.
+// dot takes the hue under it (mapHues, shared with Top topics). Plain SVG at the measured width. A dot opens the inbox on its topic.
 
 const pct = (r: number) => `${Math.round(r * 100)}%`;
 
@@ -58,13 +58,15 @@ export default function TopicMap({ topics }: { topics: MapTopic[] }) {
   const ph = height - M.top - M.bottom;
   const scale = useMemo(() => chatScale(topics.map((t) => t.count), narrow ? 3 : 7), [topics, narrow]);
 
+  // Colours from the plot position on the wide scale (mapHues), so Top topics' bar matches them (D-123).
+  const hues = useMemo(() => mapHues(topics), [topics]);
   const dots = useMemo(() => {
     // Biggest first: they get the first pick of label places.
     const sorted = [...topics].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
     const placed = spreadDots(sorted.map((t) => ({ t, x: scale.at(t.count) * pw, y: (1 - t.rate) * ph })));
     const sides = placeLabels(placed.map((d) => ({ id: d.t.id, x: d.x, y: d.y, w: measure(shortLabel(d.t.name)) })), pw, ph);
-    return placed.map((d) => ({ ...d, hue: fieldHue(pw ? d.x / pw : 0, 1 - d.y / ph), label: sides.get(d.t.id) ?? null }));
-  }, [topics, scale, pw, ph, measure]);
+    return placed.map((d) => ({ ...d, hue: hues.get(d.t.id) ?? 0, label: sides.get(d.t.id) ?? null }));
+  }, [topics, scale, pw, ph, measure, hues]);
 
   const shown = dots.find((d) => d.t.id === active) ?? null;
   const size = Math.min(pw, ph);
