@@ -1,4 +1,4 @@
-import { PROPOSAL_KINDS, type AskStep, type AskTurn, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
+import { PROPOSAL_KINDS, stepChat, type AskStep, type AskTurn, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
 
 // D-132: Home's assistant thread kept in this browser (localStorage, per workspace + member), so a reload
 // or leaving Home doesn't wipe it; D-134: up to 20 threads, New chat starts another. Pure parts here: what's stored, how it's read back, and the Recent
@@ -38,7 +38,8 @@ function readStep(v: unknown): AskStep | null {
   const table = readTable(v.table);
   const passages = readPassages(v.passages);
   const charts = Array.isArray(v.charts) ? v.charts.filter((c) => isObj(c) && ((c.kind === "days" && Array.isArray(c.series)) || (c.kind === "ranked" && Array.isArray(c.rows) && str(c.title)))) : [];
-  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}), ...(passages ? { passages } : {}), ...(charts.length ? { charts: charts as AskStep["charts"] } : {}) };
+  const chat = stepChat("test_chat", v.chat);
+  return { id: v.id, tool: v.tool, label: v.label, status: v.status === "running" ? "error" : (v.status as AskStep["status"]), ...(str(v.input) ? { input: v.input } : {}), ...(str(v.result) ? { result: v.result } : {}), ...(table ? { table } : {}), ...(passages ? { passages } : {}), ...(charts.length ? { charts: charts as AskStep["charts"] } : {}), ...(chat ? { chat } : {}) };
 }
 
 /** D-134: a step's Context Cards back, if they still look like them. */

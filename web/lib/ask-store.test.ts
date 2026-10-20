@@ -107,6 +107,17 @@ test("ask store: a bulk card's rows come back (D-134)", () => {
   assert.equal((delBroken.turns[1] as { proposal?: unknown }).proposal, undefined);
 });
 
+test("ask store: a test chat step comes back (D-144)", () => {
+  const chat = { exchanges: [{ customer: "hi", reply: "Hello!", actions: [{ tool: "refund", status: "ok" as const, pretended: true as const }], cards: [] }] };
+  const turns = [
+    { id: 1, role: "user" as const, text: "try it" },
+    { id: 2, role: "assistant" as const, text: "It greets.", steps: [{ id: "s1", tool: "test_chat", label: "Tried", status: "done" as const, chat }] },
+  ];
+  let id = 0;
+  const back = restoreOne(serialiseAsk(turns, []), () => ++id).turns[1] as Extract<Turn, { role: "assistant" }>;
+  assert.deepEqual(back.steps?.[0]?.chat, chat);
+});
+
 test("threads: v1 migrates, upsert / merge / caps (D-134)", () => {
   const v1 = JSON.stringify({ v: 1, turns: [{ role: "user", text: "What broke  on billing?" }, { role: "assistant", text: "Stripe." }], recent: ["What broke on billing?"] });
   const migrated = restoreAsk(v1, ids(), 5);

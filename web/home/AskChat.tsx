@@ -74,6 +74,7 @@ import { BulkCard } from "./BulkCard.tsx";
 import { RecordsTable } from "./RecordsTable.tsx";
 import { ContextCards } from "./ContextCards.tsx";
 import { InsightCharts } from "./InsightCharts.tsx";
+import { TestChatCard } from "./TestChatCard.tsx";
 import { AskInput, highlight, type AskInputHandle } from "./AskInput.tsx";
 import { DeskLink } from "./DeskLink.tsx";
 
@@ -544,6 +545,7 @@ const TOOL_ICONS: Record<string, () => ReactNode> = {
   list_inbox_setup: () => <TagIcon />,
   read_knowledge_source: () => <BookOpenIcon />,
   run_tests: () => <CheckIcon />,
+  test_chat: () => <ChatIcon />,
 };
 const toolIcon = (tool: string) => (TOOL_ICONS[tool] ?? (() => <ToolIcon />))();
 
@@ -953,6 +955,7 @@ function AssistantRow({ ws, turn, live, thread, latest }: { ws: string; turn: As
       {steps.map((s) => s.table && <RecordsTable key={`t-${s.id}`} table={s.table} />)}
       {steps.map((s) => s.passages && <ContextCards key={`k-${s.id}`} passages={s.passages} />)}
       {steps.map((s) => s.charts && <InsightCharts key={`c-${s.id}`} charts={s.charts} />)}
+      {steps.map((s) => s.chat && <TestChatCard key={`x-${s.id}`} chat={s.chat} />)}
       {text && <Answer text={text} streaming={Boolean(live)} />}
       {turn?.stopped && <p className="ask-stopped">Stopped</p>}
       {latest && turn && !turn.proposal && turn.followUps && turn.followUps.length > 0 && <NextQuestions ws={ws} questions={turn.followUps} busy={Boolean(thread.running)} />}

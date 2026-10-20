@@ -1103,6 +1103,108 @@ export interface AskStep {
   passages?: StepPassages;
   /** D-134: Reports' numbers as small charts (Insight Cards) under the turn. */
   charts?: StepChart[];
+  /** D-144: a test chat with the support agent (test_chat), as a small transcript under the turn. */
+  chat?: StepChat;
+}
+
+/** D-144: what test_chat found: each customer message and the support agent's reply, with what it did. */
+export interface StepChat {
+  /** The draft file tried instead of the saved one. */
+  draft?: string;
+  exchanges: StepExchange[];
+}
+export interface StepExchange {
+  customer: string;
+  reply: string;
+  handoff?: string;
+  escalate?: string;
+  actions: { tool: string; status: "ok" | "error"; pretended?: true }[];
+  cards: string[];
+  websiteAction?: string;
+  sources?: string[];
+}
+
+// ---------- D-144: trying the support agent as a customer ----------
+
+/** Customer messages one test_chat sends, one after another. */
+export const MAX_TEST_CHAT_MESSAGES = 4;
+const MAX_TEST_CHAT_TEXT = 2000;
+const MAX_EXCHANGE_REPLY = 1200;
+
+export interface TestChatInput {
+  messages: string[];
+  /** One agent file replaced by this text for the test (a change about to be proposed), never saved. */
+  draft?: { path: string; text: string };
+  page?: string;
+}
+
+/** test_chat's input checked. Throws AssistantInputError. */
+export function readTestChatInput(value: unknown): TestChatInput {
+  const input = callInput(value);
+  const v = input.messages;
+  const given = typeof v === "string" ? [v] : Array.isArray(v) ? v : fail("messages must be a list of what the customer says.");
+  const messages = (given as unknown[]).map((m) => (typeof m === "string" ? m.trim() : "")).filter(Boolean);
+  if (!messages.length) fail("Give at least one customer message.");
+  if (messages.length > MAX_TEST_CHAT_MESSAGES) fail(`At most ${MAX_TEST_CHAT_MESSAGES} customer messages.`);
+  if (messages.some((m) => m.length > MAX_TEST_CHAT_TEXT)) fail(`A customer message is at most ${MAX_TEST_CHAT_TEXT} characters.`);
+  const out: TestChatInput = { messages };
+  const path = str(input, "draftPath", 200);
+  const text = raw(input, "draftText", MAX_AGENT_FILE);
+  if (path || text) {
+    if (!path || text === undefined) fail("draftPath and draftText go together: the file's path and its whole new text.");
+    if (path === "desk.yaml" || !AGENT_FILE_PATH.test(path!)) fail("draftPath must be one of the agent's files (instructions.md, tasks/<name>.md, actions/<name>.yaml, …).");
+    out.draft = { path: path!, text: text!.endsWith("\n") ? text! : `${text}\n` };
+  }
+  const page = str(input, "page", 300);
+  if (page) {
+    if (!page.startsWith("/")) fail("page must be a path on the website, like /pricing.");
+    out.page = page;
+  }
+  return out;
+}
+
+/** One test_chat exchange as the model and the page get it (texts shortened). */
+export function exchangeOf(customer: string, reply: { text: string; handoff?: string; escalate?: string; calls: { tool: string; status: "ok" | "error"; pretended?: true }[]; widgets: { name: string }[]; pageAction?: { name: string }; sources?: { title: string }[] }): StepExchange {
+  return {
+    customer: clip(customer, 500)!,
+    reply: clip(reply.text, MAX_EXCHANGE_REPLY) ?? "",
+    ...(reply.handoff !== undefined ? { handoff: clip(reply.handoff, 200) || "handed to a person" } : {}),
+    ...(reply.escalate ? { escalate: clip(reply.escalate, 200)! } : {}),
+    actions: reply.calls.slice(0, 8).map((c) => ({ tool: c.tool, status: c.status, ...(c.pretended ? { pretended: true as const } : {}) })),
+    cards: reply.widgets.slice(0, 4).map((w) => w.name),
+    ...(reply.pageAction ? { websiteAction: reply.pageAction.name } : {}),
+    ...(reply.sources?.length ? { sources: reply.sources.slice(0, 5).map((x) => clip(x.title, 120)!) } : {}),
+  };
+}
+
+/** D-144: a test_chat step's transcript for the chat card; else nothing. */
+export function stepChat(tool: string, output: unknown): StepChat | undefined {
+  if (tool !== "test_chat") return undefined;
+  let value = output;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  const exchanges = (Array.isArray(o.exchanges) ? o.exchanges : [])
+    .filter((e): e is Record<string, unknown> => Boolean(e) && typeof e === "object" && typeof (e as { customer?: unknown }).customer === "string" && typeof (e as { reply?: unknown }).reply === "string")
+    .slice(0, MAX_TEST_CHAT_MESSAGES)
+    .map((e): StepExchange => ({
+      customer: e.customer as string,
+      reply: e.reply as string,
+      ...(typeof e.handoff === "string" ? { handoff: e.handoff } : {}),
+      ...(typeof e.escalate === "string" ? { escalate: e.escalate } : {}),
+      actions: (Array.isArray(e.actions) ? e.actions : []).filter((a): a is { tool: string; status: "ok" | "error"; pretended?: true } => Boolean(a) && typeof a.tool === "string" && (a.status === "ok" || a.status === "error")).map((a) => ({ tool: a.tool, status: a.status, ...(a.pretended === true ? { pretended: true as const } : {}) })),
+      cards: (Array.isArray(e.cards) ? e.cards : []).filter((c): c is string => typeof c === "string"),
+      ...(typeof e.websiteAction === "string" ? { websiteAction: e.websiteAction } : {}),
+      ...(Array.isArray(e.sources) && e.sources.length ? { sources: e.sources.filter((x): x is string => typeof x === "string") } : {}),
+    }));
+  if (!exchanges.length) return undefined;
+  return { ...(typeof o.draft === "string" ? { draft: o.draft } : {}), exchanges };
 }
 
 /** D-134: a chart under a turn: chats per day (report_metrics), or ranked counts (topics, handoff reasons). */
@@ -1205,6 +1307,7 @@ export function stepLabel(tool: string, input: Record<string, unknown>, done: bo
     list_inbox_setup: ["Reading saved replies, tags and topics", "Read saved replies, tags and topics"],
     read_knowledge_source: ["Reading a knowledge source", "Read a knowledge source"],
     run_tests: ["Running the agent's tests", "Ran the agent's tests"],
+    test_chat: ["Trying the support agent as a customer", "Tried the support agent as a customer"],
   };
   const pair = map[tool];
   if (!pair) return done ? "Done" : "Working";
@@ -1236,6 +1339,7 @@ const RESULT_NOUNS: Record<string, [string, string]> = {
   savedReplies: ["saved reply", "saved replies"],
   documents: ["page", "pages"],
   cases: ["test", "tests"],
+  exchanges: ["reply", "replies"],
 };
 
 /** D-129: a tool's result as one short line ("10 of 23 conversations", "3 matches", the error), or nothing when it has no list. */

@@ -44,6 +44,10 @@ import {
   stepLabel,
   stepResult,
   stepCharts,
+  stepChat,
+  exchangeOf,
+  readTestChatInput,
+  type StepExchange,
   stepPassages,
   knowledgeLink,
   stepTable,
@@ -78,6 +82,9 @@ import { listSources } from "./knowledge-sources.ts";
 import { AiUnavailableError, completeText, createModel, loadAiSettings, type AgentModel } from "./providers.ts";
 import { ReplyText } from "./reply-text.ts";
 import { searchKnowledge } from "./search.ts";
+import { runTestChat } from "./test-chat.ts";
+import type { SeenPageAction } from "../../shared/actions.ts";
+import type { TestReply, TestTurn } from "../../shared/test-chat.ts";
 
 // I-19 (D-127): Home's desk assistant. It reads the desk through typed, read-only tools (no SQL from the
 // model), each scoped to this workspace and built on the queries the desk's own routes use, and every
@@ -757,6 +764,62 @@ export function readTools(ctx: AssistantContext): ToolSet {
     }),
   });
 
+  // D-144: the support agent tried as a customer, for owners and admins (the Agent page's test chat is
+  // admin-only). Always in the safe mode: look-ups run, changes (POST) are pretended (never `real`, D-133).
+  if (ctx.role !== "agent")
+    tools.test_chat = tool({
+      description:
+        "Chat with the support agent (the AI that answers customers) as a customer would, and see its replies, the actions it called, the cards it showed and any handoff. Uses the live version, or with draftPath + draftText one agent file replaced by the whole new text you're about to propose (never saved). Safe: look-ups (GET) run for real, changes (POST actions) are only pretended, nothing is stored and no one is messaged. 1–4 customer messages, sent one after another as one chat. Slow: a few seconds per message.",
+      inputSchema: obj(
+        {
+          messages: { type: "array", items: { type: "string" }, description: "What the customer says, in order (1–4 messages)." },
+          draftPath: s("Optional: an agent file to try a change to, e.g. instructions.md or tasks/refunds.md."),
+          draftText: s("With draftPath: that file's whole new text."),
+          page: s("Optional: the website path the customer is on, e.g. /pricing."),
+        },
+        ["messages"],
+      ),
+      execute: run(async (raw) => {
+        const input = readTestChatInput(raw);
+        const stored = await loadConfigFiles(env, workspaceId);
+        const files: ConfigFiles = { ...stored.files };
+        if (input.draft) files[input.draft.path] = input.draft.text;
+        const { config, issues } = parseConfig(files, stored.version);
+        if (input.draft && issues.length) throw new AssistantInputError(`The draft has problems, so it can't be tried: ${issues.slice(0, 6).map((i) => `${i.path || "config"}: ${i.message}`).join("; ")}`);
+        const [settings, seen] = await Promise.all([loadAiSettings(env, workspaceId), env.WORKSPACE_HUB.getByName(workspaceId).pageActions() as Promise<SeenPageAction[]>]);
+        let model;
+        try {
+          model = createModel(env, workspaceId, settings, "answer");
+        } catch (error) {
+          if (error instanceof AiUnavailableError) throw new AssistantInputError(error.message);
+          throw error;
+        }
+        const turns: TestTurn[] = [];
+        const exchanges: StepExchange[] = [];
+        for (const text of input.messages) {
+          turns.push({ role: "customer", text });
+          let reply: TestReply | null = null;
+          let failed: string | null = null;
+          await runTestChat({ env, workspaceId, workspaceName: ctx.workspaceName, model, config, turns: [...turns], real: false, user: null, page: input.page ?? null, seen }, (e) => {
+            if (e.type === "done") reply = e.reply;
+            else if (e.type === "error") failed = e.message;
+          });
+          const got = reply as TestReply | null;
+          if (!got) throw new AssistantInputError((failed as string | null) ?? "The support agent didn't answer.");
+          turns.push({ role: "ai", reply: got });
+          exchanges.push(exchangeOf(text, got));
+          if (got.handoff !== undefined) break;
+        }
+        return {
+          link: input.draft ? agentFileLink(input.draft.path) : "/agent",
+          ...(input.draft ? { draft: input.draft.path, note: `Tried with your draft of ${input.draft.path}; nothing was saved.` } : { version: stored.version }),
+          pretended: "POST actions were only pretended: nothing was changed for anyone.",
+          ...(exchanges.some((e) => e.websiteAction) ? { websiteActions: "A reply with websiteAction ends there: in a real chat the customer's page runs it and the agent carries on. Send the next customer message after it to see more." } : {}),
+          exchanges,
+        };
+      }),
+    });
+
   return tools;
 }
 
@@ -936,10 +999,11 @@ Changing things:
 - For the same change on several chats (resolve, assign, tag, hand to or from the AI), call propose_bulk once with all their ids (up to 50), never one proposal per chat.
 - To delete several saved replies, tags, topics, knowledge pages or knowledge sources, call propose_bulk_delete once with their ids (one kind per card), never one proposal each.
 - You can propose most of what a person does in the desk: a chat's status, assignee, tags, notes, a reply draft, handing it to or from the AI, an issue; inviting a live visitor; a contact's name or email; the support agent's files (instructions.md, tasks, actions, widgets, tests); the chat widget's settings; the AI settings; knowledge; saved replies, tags and topics; the team; your notifications; the workspace's name; email replies.
-- Read before you change: read_agent_file before propose_agent_file (copy find texts exactly), read_settings before a settings proposal, list_inbox_setup, read_knowledge_source or list_teammates for ids. If a proposal comes back with problems, fix them and propose again, or tell the person.
+- Read before you change: read_agent_file before propose_agent_file (copy find texts exactly), read_settings before a settings proposal, list_inbox_setup, read_knowledge_source or list_teammates for ids. If a proposal comes back with problems, fix them and propose again, or tell the person.${ctx.role === "agent" ? "" : `
+- To check a change to instructions.md or a task (or when they say "try it"), use test_chat: the customer's messages, and for a change you're about to propose, draftPath + draftText with the file's whole new text; after it's saved, without them. Say what the agent did. Changes made by POST actions in a test chat are only pretended: say so when it called one.`}
 - Propose only what they asked for or clearly agreed to, and never say it's done until you're told it was. Removing or deleting can't be undone: say so in your sentence.
 - You never message a customer yourself. A reply is a draft (propose_reply_draft): the chat opens with it in the composer and the person sends it. A live visitor invite shows them exactly the card's text, only after Confirm.
-- You can't do these, so say where in the desk they're done instead (with a link): anything that takes a key, token or password (an action's keys on its page under /agent/actions, GitHub or Linear in /settings/integrations, the Cloudflare token in /channels/email, API tokens in /connect/tokens, the identity secret in /playground/behaviour, ChatGPT sign-in in /settings/ai); deleting the workspace (/settings/general); uploading files or logos (/knowledge, /playground); running an action for real or a test chat (the action's or task's page); the desk's light or dark theme (/settings/account).
+- You can't do these, so say where in the desk they're done instead (with a link): anything that takes a key, token or password (an action's keys on its page under /agent/actions, GitHub or Linear in /settings/integrations, the Cloudflare token in /channels/email, API tokens in /connect/tokens, the identity secret in /playground/behaviour, ChatGPT sign-in in /settings/ai); deleting the workspace (/settings/general); uploading files or logos (/knowledge, /playground); running an action for real (the action's page); the desk's light or dark theme (/settings/account).
 - If someone pastes a key, token or password here, don't repeat it or put it in any proposal; tell them to paste it on the right page instead.${ctx.role === "agent" ? "\n- They're an agent, so they can't change the agent, knowledge, settings, tags, topics or the team: say an admin can." : ""}`;
 }
 
@@ -1326,7 +1390,8 @@ export async function runAssistant(
         const table = failed ? undefined : stepTable(part.toolName, part.output);
         const passages = failed ? undefined : stepPassages(part.toolName, input, part.output);
         const charts = failed ? undefined : stepCharts(part.toolName, part.output);
-        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output), ...(table ? { table } : {}), ...(passages ? { passages } : {}), ...(charts ? { charts } : {}) } });
+        const chat = failed ? undefined : stepChat(part.toolName, part.output);
+        emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, input, true), status: failed ? "error" : "done", input: stepInput(input), result: stepResult(part.output), ...(table ? { table } : {}), ...(passages ? { passages } : {}), ...(charts ? { charts } : {}), ...(chat ? { chat } : {}) } });
       } else if (part.type === "tool-error") {
         emit({ type: "step", step: { id: part.toolCallId, tool: part.toolName, label: stepLabel(part.toolName, callInput(part.input), true), status: "error", input: stepInput(callInput(part.input)), result: clip(part.error instanceof Error ? part.error.message : String(part.error), 120) ?? undefined } });
       } else if (part.type === "error") {

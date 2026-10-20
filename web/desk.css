@@ -2644,6 +2644,18 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 @media (prefers-reduced-motion: reduce) { .ask-next-row { animation: none; } }
 /* D-134, after beautifului.dev's Records Table: the chats or contacts a step found, sortable, folding. */
 .rec { width: 100%; min-width: 0; }
+.ask-tc { display: grid; gap: 10px; margin-top: 4px; padding: 10px 12px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border); font-size: 13px; line-height: 19px; }
+.ask-tc-pair { display: grid; gap: 6px; }
+.ask-tc-msg { max-width: 85%; margin: 0; padding: 7px 11px; border-radius: 14px; overflow-wrap: anywhere; }
+.ask-tc-msg.customer { justify-self: end; border-bottom-right-radius: 5px; background: var(--primary); color: var(--primary-foreground); white-space: pre-wrap; }
+.ask-tc-msg.agent { display: grid; gap: 6px; justify-self: start; border-bottom-left-radius: 5px; background: var(--muted); color: var(--foreground); }
+.ask-tc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ask-tc-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 999px; background: var(--card); box-shadow: inset 0 0 0 1px var(--border); color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+.ask-tc-chip > svg { width: 11px; height: 11px; }
+.ask-tc-chip.error { color: var(--destructive); }
+.ask-tc-chip em { font-family: var(--font-sans, inherit); font-style: normal; color: oklch(0.6 0.16 45); }
+.ask-tc-file { font-family: var(--font-mono); font-size: 11.5px; }
+.ask-tc-foot { margin: 0; color: var(--muted-foreground); font-size: 12px; }
 .rec-head { display: inline-flex; align-items: center; gap: 6px; height: 26px; margin-left: -6px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms, color 150ms; }
 .rec-head:hover { background: var(--accent); color: var(--foreground); }
 .rec-head-icon { display: inline-flex; }

@@ -312,6 +312,27 @@ test("assistant: bulk deletes (D-144)", async () => {
   assert.equal(outcomeTitle(sources, {}, { status: "done", results: [{ id: "src_1", status: "done" }, { id: "src_2", status: "done" }] }), "Removed · 2 knowledge sources");
 });
 
+test("assistant: test chat input and transcript (D-144)", async () => {
+  const { readTestChatInput, exchangeOf, stepChat, stepResult, stepLabel } = await import("./desk-assistant.ts");
+  assert.deepEqual(readTestChatInput({ messages: [" I was charged twice ", ""] }), { messages: ["I was charged twice"] });
+  assert.deepEqual(readTestChatInput({ messages: "hi", draftPath: "instructions.md", draftText: "Be kind.", page: "/pricing" }), { messages: ["hi"], draft: { path: "instructions.md", text: "Be kind.\n" }, page: "/pricing" });
+  assert.throws(() => readTestChatInput({ messages: [] }), /at least one/);
+  assert.throws(() => readTestChatInput({ messages: ["a", "b", "c", "d", "e"] }), /At most 4/);
+  assert.throws(() => readTestChatInput({ messages: ["a"], draftPath: "instructions.md" }), /go together/);
+  assert.throws(() => readTestChatInput({ messages: ["a"], draftPath: "desk.yaml", draftText: "x" }), /agent's files/);
+  assert.throws(() => readTestChatInput({ messages: ["a"], draftPath: "../etc", draftText: "x" }), /agent's files/);
+  assert.throws(() => readTestChatInput({ messages: ["a"], page: "pricing" }), /path/);
+  const ex = exchangeOf("Refund me", { text: "Done, refunded.", calls: [{ tool: "refund", status: "ok", pretended: true }, { tool: "lookup", status: "ok" }], widgets: [{ name: "receipt" }], sources: [{ title: "Refunds" }] });
+  assert.deepEqual(ex, { customer: "Refund me", reply: "Done, refunded.", actions: [{ tool: "refund", status: "ok", pretended: true }, { tool: "lookup", status: "ok" }], cards: ["receipt"], sources: ["Refunds"] });
+  assert.equal(exchangeOf("a person please", { text: "", handoff: "", calls: [], widgets: [] }).handoff, "handed to a person");
+  const output = JSON.stringify({ link: "/agent", draft: "tasks/refunds.md", exchanges: [ex, { customer: "x", reply: 3 }] });
+  assert.deepEqual(stepChat("test_chat", output), { draft: "tasks/refunds.md", exchanges: [ex] });
+  assert.equal(stepChat("run_tests", output), undefined);
+  assert.equal(stepChat("test_chat", JSON.stringify({ error: "nope" })), undefined);
+  assert.equal(stepResult(output), "2 replies");
+  assert.equal(stepLabel("test_chat", {}, true), "Tried the support agent as a customer");
+});
+
 test("assistant: next questions are cleaned (D-134)", async () => {
   const { readNextQuestions, nextQuestionsInput } = await import("./desk-assistant.ts");
   assert.deepEqual(readNextQuestions('1. "Which chats were about billing?"\n- **Who handles export errors?**\n\nWhat broke on /pricing?\nSee [this](/inbox/cv_1)\nWhich chats were about billing\nA fourth one here?', "what broke on /pricing?"), [
