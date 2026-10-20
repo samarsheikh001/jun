@@ -2417,8 +2417,10 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
 a.ws-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 .ws-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .ws-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ws-card-mark { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--ws-fg, var(--foreground)) 16%, transparent); font-size: 13px; font-weight: 665; }
-.ws-card-mark > img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.ws-card-mark { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px #0000000f, 0 1px 3px #0000001f; color: color-mix(in oklch, var(--ws-bg, var(--foreground)), #000 38%); font-size: 14px; font-weight: 700; }
+.ws-card-mark > img { width: 100%; height: 100%; padding: 4px; object-fit: contain; }
+/* No logo: the initial on a soft white tile, in the card's own colour. */
+.ws-card-initial { background: color-mix(in srgb, #fff 88%, var(--ws-bg, #fff)); }
 .ws-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; font-weight: 665; letter-spacing: -0.01em; }
 .ws-card-role { flex: none; margin-left: auto; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ws-fg, var(--foreground)) 14%, transparent); font-size: 12px; line-height: 18px; }
 .ws-card-lede { margin: 12px 0 0; font-size: 13.5px; line-height: 20px; color: color-mix(in srgb, var(--ws-fg, var(--foreground)) 72%, transparent); text-wrap: pretty; }
