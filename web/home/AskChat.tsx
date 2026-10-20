@@ -18,7 +18,8 @@ import {
 } from "../../shared/desk-assistant.ts";
 import { unifiedDiff } from "../../shared/line-diff.ts";
 import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
-import { ApiError } from "../api.ts";
+import { api, ApiError } from "../api.ts";
+import { planSync, type ThreadList } from "../../shared/ask-threads.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { formatElapsed } from "../components/PixelLoader.tsx";
 import {
@@ -53,7 +54,7 @@ import {
 } from "../components/icons.tsx";
 import { formatTime } from "../lib/thread.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
-import { addRecent, askKey, mergeThreads, newThreadId, restoreAsk, serialiseAsk, upsertThread, type AskState, type SavedThread, type Turn } from "../lib/ask-store.ts";
+import { addRecent, askKey, mergeThreads, newThreadId, readServerThread, restoreAsk, serialiseAsk, serverThread, upsertThread, type AskState, type SavedThread, type Turn } from "../lib/ask-store.ts";
 import { ApprovalCard, ApprovalOutcome } from "@/components/approval-card.tsx";
 import { Chevron, Fold, StepTrace, type TraceStep } from "@/components/agent-steps.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -77,7 +78,9 @@ import { DeskLink } from "./DeskLink.tsx";
 // read steps, answers that link to the desk's own pages, and a proposed change as a card with Confirm /
 // Cancel (Confirm runs it through the desk's routes, actions.ts); either way the outcome goes back to the
 // model, which carries on. The thread lives in a module store (leaving Home and coming back keeps it) and,
-// D-132, in this browser's localStorage per workspace + member (lib/ask-store.ts), never on the server.
+// D-132, in this browser's localStorage per workspace + member (lib/ask-store.ts); D-139: also on the
+// server (…/home/threads), synced by updatedAt on load, on focus and after each change, so the threads
+// follow the member across browsers (localStorage stays the fast cache and the offline copy).
 // D-129, after beautifului.dev's primitives (patterns, our own code): the steps are the desk's shared
 // step trace (a live working line with the time, then "Worked for 4.2s · 3 steps" folding the rows),
 // the answer is paced with desk links as inline source chips, then copy and "N sources"; a proposal is
@@ -163,6 +166,104 @@ function save(ws: string): void {
   } catch {
     // Storage full or blocked: the threads just don't outlive the tab.
   }
+  if (changed && t.turns.length) schedulePush(ws, t.id);
+}
+
+// ---- D-139: the threads on the server ----
+
+const threadsPath = (ws: string) => `/workspaces/${ws}/home/threads`;
+const pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const syncs = new Map<string, Promise<void>>();
+const lastSync = new Map<string, number>();
+
+/** Uploads a changed thread a moment after its last change (one request per burst). */
+function schedulePush(ws: string, id: string): void {
+  const k = `${ws}:${id}`;
+  clearTimeout(pushTimers.get(k));
+  pushTimers.set(k, setTimeout(() => {
+    pushTimers.delete(k);
+    void push(ws, id);
+  }, 800));
+}
+
+/** Drops a thread here (deleted on the server, or by another browser); the open one gives way to a new chat. */
+function dropLocal(ws: string, id: string): void {
+  gone.add(id);
+  const store = storeOf(ws);
+  stores.set(ws, { ...store, threads: store.threads.filter((x) => x.id !== id) });
+  notifyStore();
+  const t = get(ws);
+  if (t.id === id && !t.live && !t.running) set(ws, fresh());
+}
+
+async function push(ws: string, id: string): Promise<void> {
+  const thread = storeOf(ws).threads.find((x) => x.id === id);
+  if (!thread || gone.has(id)) return;
+  try {
+    const res = await api<{ kept: boolean; deleted: boolean }>(`${threadsPath(ws)}/${encodeURIComponent(id)}`, { method: "PUT", body: serverThread(thread) });
+    if (res.deleted) {
+      dropLocal(ws, id);
+      save(ws);
+    }
+  } catch {
+    // Offline or refused: the copy here stays newer, so the next sync uploads it.
+  }
+}
+
+/** Reconciles this browser's threads with the server's: newer copies come down, newer or new ones go up. */
+function syncThreads(ws: string): Promise<void> {
+  const running = syncs.get(ws);
+  if (running) return running;
+  const run = (async () => {
+    lastSync.set(ws, Date.now());
+    let list: ThreadList;
+    try {
+      list = await api<ThreadList>(threadsPath(ws));
+    } catch {
+      return; // Offline: this browser's copy is all there is for now.
+    }
+    const t = get(ws);
+    const local = mergeThreads(storeOf(ws).threads, t.turns.length ? [{ id: t.id, title: "", updatedAt: storeOf(ws).threads.find((x) => x.id === t.id)?.updatedAt ?? Date.now(), turns: t.turns }] : []);
+    const plan = planSync(local, list, gone);
+    for (const id of plan.remove) dropLocal(ws, id);
+    const queue = [...plan.download];
+    const worker = async () => {
+      for (let id = queue.shift(); id; id = queue.shift()) {
+        try {
+          const thread = readServerThread(await api(`${threadsPath(ws)}/${encodeURIComponent(id)}`), () => nextId++);
+          if (!thread || gone.has(thread.id)) continue;
+          stores.set(ws, { ...storeOf(ws), threads: mergeThreads(storeOf(ws).threads, [thread], gone) });
+          notifyStore();
+          // The open thread follows a newer copy unless an answer is being written or a card runs.
+          const open = get(ws);
+          if (open.id === thread.id && !open.live && !open.running) {
+            written.set(ws, thread.turns);
+            set(ws, { turns: thread.turns, bulkRows: null });
+          }
+        } catch {
+          // Gone in the meantime, or offline: the next sync tries again.
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    save(ws);
+    for (const id of plan.upload) void push(ws, id);
+  })().finally(() => syncs.delete(ws));
+  syncs.set(ws, run);
+  return run;
+}
+
+/** Syncs again when the tab comes back, at most every 15 s. */
+function syncOnReturn(ws: string): () => void {
+  const onVisible = () => {
+    if (document.visibilityState === "visible" && Date.now() - (lastSync.get(ws) ?? 0) > 15_000) void syncThreads(ws);
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("focus", onVisible);
+  return () => {
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("focus", onVisible);
+  };
 }
 
 /** The member's threads from this browser, once per workspace; the one open last comes back unless this tab has one. */
@@ -179,6 +280,8 @@ function bind(ws: string, userId: string): void {
     written.set(ws, open.turns);
     set(ws, { id: open.id, turns: open.turns });
   }
+  // D-139: then the server's copy (a first sync uploads the threads this browser had).
+  void syncThreads(ws);
 }
 
 function useStore(ws: string): { threads: SavedThread[]; recent: string[] } {
@@ -206,6 +309,8 @@ export function openAskThread(ws: string, id: string): void {
 /** D-134: deletes a saved thread; the open one gives way to a new chat. */
 export function deleteAskThread(ws: string, id: string): void {
   gone.add(id);
+  clearTimeout(pushTimers.get(`${ws}:${id}`));
+  void api(`${threadsPath(ws)}/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
   const store = storeOf(ws);
   stores.set(ws, { ...store, threads: store.threads.filter((x) => x.id !== id) });
   if (get(ws).id === id) newAskChat(ws);
@@ -859,6 +964,7 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
   useLayoutEffect(() => {
     if (userId) bind(workspaceId, userId);
   }, [workspaceId, userId]);
+  useEffect(() => (userId ? syncOnReturn(workspaceId) : undefined), [workspaceId, userId]);
   const thread = useThread(workspaceId);
   const recent = useRecent(workspaceId);
   const [message, setMessage] = useState("");

@@ -209,6 +209,19 @@ export function restoreAsk(raw: string | null, nextId: () => number, now = Date.
   return { current, threads, recent };
 }
 
+/** D-139: a thread as the server keeps it (PUT …/home/threads/:id): its finished turns, trimmed, no invite links. */
+export function serverThread(t: SavedThread): { title: string; updatedAt: number; turns: StoredTurn[] } {
+  return { title: t.title || threadTitle(t.turns), updatedAt: t.updatedAt, turns: storedTurns(t.turns) };
+}
+
+/** D-139: a thread from the server (GET …/home/threads/:id) read like a stored one (a waiting card comes back expired); null when empty or not one. */
+export function readServerThread(v: unknown, nextId: () => number): SavedThread | null {
+  if (!isObj(v) || !str(v.id) || typeof v.updatedAt !== "number" || !Array.isArray(v.turns)) return null;
+  const turns = v.turns.map((t) => readTurn(t, nextId())).filter((t): t is Turn => t !== null);
+  if (!turns.length) return null;
+  return { id: v.id, title: str(v.title) && v.title ? v.title : threadTitle(turns), updatedAt: v.updatedAt, turns };
+}
+
 /** The recent questions with `question` first, once each (ignoring case and spaces), ≤ MAX_RECENT. */
 export function addRecent(recent: string[], question: string): string[] {
   const q = question.trim().replace(/\s+/g, " ").slice(0, MAX_QUESTION);

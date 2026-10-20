@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { readAskTurns, AssistantInputError, type AskEvent } from "../../shared/desk-assistant.ts";
+import { cleanThread, isThreadId, overCap, TOMBSTONE_MS, type ThreadList } from "../../shared/ask-threads.ts";
 import { briefWindows, freshBrief, needsPoints, type LiveNeeds } from "../../shared/home-brief.ts";
 import { validTimezone } from "../../shared/hours.ts";
 import { nextQuestions, runAssistant } from "../ai/desk-assistant.ts";
@@ -13,7 +14,7 @@ import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts"
 // I-19 (D-127): Home. GET …/home/brief answers at once with today's cached brief, or the plain one
 // written in code while the AI words it (`writing`: the page then POSTs …/home/brief); POST also
 // refreshes; GET …/home/needs (D-131) counts "What needs you" now. POST …/home/ask streams one
-// answer of the desk assistant as NDJSON (AskEvent).
+// answer of the desk assistant as NDJSON (AskEvent); …/home/threads (D-139) keeps the member's assistant threads.
 // Members only; the brief and the assistant see what any member of the workspace can see.
 
 export const home = new Hono<AppEnv>();
@@ -127,4 +128,73 @@ home.post("/workspaces/:id/home/ask", async (c) => {
       .finally(() => writer.close().catch(() => {})),
   );
   return new Response(readable, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
+});
+
+// D-139: the member's assistant threads (D-134), so they follow them across browsers; the page keeps a
+// localStorage copy as a cache and syncs by updatedAt (shared/ask-threads.ts). Own threads only.
+const threadId = (c: AppContext): string => {
+  const id = c.req.param("tid");
+  if (!isThreadId(id)) throw new HttpError(400, "invalid_field", "Unknown thread id.");
+  return id;
+};
+
+home.get("/workspaces/:id/home/threads", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const userId = c.get("user").id;
+  await c.env.DB.prepare("DELETE FROM assistant_threads WHERE workspace_id = ? AND user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?").bind(workspaceId, userId, Date.now() - TOMBSTONE_MS).run();
+  const rows = (await c.env.DB.prepare("SELECT id, title, updated_at, deleted_at FROM assistant_threads WHERE workspace_id = ? AND user_id = ? ORDER BY updated_at DESC").bind(workspaceId, userId).all<{ id: string; title: string; updated_at: number; deleted_at: number | null }>()).results;
+  return c.json({
+    threads: rows.filter((r) => r.deleted_at === null).map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at })),
+    deleted: rows.filter((r) => r.deleted_at !== null).map((r) => ({ id: r.id, deletedAt: r.deleted_at! })),
+  } satisfies ThreadList);
+});
+
+home.get("/workspaces/:id/home/threads/:tid", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const id = threadId(c);
+  const row = await c.env.DB.prepare("SELECT title, turns, updated_at FROM assistant_threads WHERE workspace_id = ? AND user_id = ? AND id = ? AND deleted_at IS NULL").bind(workspaceId, c.get("user").id, id).first<{ title: string; turns: string; updated_at: number }>();
+  if (!row) throw new HttpError(404, "not_found", "No such thread.");
+  return c.json({ id, title: row.title, updatedAt: row.updated_at, turns: JSON.parse(row.turns) as unknown[] });
+});
+
+home.put("/workspaces/:id/home/threads/:tid", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const id = threadId(c);
+  const userId = c.get("user").id;
+  const thread = cleanThread(await readJson(c.req));
+  if (!thread.ok) throw new HttpError(400, thread.code, thread.message);
+  // The newer copy wins; a thread deleted after this copy last changed stays deleted.
+  const result = await c.env.DB.prepare(
+    `INSERT INTO assistant_threads (workspace_id, user_id, id, title, turns, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL)
+     ON CONFLICT (workspace_id, user_id, id) DO UPDATE SET title = excluded.title, turns = excluded.turns, updated_at = excluded.updated_at, deleted_at = NULL
+     WHERE (assistant_threads.deleted_at IS NULL AND excluded.updated_at > assistant_threads.updated_at) OR (assistant_threads.deleted_at IS NOT NULL AND excluded.updated_at > assistant_threads.deleted_at)`,
+  ).bind(workspaceId, userId, id, thread.title, thread.turns, thread.updatedAt).run();
+  const kept = (result.meta.changes ?? 0) > 0;
+  if (kept) {
+    // At most MAX_SERVER_THREADS live threads: the oldest become tombstones.
+    const live = (await c.env.DB.prepare("SELECT id, title, updated_at FROM assistant_threads WHERE workspace_id = ? AND user_id = ? AND deleted_at IS NULL").bind(workspaceId, userId).all<{ id: string; title: string; updated_at: number }>()).results;
+    const drop = overCap(live.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at })));
+    if (drop.length) {
+      const now = Date.now();
+      await c.env.DB.batch(drop.map((d) => c.env.DB.prepare("UPDATE assistant_threads SET turns = '[]', deleted_at = ? WHERE workspace_id = ? AND user_id = ? AND id = ?").bind(now, workspaceId, userId, d)));
+    }
+  }
+  const row = await c.env.DB.prepare("SELECT updated_at, deleted_at FROM assistant_threads WHERE workspace_id = ? AND user_id = ? AND id = ?").bind(workspaceId, userId, id).first<{ updated_at: number; deleted_at: number | null }>();
+  return c.json({ id, kept, updatedAt: row?.updated_at ?? thread.updatedAt, deleted: row?.deleted_at != null });
+});
+
+home.delete("/workspaces/:id/home/threads/:tid", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const id = threadId(c);
+  const now = Date.now();
+  // A tombstone, so another browser's cached copy isn't uploaded again.
+  await c.env.DB.prepare(
+    `INSERT INTO assistant_threads (workspace_id, user_id, id, title, turns, updated_at, deleted_at) VALUES (?, ?, ?, '', '[]', ?, ?)
+     ON CONFLICT (workspace_id, user_id, id) DO UPDATE SET title = '', turns = '[]', deleted_at = excluded.deleted_at`,
+  ).bind(workspaceId, c.get("user").id, id, now, now).run();
+  return c.json({ ok: true });
 });

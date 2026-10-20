@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProposedAction } from "../../shared/desk-assistant.ts";
-import { addRecent, askKey, EXPIRED, MAX_RECENT, MAX_THREADS, MAX_TURNS, mergeThreads, restoreAsk, serialiseAsk as serialiseState, threadTitle, trimTurns, upsertThread, type SavedThread, type Turn } from "./ask-store.ts";
+import { addRecent, askKey, EXPIRED, MAX_RECENT, MAX_THREADS, MAX_TURNS, mergeThreads, readServerThread, restoreAsk, serialiseAsk as serialiseState, serverThread, threadTitle, trimTurns, upsertThread, type SavedThread, type Turn } from "./ask-store.ts";
 
 // One thread, as D-132 kept it: the v2 store with a single thread.
 const serialiseAsk = (turns: Turn[], recent: string[]) => serialiseState({ current: "t1", threads: [{ id: "t1", title: "", updatedAt: 1, turns }], recent });
@@ -130,4 +130,27 @@ test("threads: v1 migrates, upsert / merge / caps (D-134)", () => {
   const small = restoreAsk(serialiseState({ current: "old", threads: [big("new", 3), big("mid", 2), big("old", 1)], recent: [] }, 800), ids());
   assert.deepEqual(small.threads.map((x) => x.id), ["new", "old"]);
   assert.equal(restoreAsk(JSON.stringify({ v: 2, current: "zz", threads: [{ id: "q", updatedAt: 1, turns: [{ role: "user", text: "hi" }] }], recent: [] }), ids()).current, null);
+});
+
+test("server threads: what goes up drops ids and invite links, and comes back like a stored one (D-139)", () => {
+  const thread: SavedThread = {
+    id: "t1",
+    title: "",
+    updatedAt: 42,
+    turns: [
+      { id: 1, role: "user", text: "Invite Ana" },
+      { id: 2, role: "assistant", text: "", proposal: note, outcome: { status: "done", link: "https://desk/invite/secret" } },
+      { id: 3, role: "assistant", text: "", proposal: note },
+    ],
+  };
+  const up = serverThread(thread);
+  assert.equal(up.title, "Invite Ana");
+  assert.equal(up.updatedAt, 42);
+  assert.equal(JSON.stringify(up).includes("secret"), false);
+  assert.equal(JSON.stringify(up).includes('"id":1'), false);
+  const back = readServerThread({ id: "t1", title: up.title, updatedAt: 42, turns: up.turns }, ids());
+  assert.equal(back?.turns.length, 3);
+  assert.deepEqual(back?.turns[2]!.role === "assistant" && back.turns[2]!.outcome, EXPIRED);
+  assert.equal(readServerThread({ id: "t1", updatedAt: 1, turns: [{ role: "nope" }] }, ids()), null);
+  assert.equal(readServerThread({ id: "t1", turns: [] }, ids()), null);
 });
