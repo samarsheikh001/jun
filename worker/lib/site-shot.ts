@@ -24,6 +24,8 @@ export function siteOrigin(installedOn: string | null, deskOrigin: string): stri
   return url.origin;
 }
 
+export const forgetSiteShot = (env: Env, workspaceId: string) => env.FILES.delete(KEY(workspaceId));
+
 export interface SiteShot { body: ArrayBuffer; type: string }
 
 export async function siteShot(env: Env, workspaceId: string, origin: string): Promise<SiteShot | null> {

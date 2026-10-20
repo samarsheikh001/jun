@@ -5,7 +5,7 @@ import { createSession, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
 import { withFreeSlug, workspaceSlug } from "../lib/workspace-slug.ts";
-import { siteOrigin, siteShot } from "../lib/site-shot.ts";
+import { forgetSiteShot, siteOrigin, siteShot } from "../lib/site-shot.ts";
 import { dismissedKey, installMarkedKey } from "./onboarding.ts";
 import { workspaceSummary, type WorkspaceSummaryRow } from "../../shared/workspace-summary.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
@@ -170,11 +170,19 @@ workspaces.delete("/workspaces/:id", requireUser, async (c) => {
   return c.json({ ok: true });
 });
 
+// D-142: take the picture again now (owners and admins): drops the kept one, so the next GET shoots afresh.
+workspaces.post("/workspaces/:id/site-shot/refresh", requireUser, async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireRole(c, workspaceId, ["owner", "admin"]);
+  await forgetSiteShot(c.env, workspaceId);
+  return c.json({ ok: true });
+});
+
 // D-141: a picture of the website the widget runs on, for the desk home's card (404 when there's none).
 workspaces.get("/workspaces/:id/site-shot", requireUser, async (c) => {
   const workspaceId = c.req.param("id");
   await requireRole(c, workspaceId, ["owner", "admin", "agent"]);
-  const inbox = await c.env.DB.prepare("SELECT json_extract(settings, '$.installedOn') AS installedOn FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1")
+  const inbox = await c.env.DB.prepare("SELECT COALESCE(json_extract(settings, '$.seenOn'), json_extract(settings, '$.installedOn')) AS installedOn FROM inboxes WHERE workspace_id = ? ORDER BY created_at LIMIT 1")
     .bind(workspaceId)
     .first<{ installedOn: string | null }>();
   const origin = siteOrigin(inbox?.installedOn ?? null, new URL(c.req.url).origin);

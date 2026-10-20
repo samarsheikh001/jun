@@ -14,7 +14,7 @@ export interface WorkspaceSummary {
   color: string;
   logoUrl: string | null;
   logoDarkUrl: string | null;
-  /** Where the widget was first seen (onboarding's install host), or null. */
+  /** The site the widget was last seen on (D-142: `seenOn`), else where it was first seen (onboarding's install host), or null. */
   installedOn: string | null;
   /** Seen on a site, or ticked by "I've added it". */
   installed: boolean;
@@ -64,7 +64,8 @@ export function workspaceLogos(widgetKey: string | null, settings: string | Reco
 
 export function workspaceSummary(row: WorkspaceSummaryRow): WorkspaceSummary {
   const s = readSettings(row.settings);
-  const installedOn = typeof s.installedOn === "string" && s.installedOn ? s.installedOn : null;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const installedOn = str(s.seenOn) ?? str(s.installedOn);
   return {
     workspaceId: row.workspaceId,
     workspaceName: row.workspaceName,

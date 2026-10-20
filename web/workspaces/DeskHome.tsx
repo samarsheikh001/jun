@@ -4,7 +4,7 @@ import { navigate, usePath } from "../lib/router.ts";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "../lib/theme.ts";
 import { APPEARANCE_DEFAULTS, textOn } from "../../shared/appearance.ts";
 import type { WorkspaceSummary } from "../../shared/workspace-summary.ts";
-import { BotIcon, ChatIcon, CheckIcon, ColumnsIcon, GlobeIcon, HandoffIcon, KeyIcon, MonitorIcon, MoonIcon, PlusIcon, SignOutIcon, SunIcon } from "@/components/icons";
+import { BotIcon, ChatIcon, CheckIcon, ColumnsIcon, RefreshIcon, GlobeIcon, HandoffIcon, KeyIcon, MonitorIcon, MoonIcon, PlusIcon, SignOutIcon, SunIcon } from "@/components/icons";
 import { DeskIcon } from "../components/DeskIcon.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { SkelText, Skeleton } from "@/components/ui/skeleton.tsx";
@@ -141,7 +141,16 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
     switchWorkspace(w);
   };
   const bg = cardColor(w, index);
-  const shot = useSiteShot(w);
+  const [version, setVersion] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const shot = useSiteShot(w, version);
+  const refresh = () => {
+    setRefreshing(true);
+    api(`/workspaces/${encodeURIComponent(w.workspaceId)}/site-shot/refresh`, { body: {} })
+      .then(() => setVersion(Date.now()))
+      .catch(() => undefined)
+      .finally(() => setRefreshing(false));
+  };
   const lede = w.waiting ? `${plural(w.waiting, "chat")} ${w.waiting === 1 ? "needs" : "need"} a person.` : w.open ? "Nothing waiting on a person." : "All quiet.";
   const more = [w.installed ? (w.installedOn ? `Live on ${hostOf(w.installedOn)}` : "Widget installed") : "Widget not installed yet", w.aiOn ? "the AI answers first" : "AI replies are off"].join(", ") + ".";
   return (
@@ -169,6 +178,11 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
           )}
         </div>
       </a>
+      {w.installedOn && w.role !== "agent" && (
+        <button type="button" data-plain className="ws-card-refresh" onClick={refresh} disabled={refreshing} aria-label="Take a new picture of the website" title="Take a new picture of the website">
+          <RefreshIcon className={refreshing ? "spin" : undefined} />
+        </button>
+      )}
     </li>
   );
 }
@@ -177,18 +191,18 @@ const hostOf = (origin: string | null) => (origin ? origin.replace(/^https?:\/\/
 
 /** D-141: the picture of the workspace's website (`…/site-shot`), once it has loaded; null while it loads or when
  * there's none, so the card shows its inbox panel instead. */
-function useSiteShot(w: WorkspaceSummary): string | null {
+function useSiteShot(w: WorkspaceSummary, version: number): string | null {
   const [ready, setReady] = useState<string | null>(null);
   useEffect(() => {
     if (!w.installedOn) return;
-    const src = `/api/workspaces/${encodeURIComponent(w.workspaceId)}/site-shot`;
+    const src = `/api/workspaces/${encodeURIComponent(w.workspaceId)}/site-shot${version ? `?v=${version}` : ""}`;
     const img = new Image();
     img.onload = () => setReady(src);
     img.src = src;
     return () => {
       img.onload = null;
     };
-  }, [w.workspaceId, w.installedOn]);
+  }, [w.workspaceId, w.installedOn, version]);
   return ready;
 }
 

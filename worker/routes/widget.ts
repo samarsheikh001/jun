@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { siteOrigin } from "../lib/site-shot.ts";
 import { pageControlConfirm } from "../../shared/page-control.ts";
 import { SOCKET_PROTOCOL, type Attachment, type CsatRating } from "../../shared/protocol.ts";
 import { parseRating } from "../../shared/inbox.ts";
@@ -313,6 +314,15 @@ widget.get("/widget/:key/live", async (c) => {
       c.env.DB.prepare("UPDATE inboxes SET settings = json_set(settings, '$.installedAt', ?, '$.installedOn', ?) WHERE id = ? AND json_extract(settings, '$.installedAt') IS NULL")
         .bind(Date.now(), origin.slice(0, 200), inbox.inboxId)
         .run(),
+    );
+  }
+  // D-142: the site the widget was last seen on (public origins only, at most an hour between writes unless it
+  // changed), so the desk home's card and its picture follow a move to a new website.
+  const site = origin ? siteOrigin(origin, new URL(c.req.url).origin) : null;
+  const seenAt = typeof inbox.settings.seenAt === "number" ? inbox.settings.seenAt : 0;
+  if (site && (inbox.settings.seenOn !== site || Date.now() - seenAt > 60 * 60 * 1000)) {
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare("UPDATE inboxes SET settings = json_set(settings, '$.seenOn', ?, '$.seenAt', ?) WHERE id = ?").bind(site, Date.now(), inbox.inboxId).run(),
     );
   }
   const cf = (c.req.raw as Request & { cf?: { country?: string; city?: string; latitude?: string; longitude?: string } }).cf;
