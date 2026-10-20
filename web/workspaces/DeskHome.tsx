@@ -2,9 +2,9 @@ import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNod
 import { api, describeError, type Me } from "../api.ts";
 import { navigate, usePath } from "../lib/router.ts";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "../lib/theme.ts";
-import { textOn } from "../../shared/appearance.ts";
+import { APPEARANCE_DEFAULTS, textOn } from "../../shared/appearance.ts";
 import type { WorkspaceSummary } from "../../shared/workspace-summary.ts";
-import { ColumnsIcon, GlobeIcon, KeyIcon, MonitorIcon, MoonIcon, PlusIcon, SignOutIcon, SunIcon } from "@/components/icons";
+import { BotIcon, ChatIcon, CheckIcon, ColumnsIcon, GlobeIcon, HandoffIcon, KeyIcon, MonitorIcon, MoonIcon, PlusIcon, SignOutIcon, SunIcon } from "@/components/icons";
 import { DeskIcon } from "../components/DeskIcon.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { SkelText, Skeleton } from "@/components/ui/skeleton.tsx";
@@ -54,18 +54,19 @@ export function DeskHome({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       {error && !list && <p className="error">{error}</p>}
       <ul className="home-grid" aria-busy={list ? undefined : "true"}>
         {list
-          ? list.map((w) => <WorkspaceCard key={w.workspaceId} workspace={w} />)
+          ? list.map((w, i) => <WorkspaceCard key={w.workspaceId} workspace={w} index={i} />)
           : (me.memberships ?? []).map((m) => <WorkspaceCardSkeleton key={m.workspaceId} name={m.workspaceName} />)}
         {owner && (
           <li>
-            <button type="button" data-plain className="home-card home-card-new" onClick={() => setCreating(true)}>
-              <span className="home-card-new-icon" aria-hidden="true"><PlusIcon /></span>
-              <span className="home-card-name">New workspace</span>
+            <button type="button" data-plain className="ws-card ws-card-new" onClick={() => setCreating(true)}>
+              <span className="ws-card-new-icon" aria-hidden="true"><PlusIcon /></span>
+              <span className="ws-card-new-name">New workspace</span>
               <span className="muted small">For another website or product.</span>
             </button>
           </li>
         )}
       </ul>
+      {list && list.length > 0 && <DeskTotals list={list} />}
       <NewWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
       {settingsOpen && <PageErrorBoundary><SettingsDialog me={me} workspace={undefined} path={path} onClose={() => navigate("/")} /></PageErrorBoundary>}
     </DeskHomeFrame>
@@ -122,7 +123,16 @@ function DeskHomeFrame({ user, onSignOut, children }: { user: { name: string; em
   );
 }
 
-function WorkspaceCard({ workspace: w }: { workspace: WorkspaceSummary }) {
+/** A workspace still on the widget's default colour gets one from this row, so the cards tell apart (after the user's
+ * coloured-cards reference). */
+const CARD_COLORS = ["#2bb36b", "#f7cf4a", "#2f6fe4", "#f05a6e", "#8b5cf6"];
+const cardColor = (w: WorkspaceSummary, i: number) => (w.color.toLowerCase() === APPEARANCE_DEFAULTS.color.toLowerCase() ? CARD_COLORS[i % CARD_COLORS.length]! : w.color);
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const today = () => new Date().toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+
+/** D-140: a card in the workspace's colour: its name and a line on how it's doing, over a small inbox panel
+ * peeking from the bottom (open chats, who needs a person, AI replies, where the widget is). */
+function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; index: number }) {
   const href = `/w/${encodeURIComponent(w.workspaceSlug)}/home`;
   const open = (e: MouseEvent) => {
     // A new tab or window keeps the browser's own behaviour.
@@ -130,29 +140,46 @@ function WorkspaceCard({ workspace: w }: { workspace: WorkspaceSummary }) {
     e.preventDefault();
     switchWorkspace(w);
   };
+  const bg = cardColor(w, index);
+  const lede = w.waiting ? `${plural(w.waiting, "chat")} ${w.waiting === 1 ? "needs" : "need"} a person.` : w.open ? "Nothing waiting on a person." : "All quiet.";
+  const more = [w.installed ? (w.installedOn ? `Live on ${w.installedOn}` : "Widget installed") : "Widget not installed yet", w.aiOn ? "the AI answers first" : "AI replies are off"].join(", ") + ".";
   return (
     <li>
-      <a className="home-card" href={href} onClick={open}>
-        <div className="home-card-top" style={{ "--ws-color": w.color } as CSSProperties}>
+      <a className="ws-card" href={href} onClick={open} style={{ "--ws-bg": bg, "--ws-fg": textOn(bg) } as CSSProperties}>
+        <div className="ws-card-head">
           <WorkspaceMark workspace={w} />
+          <span className="ws-card-name">{w.workspaceName}</span>
+          <span className="ws-card-role">{ROLE_LABEL[w.role]}</span>
         </div>
-        <div className="home-card-body">
-          <div className="home-card-title">
-            <span className="home-card-name">{w.workspaceName}</span>
-            <span className="home-card-role">{ROLE_LABEL[w.role]}</span>
-          </div>
-          <p className={`home-card-site${w.installed ? "" : " muted"}`}>
-            <GlobeIcon aria-hidden="true" />
-            <span>{w.installedOn ?? (w.installed ? "Installed" : "Not installed")}</span>
-          </p>
-          <dl className="home-card-stats">
-            <div><dt>Open</dt><dd>{w.open}</dd></div>
-            <div data-attention={w.waiting > 0 ? "" : undefined}><dt title="Open chats waiting for a person">Need a person</dt><dd>{w.waiting}</dd></div>
-            <div><dt>AI replies</dt><dd className="home-card-ai" data-on={w.aiOn ? "" : undefined}>{w.aiOn ? "On" : "Off"}</dd></div>
-          </dl>
+        <p className="ws-card-lede"><b>{lede}</b> {more}</p>
+        <div className="ws-card-panel" aria-hidden="true">
+          <span className="ws-card-date">{today()}</span>
+          <p className="ws-card-panel-title">Inbox</p>
+          <ul>
+            <li data-on={w.open ? "" : undefined}><span className="ws-check"><ChatIcon /></span>{plural(w.open, "open chat")}</li>
+            <li data-warn={w.waiting ? "" : undefined}><span className="ws-check"><HandoffIcon /></span>{w.waiting ? `${w.waiting} need a person` : "No one waiting"}</li>
+            <li data-on={w.aiOn ? "" : undefined}><span className="ws-check">{w.aiOn ? <CheckIcon /> : <BotIcon />}</span>AI replies {w.aiOn ? "on" : "off"}</li>
+            <li data-on={w.installed ? "" : undefined}><span className="ws-check"><GlobeIcon /></span>{w.installedOn ?? (w.installed ? "Installed" : "Not installed")}</li>
+          </ul>
         </div>
       </a>
     </li>
+  );
+}
+
+/** Under the cards (the reference's stat row): the desk's numbers across every workspace you're in. */
+function DeskTotals({ list }: { list: WorkspaceSummary[] }) {
+  const sum = (f: (w: WorkspaceSummary) => number) => list.reduce((n, w) => n + f(w), 0);
+  const stats = [
+    { n: list.length, label: list.length === 1 ? "Workspace" : "Workspaces" },
+    { n: sum((w) => w.open), label: "Open chats" },
+    { n: sum((w) => w.waiting), label: "Need a person" },
+    { n: list.filter((w) => w.aiOn).length, label: "With AI replies on" },
+  ];
+  return (
+    <dl className="ws-totals">
+      {stats.map((s) => <div key={s.label}><dt>{s.label}</dt><dd>{s.n.toLocaleString()}</dd></div>)}
+    </dl>
   );
 }
 
@@ -161,9 +188,9 @@ function WorkspaceMark({ workspace: w }: { workspace: WorkspaceSummary }) {
   useThemePref();
   const dark = document.documentElement.dataset.theme === "dark";
   const logo = (dark ? w.logoDarkUrl : null) ?? w.logoUrl;
-  if (logo) return <span className="home-card-mark"><img src={logo} alt="" /></span>;
+  if (logo) return <span className="ws-card-mark"><img src={logo} alt="" /></span>;
   return (
-    <span className="home-card-mark" style={{ background: w.color, color: textOn(w.color) }} aria-hidden="true">
+    <span className="ws-card-mark ws-card-initial" aria-hidden="true">
       {w.workspaceName.slice(0, 1).toUpperCase()}
     </span>
   );
@@ -172,17 +199,10 @@ function WorkspaceMark({ workspace: w }: { workspace: WorkspaceSummary }) {
 function WorkspaceCardSkeleton({ name }: { name?: string }) {
   return (
     <li>
-      <div className="home-card">
-        <div className="home-card-top"><Skeleton className="home-card-mark" /></div>
-        <div className="home-card-body">
-          <div className="home-card-title"><span className="home-card-name">{name ?? <SkelText width={96} />}</span></div>
-          <p className="home-card-site"><SkelText width={120} /></p>
-          <dl className="home-card-stats">
-            <div><dt>Open</dt><dd><SkelText width={20} /></dd></div>
-            <div><dt title="Open chats waiting for a person">Need a person</dt><dd><SkelText width={20} /></dd></div>
-            <div><dt>AI replies</dt><dd><SkelText width={24} /></dd></div>
-          </dl>
-        </div>
+      <div className="ws-card ws-card-skel">
+        <div className="ws-card-head"><Skeleton className="ws-card-mark" /><span className="ws-card-name">{name ?? <SkelText width={96} />}</span></div>
+        <p className="ws-card-lede"><SkelText width="80%" /></p>
+        <div className="ws-card-panel"><p className="ws-card-panel-title"><SkelText width={60} /></p></div>
       </div>
     </li>
   );

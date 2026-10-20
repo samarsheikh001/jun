@@ -2409,50 +2409,48 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
 .home-head { margin-bottom: 24px; }
 .home-head h1 { margin: 0 0 4px; font-size: 28px; line-height: 36px; letter-spacing: -0.5px; }
 .home-head p { margin: 0; font-size: 14px; line-height: 21px; }
-.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
 .home-grid > li { display: flex; min-width: 0; }
-.home-card {
-  display: flex; flex-direction: column; width: 100%; min-width: 0; overflow: hidden; padding: 0; border: 1px solid var(--border); border-radius: 16px;
-  background: var(--card); color: var(--card-foreground); font: inherit; text-align: left; text-decoration: none; box-shadow: var(--shadow-sm-tokens);
-  transition: box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1), border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-a.home-card:hover, button.home-card:hover { box-shadow: var(--shadow-md-tokens); border-color: color-mix(in oklch, var(--border), var(--foreground) 8%); }
-.home-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-/* The top: a wash of the widget's colour with its logo (or initial) on it. */
-.home-card-top {
-  display: grid; place-items: center; height: 112px; border-bottom: 1px solid var(--border);
-  background:
-    radial-gradient(120% 90% at 20% 0%, color-mix(in oklch, var(--ws-color, var(--muted)) 26%, transparent), transparent 70%),
-    radial-gradient(90% 80% at 100% 100%, color-mix(in oklch, var(--ws-color, var(--muted)) 18%, transparent), transparent 70%),
-    var(--muted);
-}
-.home-card-mark {
-  display: grid; place-items: center; width: 48px; height: 48px; overflow: hidden; border-radius: 14px; background: var(--card);
-  font-size: 20px; font-weight: 665; box-shadow: var(--shadow-md-tokens);
-}
-.home-card-mark > img { width: 100%; height: 100%; object-fit: contain; }
-.home-card-body { display: grid; gap: 6px; padding: 16px 18px 18px; }
-.home-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.home-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; font-weight: 665; }
-.home-card-role { flex: none; margin-left: auto; padding: 1px 8px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: 12px; line-height: 18px; }
-.home-card-site { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; font-size: 13px; line-height: 20px; }
-.home-card-site > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
-.home-card-site > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-card-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; padding-top: 12px; border-top: 1px solid var(--border); }
-.home-card-stats > div { min-width: 0; }
-.home-card-stats dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
-.home-card-stats dd { margin: 2px 0 0; font-family: var(--font-mono); font-size: 18px; line-height: 26px; font-weight: 525; }
-.home-card-stats > [data-attention] dd { color: color-mix(in oklch, var(--warning), var(--foreground) 25%); }
-.home-card-stats dd.home-card-ai { font-family: inherit; font-size: 14px; color: var(--muted-foreground); }
-.home-card-stats dd.home-card-ai[data-on] { color: var(--success); }
-.home-card-new { align-items: center; justify-content: center; gap: 6px; min-height: 240px; border: 1px dashed color-mix(in oklch, var(--border), var(--foreground) 14%); background: transparent; box-shadow: none; cursor: pointer; color: var(--foreground); }
-.home-card-new-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 4px; border-radius: 12px; background: var(--muted); }
-.home-card-new-icon > svg { width: 18px; height: 18px; }
+/* D-140 (after the user's coloured-cards reference): each workspace is a card in its colour, a bold first
+   sentence over softer text, and a small inbox panel peeking from the bottom edge; totals sit under the grid. */
+.ws-card { position: relative; display: flex; flex-direction: column; width: 100%; min-height: 300px; padding: 18px 18px 0; border-radius: 18px; background: var(--ws-bg, var(--muted)); color: var(--ws-fg, var(--foreground)); text-decoration: none; overflow: hidden; transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 200ms; }
+a.ws-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+a.ws-card:hover .ws-card-panel { transform: translateY(-4px); }
+.ws-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.ws-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ws-card-mark { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--ws-fg, var(--foreground)) 16%, transparent); font-size: 13px; font-weight: 665; }
+.ws-card-mark > img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.ws-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; font-weight: 665; letter-spacing: -0.01em; }
+.ws-card-role { flex: none; margin-left: auto; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ws-fg, var(--foreground)) 14%, transparent); font-size: 12px; line-height: 18px; }
+.ws-card-lede { margin: 12px 0 0; font-size: 13.5px; line-height: 20px; color: color-mix(in srgb, var(--ws-fg, var(--foreground)) 72%, transparent); text-wrap: pretty; }
+.ws-card-lede b { color: var(--ws-fg, var(--foreground)); font-weight: 600; }
+.ws-card-panel { position: relative; margin: auto 0 0 28px; padding: 22px 16px 14px; border-radius: 14px 14px 0 0; background: var(--card); color: var(--foreground); box-shadow: 0 -2px 18px #0000001f; transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+.ws-card-date { position: absolute; top: -11px; left: 12px; padding: 2px 9px; border-radius: 7px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--muted-foreground); font-size: 11.5px; line-height: 18px; }
+.ws-card-panel-title { margin: 0 0 8px; font-size: 15px; line-height: 22px; font-weight: 600; }
+.ws-card-panel ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.ws-card-panel li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; line-height: 18px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-check { display: grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border); color: var(--muted-foreground); }
+.ws-check > svg { width: 10px; height: 10px; }
+.ws-card-panel li[data-on] { color: var(--foreground); }
+.ws-card-panel li[data-on] .ws-check { background: color-mix(in oklch, var(--success) 16%, var(--card)); box-shadow: none; color: var(--success); }
+.ws-card-panel li[data-warn] { color: var(--foreground); }
+.ws-card-panel li[data-warn] .ws-check { background: color-mix(in oklch, var(--warning) 20%, var(--card)); box-shadow: none; color: var(--warning); }
+.ws-card-skel { background: var(--muted); }
+.ws-card-new { align-items: center; justify-content: center; gap: 6px; padding: 18px; border: 1px dashed color-mix(in oklch, var(--border), var(--foreground) 14%); background: transparent; cursor: pointer; }
+.ws-card-new:hover { background: var(--muted); }
+.ws-card-new-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 4px; border-radius: 12px; background: var(--muted); }
+.ws-card-new-icon > svg { width: 18px; height: 18px; }
+.ws-card-new-name { font-size: 15px; font-weight: 600; }
+.ws-totals { display: flex; flex-wrap: wrap; gap: 16px 56px; margin: 36px 0 0; }
+.ws-totals > div { display: flex; flex-direction: row-reverse; align-items: baseline; justify-content: flex-end; gap: 12px; }
+.ws-totals dd { margin: 0; font-size: 40px; line-height: 44px; font-weight: 525; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.ws-totals dt { font-size: 13px; color: var(--muted-foreground); }
+@media (prefers-reduced-motion: reduce) { .ws-card, .ws-card-panel { transition: none; } }
 @media (max-width: 767px) {
   .home-bar { padding: 0 16px; }
   .home-main { padding: 24px 16px 48px; }
   .home-grid { grid-template-columns: minmax(0, 1fr); }
-  .home-card-new { min-height: 140px; padding: 16px; }
+  .ws-card-new { min-height: 140px; padding: 16px; }
   .home-user-name { display: none; }
   .home-user { padding: 3px; }
 }
