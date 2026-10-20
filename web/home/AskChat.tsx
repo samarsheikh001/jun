@@ -22,7 +22,7 @@ import {
 import { unifiedDiff } from "../../shared/line-diff.ts";
 import { markdownToPlain, parseMarkdown, tokenCount } from "../../shared/markdown.ts";
 import { api, ApiError } from "../api.ts";
-import { planSync, type ThreadList } from "../../shared/ask-threads.ts";
+import { planSync, readRecent, type RecentQuestion, type ThreadList } from "../../shared/ask-threads.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { formatElapsed } from "../components/PixelLoader.tsx";
 import {
@@ -118,13 +118,13 @@ const controllers = new Map<string, AbortController>();
 const listeners = new Set<() => void>();
 /** D-132: each workspace's localStorage key (set by AskChat from the member); D-134: its saved threads and recent questions. */
 const keys = new Map<string, string>();
-const stores = new Map<string, { threads: SavedThread[]; recent: string[] }>();
+const stores = new Map<string, { threads: SavedThread[]; recent: RecentQuestion[] }>();
 /** Threads deleted in this tab (another tab's copy mustn't bring them back). */
 const gone = new Set<string>();
 /** The turns last written per workspace, so only a change moves a thread to the top. */
 const written = new Map<string, Turn[]>();
 const storeListeners = new Set<() => void>();
-const NO_STORE = { threads: [] as SavedThread[], recent: [] as string[] };
+const NO_STORE = { threads: [] as SavedThread[], recent: [] as RecentQuestion[] };
 let nextId = 1;
 const get = (ws: string): Thread => {
   let t = threads.get(ws);
@@ -214,12 +214,38 @@ async function push(ws: string, id: string): Promise<void> {
   }
 }
 
+/** D-144: sends this browser's recent questions; the server's merge (newest first, each once, ≤ 5) comes back as both sides' list. */
+async function syncRecent(ws: string): Promise<void> {
+  try {
+    const res = await api<{ recent: unknown }>(`/workspaces/${ws}/home/recent`, { method: "PUT", body: { recent: storeOf(ws).recent } });
+    const recent = readRecent(res.recent);
+    const store = storeOf(ws);
+    if (JSON.stringify(recent) === JSON.stringify(store.recent)) return;
+    stores.set(ws, { ...store, recent });
+    notifyStore();
+    save(ws);
+  } catch {
+    // Offline: this browser's list stays, and the next sync merges it.
+  }
+}
+
+/** As a changed thread: a moment after the last question (one request per burst). */
+function scheduleRecent(ws: string): void {
+  const k = `${ws}:recent`;
+  clearTimeout(pushTimers.get(k));
+  pushTimers.set(k, setTimeout(() => {
+    pushTimers.delete(k);
+    void syncRecent(ws);
+  }, 800));
+}
+
 /** Reconciles this browser's threads with the server's: newer copies come down, newer or new ones go up. */
 function syncThreads(ws: string): Promise<void> {
   const running = syncs.get(ws);
   if (running) return running;
   const run = (async () => {
     lastSync.set(ws, Date.now());
+    void syncRecent(ws);
     let list: ThreadList;
     try {
       list = await api<ThreadList>(threadsPath(ws));
@@ -288,10 +314,10 @@ function bind(ws: string, userId: string): void {
   void syncThreads(ws);
 }
 
-function useStore(ws: string): { threads: SavedThread[]; recent: string[] } {
+function useStore(ws: string): { threads: SavedThread[]; recent: RecentQuestion[] } {
   return useSyncExternalStore((cb) => (storeListeners.add(cb), () => storeListeners.delete(cb)), () => storeOf(ws));
 }
-const useRecent = (ws: string): string[] => useStore(ws).recent;
+const useRecent = (ws: string): RecentQuestion[] => useStore(ws).recent;
 
 /** D-134: the saved threads and the open one, for the header's list. */
 export function useAskThreads(ws: string): { threads: SavedThread[]; current: string; busy: boolean } {
@@ -412,6 +438,7 @@ export function askDesk(ws: string, text: string): void {
   stores.set(ws, { ...storeOf(ws), recent: addRecent(storeOf(ws).recent, text) });
   notifyStore();
   save(ws);
+  scheduleRecent(ws);
   void answer(ws, [...turns, { id: nextId++, role: "user", text: text.trim() }]);
 }
 
@@ -1032,7 +1059,7 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
             <div className="ask-recent" role="group" aria-labelledby="ask-recent-title">
               <h3 id="ask-recent-title">Recent</h3>
               <ul>
-                {recent.map((q) => (
+                {recent.map(({ q }) => (
                   <li key={q}>
                     <button type="button" data-plain className="ask-recent-row" title={q} onClick={() => send(q)}>
                       <ClockIcon aria-hidden="true" />

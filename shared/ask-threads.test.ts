@@ -61,3 +61,18 @@ test("ask threads: sync plan by updatedAt, tombstones and this tab's deletes", (
   };
   assert.deepEqual(planSync(local, server, new Set(["th"])), { download: ["tc", "tg"], upload: ["tb", "td", "tf"], remove: ["te"] });
 });
+
+test("recent questions: merged across browsers, newest first, once each, ≤ 5 (D-144)", async () => {
+  const { mergeRecent, readRecent, MAX_RECENT } = await import("./ask-threads.ts");
+  const here = [{ q: "What broke?", at: 50 }, { q: "Refunds", at: 10 }];
+  const there = [{ q: "what  broke?", at: 40 }, { q: "Export errors", at: 30 }, { q: "Refunds ", at: 60 }];
+  assert.deepEqual(mergeRecent(here, there), [{ q: "Refunds", at: 60 }, { q: "What broke?", at: 50 }, { q: "Export errors", at: 30 }]);
+  const many = Array.from({ length: 8 }, (_, i) => ({ q: `Q${i}`, at: i }));
+  assert.deepEqual(mergeRecent(many).map((r) => r.q), ["Q7", "Q6", "Q5", "Q4", "Q3"]);
+  assert.equal(mergeRecent(many).length, MAX_RECENT);
+  assert.deepEqual(mergeRecent([{ q: "  ", at: 9 }]), []);
+  // D-132's bare strings keep their order; bad items are dropped; a clock far ahead is pulled back.
+  assert.deepEqual(readRecent(["b", 3, "a"], 10_000), [{ q: "b", at: 9000 }, { q: "a", at: 7000 }]);
+  assert.deepEqual(readRecent([{ q: "x", at: 99_999_999 }, { q: "y" }, null], 1000), [{ q: "x", at: 61_000 }]);
+  assert.deepEqual(readRecent("nope"), []);
+});

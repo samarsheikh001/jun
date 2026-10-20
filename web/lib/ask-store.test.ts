@@ -4,10 +4,10 @@ import type { ProposedAction } from "../../shared/desk-assistant.ts";
 import { addRecent, askKey, EXPIRED, MAX_RECENT, MAX_THREADS, MAX_TURNS, mergeThreads, readServerThread, restoreAsk, serialiseAsk as serialiseState, serverThread, threadTitle, trimTurns, upsertThread, type SavedThread, type Turn } from "./ask-store.ts";
 
 // One thread, as D-132 kept it: the v2 store with a single thread.
-const serialiseAsk = (turns: Turn[], recent: string[]) => serialiseState({ current: "t1", threads: [{ id: "t1", title: "", updatedAt: 1, turns }], recent });
+const serialiseAsk = (turns: Turn[], recent: string[]) => serialiseState({ current: "t1", threads: [{ id: "t1", title: "", updatedAt: 1, turns }], recent: recent.map((q, i) => ({ q, at: 1000 - i })) });
 const restoreOne = (raw: string | null, nextId: () => number) => {
   const s = restoreAsk(raw, nextId);
-  return { turns: s.threads[0]?.turns ?? [], recent: s.recent };
+  return { turns: s.threads[0]?.turns ?? [], recent: s.recent.map((r) => r.q) };
 };
 
 const ids = () => {
@@ -63,10 +63,11 @@ test("trimTurns: the last turns, starting at a question, within the size cap", (
 });
 
 test("addRecent: newest first, once each, capped", () => {
-  let r: string[] = [];
-  for (const q of ["One", "Two", "  one ", "Three", "Four", "Five", "Six", ""]) r = addRecent(r, q);
-  assert.deepEqual(r, ["Six", "Five", "Four", "Three", "one"]);
+  let r: { q: string; at: number }[] = [];
+  for (const q of ["One", "Two", "  one ", "Three", "Four", "Five", "Six", ""]) r = addRecent(r, q, 50);
+  assert.deepEqual(r.map((x) => x.q), ["Six", "Five", "Four", "Three", "one"]);
   assert.equal(r.length, MAX_RECENT);
+  assert.ok(r[0]!.at > r[1]!.at);
 });
 
 test("serialise: an invite link made on a card isn't stored (D-133); new kinds come back", () => {
@@ -123,7 +124,7 @@ test("threads: v1 migrates, upsert / merge / caps (D-134)", () => {
   const migrated = restoreAsk(v1, ids(), 5);
   assert.equal(migrated.current, "t-v1");
   assert.deepEqual(migrated.threads.map((t) => [t.id, t.title, t.updatedAt, t.turns.length]), [["t-v1", "What broke on billing?", 5, 2]]);
-  assert.deepEqual(migrated.recent, ["What broke on billing?"]);
+  assert.deepEqual(migrated.recent.map((r) => r.q), ["What broke on billing?"]);
   assert.equal(threadTitle([]), "New chat");
   assert.equal(threadTitle([{ role: "user", text: "x".repeat(100) }]).length, 80);
 

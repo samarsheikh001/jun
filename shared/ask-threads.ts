@@ -91,3 +91,39 @@ export function planSync(local: ThreadMeta[], server: ThreadList, gone: Readonly
   }
   return plan;
 }
+
+// ---------- D-144: the member's recent questions, merged across browsers ----------
+
+export const MAX_RECENT = 5;
+export const MAX_RECENT_QUESTION = 500;
+
+/** One question asked, and when (ms); the newest asking counts. */
+export interface RecentQuestion {
+  q: string;
+  at: number;
+}
+
+const recentKey = (q: string) => q.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** Several lists as one: each question once (ignoring case and spaces, its newest time kept), newest first, ≤ MAX_RECENT. */
+export function mergeRecent(...lists: RecentQuestion[][]): RecentQuestion[] {
+  const byKey = new Map<string, RecentQuestion>();
+  for (const r of lists.flat()) {
+    const key = recentKey(r.q);
+    if (!key) continue;
+    const had = byKey.get(key);
+    if (!had || r.at > had.at) byKey.set(key, { q: r.q.trim().replace(/\s+/g, " "), at: r.at });
+  }
+  return [...byKey.values()].sort((a, b) => b.at - a.at).slice(0, MAX_RECENT);
+}
+
+/** A stored or sent list read leniently: `{ q, at }` items (or bare strings, D-132's shape, timed newest first before `now`); merged. */
+export function readRecent(v: unknown, now = Date.now()): RecentQuestion[] {
+  if (!Array.isArray(v)) return [];
+  const out: RecentQuestion[] = [];
+  v.slice(0, 20).forEach((r, i) => {
+    if (typeof r === "string") out.push({ q: r.slice(0, MAX_RECENT_QUESTION), at: now - 1000 * (i + 1) });
+    else if (isObj(r) && typeof r.q === "string" && typeof r.at === "number" && Number.isFinite(r.at) && r.at > 0) out.push({ q: r.q.slice(0, MAX_RECENT_QUESTION), at: Math.min(Math.floor(r.at), now + 60_000) });
+  });
+  return mergeRecent(out);
+}

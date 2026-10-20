@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { readAskTurns, AssistantInputError, type AskEvent } from "../../shared/desk-assistant.ts";
-import { cleanThread, isThreadId, overCap, TOMBSTONE_MS, type ThreadList } from "../../shared/ask-threads.ts";
+import { cleanThread, isThreadId, mergeRecent, overCap, readRecent, TOMBSTONE_MS, type ThreadList } from "../../shared/ask-threads.ts";
 import { briefWindows, freshBrief, needsPoints, type LiveNeeds } from "../../shared/home-brief.ts";
 import { validTimezone } from "../../shared/hours.ts";
 import { nextQuestions, runAssistant } from "../ai/desk-assistant.ts";
@@ -14,7 +14,8 @@ import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts"
 // I-19 (D-127): Home. GET …/home/brief answers at once with today's cached brief, or the plain one
 // written in code while the AI words it (`writing`: the page then POSTs …/home/brief); POST also
 // refreshes; GET …/home/needs (D-131) counts "What needs you" now. POST …/home/ask streams one
-// answer of the desk assistant as NDJSON (AskEvent); …/home/threads (D-139) keeps the member's assistant threads.
+// answer of the desk assistant as NDJSON (AskEvent); …/home/threads (D-139) keeps the member's assistant threads,
+// …/home/recent (D-144) their last questions.
 // Members only; the brief and the assistant see what any member of the workspace can see.
 
 export const home = new Hono<AppEnv>();
@@ -197,4 +198,29 @@ home.delete("/workspaces/:id/home/threads/:tid", async (c) => {
      ON CONFLICT (workspace_id, user_id, id) DO UPDATE SET title = '', turns = '[]', deleted_at = excluded.deleted_at`,
   ).bind(workspaceId, c.get("user").id, id, now, now).run();
   return c.json({ ok: true });
+});
+
+// D-144: the member's recent questions. PUT sends this browser's list; the answer is it merged with the
+// one kept here (newest first, each question once, ≤ 5), which is stored and becomes both sides' list.
+home.put("/workspaces/:id/home/recent", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const userId = c.get("user").id;
+  const body = await readJson(c.req);
+  if (!Array.isArray(body.recent)) throw new HttpError(400, "invalid_body", "recent must be a list of { q, at }.");
+  const now = Date.now();
+  const row = await c.env.DB.prepare("SELECT questions FROM assistant_recent WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, userId).first<{ questions: string }>();
+  let kept: unknown = [];
+  try {
+    kept = row ? JSON.parse(row.questions) : [];
+  } catch {
+    // A broken row is replaced.
+  }
+  const recent = mergeRecent(readRecent(kept, now), readRecent(body.recent, now));
+  const json = JSON.stringify(recent);
+  if (json !== row?.questions)
+    await c.env.DB.prepare("INSERT INTO assistant_recent (workspace_id, user_id, questions, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (workspace_id, user_id) DO UPDATE SET questions = excluded.questions, updated_at = excluded.updated_at")
+      .bind(workspaceId, userId, json, now)
+      .run();
+  return c.json({ recent });
 });

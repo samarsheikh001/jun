@@ -1,3 +1,4 @@
+import { MAX_RECENT, MAX_RECENT_QUESTION, mergeRecent, readRecent, type RecentQuestion } from "../../shared/ask-threads.ts";
 import { PROPOSAL_KINDS, stepChat, type AskStep, type AskTurn, type ProposalOutcome, type ProposedAction } from "../../shared/desk-assistant.ts";
 
 // D-132: Home's assistant thread kept in this browser (localStorage, per workspace + member), so a reload
@@ -14,14 +15,13 @@ export interface Stored {
   v: 2;
   current: string | null;
   threads: { id: string; title: string; updatedAt: number; turns: StoredTurn[] }[];
-  /** The member's last questions, newest first, distinct; kept through New chat. */
-  recent: string[];
+  /** The member's last questions, newest first, distinct; kept through New chat. D-144: with when (D-132 kept bare strings). */
+  recent: RecentQuestion[];
 }
 
 export const MAX_TURNS = 30;
 export const MAX_BYTES = 200_000;
-export const MAX_RECENT = 5;
-const MAX_QUESTION = 500;
+export { MAX_RECENT };
 export const EXPIRED: ProposalOutcome = { status: "cancelled", detail: "expired" };
 
 export const askKey = (workspaceId: string, userId: string) => `jun:ask:${workspaceId}:${userId}`;
@@ -137,7 +137,7 @@ export interface SavedThread {
 export interface AskState {
   current: string | null;
   threads: SavedThread[];
-  recent: string[];
+  recent: RecentQuestion[];
 }
 
 export const MAX_THREADS = 20;
@@ -200,7 +200,7 @@ export function restoreAsk(raw: string | null, nextId: () => number, now = Date.
   }
   if (!isObj(v)) return empty;
   const turnsOf = (list: unknown) => (Array.isArray(list) ? list.map((t) => readTurn(t, nextId())).filter((t): t is Turn => t !== null) : []);
-  const recent = Array.isArray(v.recent) ? v.recent.filter(str).slice(0, MAX_RECENT) : [];
+  const recent = readRecent(v.recent, now);
   if (v.v === 1) {
     const turns = turnsOf(v.turns);
     if (!turns.length) return { ...empty, recent };
@@ -233,10 +233,10 @@ export function readServerThread(v: unknown, nextId: () => number): SavedThread 
   return { id: v.id, title: str(v.title) && v.title ? v.title : threadTitle(turns), updatedAt: v.updatedAt, turns };
 }
 
-/** The recent questions with `question` first, once each (ignoring case and spaces), ≤ MAX_RECENT. */
-export function addRecent(recent: string[], question: string): string[] {
-  const q = question.trim().replace(/\s+/g, " ").slice(0, MAX_QUESTION);
+/** The recent questions with `question` first (asked `now`), once each (ignoring case and spaces), ≤ MAX_RECENT. */
+export function addRecent(recent: RecentQuestion[], question: string, now = Date.now()): RecentQuestion[] {
+  const q = question.trim().replace(/\s+/g, " ").slice(0, MAX_RECENT_QUESTION);
   if (!q) return recent;
-  const same = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase() === q.toLowerCase();
-  return [q, ...recent.filter((s) => !same(s))].slice(0, MAX_RECENT);
+  // Newer than anything kept, even with a clock behind another browser's.
+  return mergeRecent(recent, [{ q, at: Math.max(now, ...recent.map((r) => r.at + 1)) }]);
 }
