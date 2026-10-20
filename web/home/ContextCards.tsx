@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { useState } from "react";
 import type { StepPassages } from "../../shared/desk-assistant.ts";
 import { Chevron, Fold } from "@/components/agent-steps.tsx";
@@ -30,6 +31,7 @@ export function ContextCards({ passages }: { passages: StepPassages }) {
         <Chevron open={open} />
       </button>
       <Fold open={open}>
+        <ScrollArea orientation="horizontal" className="ctx-scroll" viewportProps={{ tabIndex: -1, style: { scrollSnapType: "x mandatory", scrollPaddingInline: 2 } }}>
         <ul className="ctx-list">
           {passages.hits.map((h, i) => {
             const domain = domainOf(h.url);
@@ -59,6 +61,7 @@ export function ContextCards({ passages }: { passages: StepPassages }) {
             );
           })}
         </ul>
+        </ScrollArea>
       </Fold>
     </div>
   );

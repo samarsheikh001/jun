@@ -2559,11 +2559,13 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
   .home-ask .home-chat.empty { justify-content: flex-end; }
 }
 .home-chat.empty { height: auto; }
+.home-ask, .home-ask * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.home-ask [data-slot="scroll-area-viewport"] { scrollbar-width: none; }
 .home-chat .wchat-rows { padding: 16px 16px 12px; gap: 16px; }
 .ask-off { margin: 0; padding: 16px 16px 4px; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
 .ask-off a { color: var(--foreground); }
 .skel-composer { display: flex; align-items: center; min-height: 44px; margin: 12px; padding: 0 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); }
-.ask-ai { max-width: min(760px, 100%); gap: 8px; }
+.ask-ai { max-width: min(760px, 100%); gap: 8px; grid-template-columns: minmax(0, 1fr); }
 .ask-text { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .ask-text > * { margin: 0; }
 .ask-text > * + * { margin-top: 0.5em; }
@@ -2608,7 +2610,8 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .rec-head:hover { background: var(--accent); color: var(--foreground); }
 .rec-head-icon { display: inline-flex; }
 .rec-head-icon > svg { width: 13px; height: 13px; }
-.rec-wrap { container-type: inline-size; max-height: 320px; overflow: auto; margin-top: 4px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border); }
+.rec-wrap { container-type: inline-size; max-height: 320px; margin-top: 4px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border); overflow: hidden; }
+.rec-wrap .rec-table { min-width: 100%; }
 .rec-table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 18px; }
 .rec-table th { position: sticky; top: 0; z-index: 1; padding: 0; background: var(--card); box-shadow: inset 0 -1px var(--border); text-align: left; font-weight: 500; white-space: nowrap; }
 .rec-table th > button { display: inline-flex; align-items: center; gap: 3px; width: 100%; height: 30px; padding: 0 10px; border: 0; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 11.5px; cursor: pointer; }
@@ -2637,8 +2640,9 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 /* D-134, after beautifului.dev's Context Cards: the knowledge passages a search found. */
 .ctx { width: 100%; min-width: 0; }
 /* A row that scrolls sideways, so five passages don't push the answer away. */
-.ctx-list { display: flex; gap: 8px; margin: 4px 0 0; padding: 2px 2px 6px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 2px; scrollbar-width: thin; list-style: none; }
-.ctx-card { flex: none; width: min(260px, 82%); scroll-snap-align: start; display: grid; grid-template-rows: auto auto 1fr auto; gap: 4px; min-width: 0; padding: 10px 12px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border); animation: approval-in 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.ctx-scroll { margin-top: 4px; }
+.ctx-list { display: flex; width: max-content; gap: 8px; margin: 0; padding: 2px 2px 10px; list-style: none; }
+.ctx-card { flex: none; width: 260px; scroll-snap-align: start; display: grid; grid-template-rows: auto auto 1fr auto; gap: 4px; min-width: 0; padding: 10px 12px; border-radius: 10px; background: var(--card); box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border); animation: approval-in 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
 .ctx-top { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
 .ctx-favicon { width: 14px; height: 14px; flex: none; border-radius: 3px; }
 .ctx-kind { display: inline-flex; flex: none; }

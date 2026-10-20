@@ -1,3 +1,4 @@
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { useState } from "react";
 import type { StepTable } from "../../shared/desk-assistant.ts";
 import { Chevron, Fold } from "@/components/agent-steps.tsx";
@@ -40,7 +41,7 @@ export function RecordsTable({ table }: { table: StepTable }) {
         <Chevron open={open} />
       </button>
       <Fold open={open}>
-        <div className="rec-wrap">
+        <ScrollArea orientation="both" className="rec-wrap" viewportProps={{ tabIndex: -1 }}>
           <table className="rec-table">
             <thead>
               <tr>
@@ -69,7 +70,7 @@ export function RecordsTable({ table }: { table: StepTable }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollArea>
       </Fold>
     </div>
   );

@@ -7,15 +7,18 @@ import { cn } from "cn"
  * scrolls both when its root gets a height from a grid/flex parent and when it only has a
  * max-height (popovers, dialogs). Children sit in Base UI's Content element, whose resizes
  * update the scrollbar (content that loads later); put their flex/grid layout on `contentClassName`.
- * Vertical only: content is as wide as the viewport.
+ * Vertical by default (content is as wide as the viewport); `orientation` "horizontal" or "both"
+ * lets wide content (tables, card rows) scroll sideways with the same thin bar.
  */
 function ScrollArea({
   className,
   children,
   contentClassName,
   viewportProps,
+  orientation = "vertical",
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
+  orientation?: "vertical" | "horizontal" | "both"
   /** Classes for the element around the children inside the viewport (put flex/grid layout here). */
   contentClassName?: string
   /** e.g. `tabIndex: -1` to keep a small scroller out of the tab order, or ARIA attributes. */
@@ -34,11 +37,12 @@ function ScrollArea({
       >
         {/* Base UI sizes Content to fit-content for horizontal scrolling; we only scroll vertically,
             so children get the viewport's width (otherwise wide selects push the content past it). */}
-        <ScrollAreaPrimitive.Content data-slot="scroll-area-content" className={contentClassName} style={{ minWidth: 0 }}>
+        <ScrollAreaPrimitive.Content data-slot="scroll-area-content" className={contentClassName} style={orientation === "vertical" ? { minWidth: 0 } : { minWidth: "100%" }}>
           {children}
         </ScrollAreaPrimitive.Content>
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      {orientation !== "horizontal" && <ScrollBar />}
+      {orientation !== "vertical" && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )
