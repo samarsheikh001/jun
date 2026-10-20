@@ -1,5 +1,8 @@
-/*! Jun island backdrop | MIT License
- * D-99: loaded by widget.js when the desk's island colour is "auto". Tells the island frame whether
+/*! Jun island | MIT License
+ * Loaded by widget.js for the island (D-39), with J._bd = { host, post, auto, shown, open } (D-138: moved
+ * out of widget.js to keep the loader under its budget).
+ * "/" on the page opens the island, unless the visitor is typing somewhere on the page.
+ * D-99, when the desk's island colour is "auto" (bd.auto): tells the island frame whether
  * the page behind it is dark (jun:backdrop), so it draws itself near-black on light pages and light on
  * dark ones; again whenever that changes (scrolling past a dark section, the site's theme switch).
  * It looks at colours only, never page text: the first element under the island's spot with a solid
@@ -10,6 +13,11 @@
   var J = window.JunDesk, bd = J && J._bd;
   if (!bd || bd.on) return;
   bd.on = 1;
+  addEventListener("keydown", function (e) {
+    var t = e.target;
+    if (e.key == "/" && !bd.shown() && !e.ctrlKey && !e.metaKey && !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) { e.preventDefault(); bd.open(); }
+  });
+  if (!bd.auto) return;
   var timer, paint;
   // Dark (true), light (false), or null when the value has no solid colour in it.
   function shade(s) {

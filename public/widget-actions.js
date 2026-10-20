@@ -29,7 +29,8 @@
   var CONTROL = /^(read_page|click|type_text|choose_option|scroll_page)$/;
 
   // ---------- WebMCP imperative API, when the browser doesn't have it ----------
-  // (widget.js leaves a shim that queued early registerTool calls; they're replayed below.)
+  // (widget.js leaves a shim that queued early registerTool calls, replayed below, and getTools calls
+  // as [0, resolve], answered once those are in.)
   var shim = document.modelContext && document.modelContext.jun ? document.modelContext : null;
   if (!document.modelContext || shim) {
     var tools = new Map(), target = new EventTarget();
@@ -54,7 +55,10 @@
       dispatchEvent: target.dispatchEvent.bind(target),
     };
     document.modelContext.polyfill = true;
-    if (shim) shim.q.forEach(function (x) { try { document.modelContext.registerTool(x[0], x[1]); } catch (e) { console.warn("Jun:", e.message); } });
+    if (shim) {
+      shim.q.forEach(function (x) { try { if (x[0]) document.modelContext.registerTool(x[0], x[1]); } catch (e) { console.warn("Jun:", e.message); } });
+      shim.q.forEach(function (x) { if (!x[0]) x[1](document.modelContext.getTools()); });
+    }
   }
   var mc = document.modelContext;
   // execute's second argument. Chrome's docs show `execute(input, { signal })` in code but call it "an

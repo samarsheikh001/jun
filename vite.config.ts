@@ -16,15 +16,16 @@ function minifyLoader(): Plugin {
     name: "jun:minify-loader",
     apply: "build",
     writeBundle(options) {
-      // The AI-21 page-actions chunk (widget-actions.js) and D-99's island backdrop chunk are minified the same way.
-      for (const name of ["widget.js", "widget-actions.js", "widget-backdrop.js"]) {
+      // The lazy chunks are minified the same way: AI-21's page actions, the island's (D-99) and D-138's plain button.
+      const titles: Record<string, string> = { "widget.js": "widget loader", "widget-actions.js": "page actions", "widget-island.js": "island", "widget-button.js": "chat button" };
+      for (const name of Object.keys(titles)) {
         const file = join(options.dir ?? "", name);
         if (!existsSync(file)) continue;
         const source = readFileSync(file, "utf8");
         if (!source.startsWith("/*!")) continue; // already minified
         const result = minifySync(name, source, { compress: true, mangle: true });
         if (result.errors.length) throw new Error(`${name} minify failed: ${result.errors.map((e) => e.message).join("; ")}`);
-        writeFileSync(file, `/*! Jun ${name === "widget.js" ? "widget loader" : name === "widget-actions.js" ? "page actions" : "island backdrop"} | MIT License | source: public/${name} */\n${result.code}`);
+        writeFileSync(file, `/*! Jun ${titles[name]} | MIT License | source: public/${name} */\n${result.code}`);
       }
     },
   };

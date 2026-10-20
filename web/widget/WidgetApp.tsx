@@ -290,6 +290,14 @@ function whenPageActionsReady(): Promise<void> {
   return pageActionsReady;
 }
 
+function timeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "";
+  }
+}
+
 function hostContext(): Promise<{ context?: unknown; actions?: unknown }> {
   if (window.parent === window) return Promise.resolve({});
   const id = crypto.randomUUID();
@@ -300,7 +308,11 @@ function hostContext(): Promise<{ context?: unknown; actions?: unknown }> {
       resolve(value);
     };
     const onMessage = (e: MessageEvent) => {
-      if (e.source === window.parent && e.data?.type === "jun:context" && e.data.id === id) done({ context: e.data.context, actions: e.data.actions });
+      if (e.source !== window.parent || e.data?.type !== "jun:context" || e.data.id !== id) return;
+      // D-138: the browser's own details are the same in this frame, so the loader leaves them out
+      // (an older cached loader still sends them: its copy wins).
+      const context = e.data.context && typeof e.data.context === "object" ? { userAgent: navigator.userAgent, language: navigator.language, timezone: timeZone(), ...e.data.context } : e.data.context;
+      done({ context, actions: e.data.actions });
     };
     const timer = setTimeout(() => done({}), 500);
     window.addEventListener("message", onMessage);

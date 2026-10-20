@@ -3,7 +3,8 @@
  *   in <head>, before the site's own scripts: deferred scripts run in document order, so
  *   document.modelContext (below) exists before page code that checks for it once on load.
  * Put it in <head> so it can see errors from the start of the page.
- * Shows a chat button; the chat itself (an iframe from the desk) loads on first open.
+ * Shows the chat: the island or the chat window's greeting card (drawn by an iframe from the desk,
+ * loaded straight away), or a plain chat button (widget-button.js) whose chat loads on first open.
  * Captures recent JS errors, failed requests, page navigation, rage and dead clicks (S-02, S-17)
  * and "stuck on a page after an error" (S-13), masked, kept in this tab (sessionStorage, so a
  * reload keeps them), and shares them with support only when the visitor sends a message.
@@ -35,20 +36,25 @@
  * (e.g. to its own cancel screen). An intent with an exit but no onExit function opens a plain chat
  * instead (with a console warning): the flow never starts without a way out. Names: [a-z0-9_-], max 40
  * (anything else opens a plain chat).
+ * Size: this file runs on every page of every site, so the served (minified) copy stays under 6 KB
+ * gzipped (D-38); what only some pages need lives in lazy chunks (widget-*.js, D-138).
  */
 (function () {
-  var script = document.currentScript;
+  var script = document.currentScript, J;
   if (!script || window.JunDesk) return;
-  var key = script.getAttribute("data-key");
+  var attr = (name) => script.getAttribute("data-" + name);
+  var on = (target, type, fn, capture) => target.addEventListener(type, fn, capture);
+  var key = attr("key");
   if (!key) return console.warn("Jun: no data-key");
-  var origin = new URL(script.src).origin;
-  var color = script.getAttribute("data-color"); // overrides the desk's branding colour
+  var origin = new URL(script.src).origin, api = origin + "/api/widget/" + encodeURIComponent(key);
+  var color = attr("color"); // overrides the desk's branding colour
   // D-92: the site's theme (data-theme, JunDesk.setTheme) wins over the desk's; deskTheme is that.
-  var themes = /^(light|dark|auto)$/, theme = themes.test(script.getAttribute("data-theme")) ? script.getAttribute("data-theme") : null, deskTheme, pageControl;
+  var themes = /^(light|dark|auto)$/, theme = attr("theme"), deskTheme, pageControl;
+  if (!themes.test(theme)) theme = null;
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
-  var events = [], reacted = function () {}; // reacted: the page answered pending clicks (set below)
-  var capture = script.getAttribute("data-capture") != "off";
+  var events = [], reacted = () => {}; // reacted: the page answered pending clicks (set below)
+  var capture = attr("capture") != "off";
   // S-13 state for the current page (path). Tests on localhost can shorten the 3 minutes with ?jun_stuck_ms=.
   var pagePath = location.pathname, pageIssue, seen = 0, stuckSent, stuckMs = 180000;
   if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) stuckMs = +(/[?&]jun_stuck_ms=(\d+)/.exec(location.search) || [])[1] || stuckMs;
@@ -68,16 +74,18 @@
   function parse(u) { try { return new URL(String(u), location.href); } catch (e) {} }
   // Campaign tags keep their values (utm_source=google): they name an ad, never a person.
   var UTM = /^utm_(source|medium|campaign|term|content)$/;
-  function utmValue(v) { return redact(v, 80).replace(/[\s&#=?]+/g, "-"); }
+  var utmValue = (v) => redact(v, 80).replace(/[\s&#=?]+/g, "-");
   function cleanUrl(u) {
     var x = parse(u), q = [];
     if (!x) return redact(String(u).split(/[?#]/)[0], 300);
-    x.searchParams.forEach(function (v, k) { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
-    var path = redact(x.pathname, 300) + (q.length ? "?" + q.map(function (k) { return redact(k, 40) + "=" + (UTM.test(k) ? utmValue(x.searchParams.get(k)) : "…"); }).join("&") : "") +
+    x.searchParams.forEach((v, k) => { if (q.indexOf(k) < 0 && q.length < 10) q.push(k); });
+    var path = redact(x.pathname, 300) + (q.length ? "?" + q.map((k) => redact(k, 40) + "=" + (UTM.test(k) ? utmValue(x.searchParams.get(k)) : "…")).join("&") : "") +
       // Hash routers (#/settings) keep the route, without its own query; plain anchors are dropped.
       (/^#!?\//.test(x.hash) ? redact(x.hash.split("?")[0], 200) : "");
     return x.origin == location.origin ? path : x.origin + path;
   }
+  // This page, masked: for the trail's snapshot, the live visitor list and a nudge.
+  var here = () => ({ url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) });
   // Registrable domain, roughly: the last two labels, or three for "co.uk"-style suffixes.
   function site(h) { var p = h.split("."), n = p.length; return p.slice(n > 2 && p[n - 2].length < 4 && p[n - 1].length < 3 ? -3 : -2).join("."); }
   function push(e) {
@@ -101,38 +109,38 @@
   }
   // Our own traffic (the chat iframe, uploads) isn't the customer's problem.
   function ours(u) { var x = parse(u); return x && x.origin == origin && /^\/(api\/(widget|files)|widget)/.test(x.pathname); }
-  function stackOf(err) { return redact(err && err.stack || "", 800).split("\n").slice(0, 5).join("\n") || undefined; }
+  var stackOf = (err) => redact(err && err.stack || "", 800).split("\n").slice(0, 5).join("\n") || undefined;
 
   if (capture) {
     try {
-      window.addEventListener("error", function (e) {
-        var el = e.target;
-        if (el && el != window && (el.src || el.href)) {
-          if (!ours(el.src || el.href)) push({ kind: "network", method: "GET", url: cleanUrl(el.src || el.href), status: 0, message: "failed to load " + String(el.tagName).toLowerCase() });
+      on(window, "error", (e) => {
+        var el = e.target, src = el && el != window && (el.src || el.href);
+        if (src) {
+          if (!ours(src)) push({ kind: "network", method: "GET", url: cleanUrl(src), status: 0, message: "failed to load " + String(el.tagName).toLowerCase() });
         } else {
           push({ kind: "error", message: redact(e.message || (e.error && e.error.message)), source: e.filename ? cleanUrl(e.filename) + ":" + e.lineno : undefined, stack: stackOf(e.error) });
         }
       }, true);
-      window.addEventListener("unhandledrejection", function (e) {
+      on(window, "unhandledrejection", (e) => {
         var r = e.reason;
         push({ kind: "error", message: "Unhandled rejection: " + redact(r && r.message || r), stack: stackOf(r) });
       });
 
       // fetch and XHR: record failures (4xx/5xx, or no response at all: err); a successful
       // non-GET means a save went through (S-13).
-      var request = function (method, url) {
+      var request = (method, url) => {
         var started = Date.now();
         method = String(method || "GET").toUpperCase();
-        return !ours(url) && function (status, err) {
+        return !ours(url) && ((status, err) => {
           if (status > 399 || err) push({ kind: "network", method: method, url: cleanUrl(url), status: status, message: err && redact(err.message), durationMs: Date.now() - started });
           else if (status > 199 && status < 300 && method != "GET") pageIssue = 0;
-        };
+        });
       };
       if (nativeFetch) {
         window.fetch = function (input, init) {
           var done = request(init && init.method || input && input.method, input && input.url || input);
           var p = nativeFetch.apply(this, arguments);
-          return done ? p.then(function (res) { done(res.status); return res; }, function (err) { done(0, err || {}); throw err; }) : p;
+          return done ? p.then((res) => { done(res.status); return res; }, (err) => { done(0, err || {}); throw err; }) : p;
         };
       }
 
@@ -141,7 +149,7 @@
       xhr.open = function (method, url) { this.__jun = [method, url]; return xhrOpen.apply(this, arguments); };
       xhr.send = function () {
         var x = this, done = x.__jun && request(x.__jun[0], x.__jun[1]);
-        if (done) x.addEventListener("loadend", function () { done(x.status, !x.status && {}); });
+        if (done) on(x, "loadend", () => done(x.status, !x.status && {}));
         return xhrSend.apply(this, arguments);
       };
 
@@ -158,46 +166,44 @@
       // Only changes a visitor could see count: browser extensions (Matter, password managers)
       // rewrite attributes on their own hidden iframes, often outside <body>, on every click.
       // Hiding something counts.
-      var burst, waiting = [], mo = new MutationObserver(function (ms) {
-        if (ms.some(function (m) {
+      var burst, waiting = [], mo = new MutationObserver((ms) => {
+        if (ms.some((m) => {
           var n = m.target.nodeType == 1 ? m.target : m.target.parentElement;
           return n && document.body.contains(n) && (n.getClientRects().length || /^(class|style|hidden|open)$/.test(m.attributeName) && m.oldValue != n.getAttribute(m.attributeName));
         })) reacted();
       });
       // The page answered every click still waiting.
-      reacted = function () { waiting.forEach(function (c) { c.changed = 1; }); waiting = []; mo.disconnect(); };
-      var settled = function (c) { var i = waiting.indexOf(c); if (i > -1) waiting.splice(i, 1); if (!waiting.length) mo.disconnect(); };
-      var targetOf = function (el, button) {
+      reacted = () => { waiting.forEach((c) => { c.changed = 1; }); waiting = []; mo.disconnect(); };
+      var settled = (c) => { var i = waiting.indexOf(c); if (i > -1) waiting.splice(i, 1); if (!waiting.length) mo.disconnect(); };
+      var targetOf = (el, button) => {
         var t = { tag: el.tagName.toLowerCase() }, role = el.getAttribute("role"), text = button && String(el.innerText || "").replace(/\s+/g, " ").trim();
-        if (el.id) t.id = redact(el.id, 60);
-        if (el.getAttribute("aria-label")) t.label = redact(el.getAttribute("aria-label"), 60);
-        if (el.getAttribute("name")) t.name = redact(el.getAttribute("name"), 60);
+        ["id", "aria-label", "name"].forEach((a) => { var v = el.getAttribute(a); if (v) t[a == "id" || a == "name" ? a : "label"] = redact(v, 60); });
         if (role) t.role = role.slice(0, 20);
         if (text && text.length <= 40) t.text = redact(text, 40);
         return t;
       };
-      window.addEventListener("scroll", function () { reacted(); }, true);
-      window.addEventListener("click", function (ev) {
+      on(window, "scroll", () => reacted(), true);
+      on(window, "click", (ev) => {
         var el = ev.target, now = Date.now(), b = burst, c = {};
         el = el && el.closest && (el.closest("button,a,[role=button],input") || el);
         // Not typing, media, our own widget, or scripted clicks.
         if (!el || !ev.isTrusted || el.closest("[data-jun-desk],[contenteditable],textarea,select,canvas,video,audio,input:not([type=submit],[type=button])")) return;
-        var tag = el.tagName.toLowerCase(), button = /^(a|button|input)$/.test(tag) || el.getAttribute("role") == "button";
+        var button = /^(a|button|input)$/i.test(el.tagName) || el.getAttribute("role") == "button";
         if (!waiting.length) mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeOldValue: true, characterData: true });
         waiting.push(c);
         if (!b || b.el != el || now - b.t > 1000 || Math.abs(ev.clientX - b.x) > 30 || Math.abs(ev.clientY - b.y) > 30) {
           b = burst = { el: el, x: ev.clientX, y: ev.clientY, ts: [], first: c };
-          setTimeout(function () {
+          setTimeout(() => {
             settled(c);
             if (!c.changed && b.ts.length < 3 && button && consented && document.body.contains(el) && !el.closest("[target=_blank],[download],[href^='mailto:'],[href^='tel:']")) push({ kind: "dead_click", target: targetOf(el, button) });
           }, 2500);
-        } else setTimeout(function () { settled(c); }, 2500);
+        } else setTimeout(() => settled(c), 2500);
         b.t = now;
         b.last = c;
         var n = b.ts.push(now);
         if (n < 3 || now - b.ts[n - 3] > 1000) return;
         clearTimeout(b.timer);
-        b.timer = setTimeout(function () {
+        b.timer = setTimeout(() => {
           // A triple click that selected text isn't frustration.
           if (burst != b || b.first.changed || b.last.changed || !consented || !button && String(getSelection())) return;
           push({ kind: "rage_click", target: targetOf(el, button), count: b.ts.length });
@@ -206,13 +212,13 @@
 
       // S-13 stuck on a form: on this page for 3+ visible minutes (hidden tab time doesn't count)
       // after a real problem, with no successful submit since. A plain timer would be the cut timed pop-up (N-02).
-      window.addEventListener("submit", function () { pageIssue = 0; reacted(); }, true);
+      on(window, "submit", () => { pageIssue = 0; reacted(); }, true);
     } catch (e) { /* never break the host page */ }
   }
 
   // Visible time on this page (path), for S-13 and P-01 page openers. Runs with capture off too:
   // openers send nothing captured (pageIssue stays unset without capture, so no S-13).
-  setInterval(function () {
+  setInterval(() => {
     if (!document.hidden) seen += 1000;
     if (seen >= stuckMs && pageIssue && !stuckSent && consented) {
       stuckSent = 1;
@@ -220,9 +226,8 @@
     }
     // P-01: the first opener rule (Settings) for this path whose visible seconds are up; the desk
     // sends its line. Not after an error nudge, a card, or once the chat was opened (setOpen clears them).
-    if (openers && !nudged && !nudgeTimer && consented) openers.some(function (r) {
-      return seen >= r.delay * 1000 && RegExp(r.match).test(pagePath) && (nudgeEvent = { kind: "opener", id: r.id }, openers = 0, !showNudge());
-    });
+    if (openers && !nudged && !nudgeTimer && consented) openers.some((r) =>
+      seen >= r.delay * 1000 && RegExp(r.match).test(pagePath) && (nudgeEvent = { kind: "opener", id: r.id }, openers = 0, !showNudge()));
   }, 1000);
 
   // Page changes feed both the debug trail and the live visitor list.
@@ -239,34 +244,31 @@
     viewed();
   }
   try {
-    ["pushState", "replaceState"].forEach(function (name) {
+    ["pushState", "replaceState"].forEach((name) => {
       var orig = history[name];
       history[name] = function () { var r = orig.apply(this, arguments); nav(); return r; };
     });
-    window.addEventListener("popstate", nav);
-    window.addEventListener("hashchange", nav);
+    on(window, "popstate", nav);
+    on(window, "hashchange", nav);
   } catch (e) {}
 
   // ---------- live visitor (V-01), identity (V-03), consent (V-06) ----------
   // data-consent="required": store nothing and stay off the visitor list until JunDesk.consent(true).
-  var consented = script.getAttribute("data-consent") != "required";
-  var userToken = script.getAttribute("data-user-token") || null;
+  var consented = attr("consent") != "required";
+  var userToken = attr("user-token") || null;
   var sid, sess, counted, live, liveTries = 0;
   // sessionStorage, or localStorage with `local`; nothing before consent.
   function store(k, v, local) { try { if (!consented) return null; var s = local ? localStorage : sessionStorage; if (v === 0) s.removeItem(k); else if (v != null) s.setItem(k, v); return s.getItem(k); } catch (e) { return null; } }
-  // 96 random bits as "12-255-0-…" (the desk accepts [A-Za-z0-9_-]{8,64}).
-  function rid() { return crypto.getRandomValues(new Uint8Array(12)).join("-"); }
-  function liveSend(m) { if (live && live.readyState == 1) live.send(JSON.stringify(m)); }
-  function tz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ""; } }
+  var liveSend = (m) => { if (live && live.readyState == 1) live.send(JSON.stringify(m)); };
   // Crawlers, uptime checks and automated browsers never join the visitor list (PostHog drops them too).
   var bot = navigator.webdriver || /bot\b|crawl|spider|slurp|headless|lighthouse|pingdom|uptime|monitor|preview|facebookexternalhit|phantom/i.test(navigator.userAgent);
 
   // The trail survives a reload in this tab (it broke, they refreshed, then asked): the last 30 minutes.
   if (capture) {
-    try { events = JSON.parse(store("jun:e")).filter(function (e) { return e.t > Date.now() - 18e5; }).concat(events).slice(-40); } catch (e) {}
+    try { events = JSON.parse(store("jun:e")).filter((e) => e.t > Date.now() - 18e5).concat(events).slice(-40); } catch (e) {}
     // How this page was reached: a reload is worth knowing about.
     var how = ((performance.getEntriesByType && performance.getEntriesByType("navigation")[0]) || {}).type;
-    push({ kind: "navigation", url: lastUrl = cleanUrl(location.href), how: how == "reload" ? "reload" : how == "back_forward" ? "back" : "open" });
+    push({ kind: "navigation", url: lastUrl = cleanUrl(location.href), how: { reload: "reload", back_forward: "back" }[how] || "open" });
   }
 
   // One session for the whole browser, shared by its tabs (PostHog's rule): a new one after 30
@@ -277,9 +279,10 @@
     try { s = JSON.parse(store("jun:session", null, 1)); } catch (e) {}
     s = s || sess; // storage off: this tab's own
     if (fresh || !s || !s.id || now - s.last > 18e5 || now - s.start > 864e5) {
-      try { new URLSearchParams(location.search).forEach(function (v, k) { var m = /^utm_(source|medium|campaign)$/.exec(k); if (m && v) q[m[1]] = utmValue(v), n++; }); } catch (e) {}
+      try { new URLSearchParams(location.search).forEach((v, k) => { var m = UTM.exec(k); if (m && v) q[m[1]] = utmValue(v), n++; }); } catch (e) {}
       // Another page of this same site isn't where they came from.
-      s = { id: rid(), start: now, pages: 0, ref: x && site(x.hostname) != site(location.hostname) ? cleanUrl(document.referrer) : "", utm: n ? q : null };
+      // The id: 96 random bits as "12-255-0-…" (the desk accepts [A-Za-z0-9_-]{8,64}).
+      s = { id: crypto.getRandomValues(new Uint8Array(12)).join("-"), start: now, pages: 0, ref: x && site(x.hostname) != site(location.hostname) ? cleanUrl(document.referrer) : "", utm: n ? q : null };
     }
     s.last = now;
     store("jun:session", JSON.stringify(s), 1);
@@ -294,7 +297,11 @@
   }
   function count() { sess.pages++; store("jun:session", JSON.stringify(sess), 1); }
   function sendPage() {
-    liveSend({ t: "page", url: location.origin + cleanUrl(location.href), title: redact(document.title, 200), ref: sess.ref, utm: sess.utm, pages: sess.pages, start: sess.start, lang: navigator.language, tz: tz() });
+    var m = here();
+    m.t = "page";
+    m.ref = sess.ref, m.utm = sess.utm, m.pages = sess.pages, m.start = sess.start, m.lang = navigator.language;
+    try { m.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+    liveSend(m);
   }
   function connect() {
     if (!consented || live) return;
@@ -302,149 +309,107 @@
     if (bot) return;
     sid = session().id;
     if (counted != sid) counted = sid, count(); // this page, once per session (not on reconnects)
-    var ws = live = new WebSocket(origin.replace(/^http/, "ws") + "/api/widget/" + encodeURIComponent(key) + "/live?s=" + sid);
+    var ws = live = new WebSocket(api.replace(/^http/, "ws") + "/live?s=" + sid);
     // D-128: jun:live lets the frame link this socket to its chats (it holds the visitor token).
-    ws.onopen = function () { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); post({ type: "jun:live", sessionId: sid }); };
-    ws.onmessage = function (e) {
+    ws.onopen = () => { liveTries = 0; if (userToken) liveSend({ t: "id", token: userToken }); sendPage(); post({ type: "jun:live", sessionId: sid }); };
+    ws.onmessage = (e) => {
       var m; try { m = JSON.parse(e.data); } catch (x) { return; }
       // V-07: a teammate started a chat from the desk's visitor list.
       if (m.t == "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from });
       // D-128: a reply in one of this browser's chats (just its id): the frame refetches its list.
-      if (m.t == "reply") post({ type: "jun:reply", id: m.conversationId });
+      // D-138: with the plain button the chat may not be loaded on this page yet: load it (hidden),
+      // so it counts what's unread (jun:unread, the button's badge) and shows the reply when opened.
+      if (m.t == "reply") post({ type: "jun:reply", id: m.conversationId }), load();
     };
     // Reconnect with backoff, unless this socket was replaced or dropped on purpose.
-    ws.onclose = function () { if (live != ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
+    ws.onclose = () => { if (live != ws) return; live = null; if (liveTries < 8) setTimeout(connect, 1000 * Math.pow(2, liveTries++)); };
   }
   function disconnect() { var ws = live; live = null; if (ws) ws.close(); }
   // A visible tab keeps the session going (a hidden one doesn't, so 30 idle minutes end it).
-  setInterval(function () { if (live && live.readyState == 1) { live.send("ping"); if (!document.hidden && session().id != sid) disconnect(), connect(); } }, 30000);
-
-  function snapshot() {
-    return {
-      page: { url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) },
-      userAgent: navigator.userAgent,
-      viewport: { w: window.innerWidth, h: window.innerHeight },
-      language: navigator.language,
-      timezone: tz(),
-      capturedAt: Date.now(),
-      events: events.slice(), // empty when capture is off
-    };
-  }
+  setInterval(() => { if (live && live.readyState == 1) { live.send("ping"); if (!document.hidden && session().id != sid) disconnect(), connect(); } }, 30000);
 
   // ---------- proactive help (P-01): offer a chat when something really breaks ----------
   var nudged, nudgeTimer, nudgeEvent, openers; // push() and the ticker decide when (P-01)
-  // The card's opener (what the chat starts with if they click it): { text, inviteId?, from?, page? }.
-  var cardOpener;
-  // The card and island launchers' frame shows the offer itself instead.
+  // An offer to chat (what the chat starts with if they take it): { text, inviteId?, from?, page? }.
+  // The card and island frames show it themselves; the plain button's card is widget-button.js's.
   function showCard(o) {
     nudged = 1;
-    if (/card|island/.test(wrap.className)) return post({ type: "jun:proactive", opener: pendingOpener = o, sessionId: sid });
-    cardOpener = o;
-    card.querySelector("p").textContent = o.text;
-    card.querySelector(".from").textContent = o.from || "";
-    card.style.display = "block";
+    if (/card|island/.test(wrap.className)) return pendingOpener = o, proactive();
+    b.card = o;
+    b.ui();
   }
   // The desk words it from what failed (S-11). Plain-text POST: no CORS preflight.
   function showNudge() {
     if (nudged || open) return;
-    nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/nudge", {
-      method: "POST",
-      body: JSON.stringify({ event: nudgeEvent, page: { url: location.origin + cleanUrl(location.href), title: redact(document.title, 200) } }),
-    }).then(function (r) { return r.json(); }).then(function (res) {
-      if (res.show && res.text && !nudged && !open) showCard(res);
-    }).catch(function () {});
+    nativeFetch(api + "/nudge", { method: "POST", body: JSON.stringify({ event: nudgeEvent, page: here() }) })
+      .then((r) => r.json()).then((res) => { if (res.show && res.text && !nudged && !open) showCard(res); }).catch(() => {});
   }
-  function hideNudge() { card.style.display = "none"; }
 
-  // ---------- launcher ----------
+  // ---------- the chat ----------
+  // A shadow root with the chat's frame; the plain button (widget-button.js) adds itself here too.
   var host = document.createElement("div");
   host.setAttribute("data-jun-desk", "");
   var root = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
   root.innerHTML =
     "<style>" +
-    ":host{all:initial}.w{--c:#2f5bea;--t:#fff;visibility:hidden}.w.on{visibility:visible}" +
-    "button{border:0;padding:0;cursor:pointer}.btn,.frame,.nudge{position:fixed;right:22px;bottom:88px;z-index:2147483000}" +
-    // D-34: the earlier Jun widget's palette and radii; the open chat has a soft shadow instead of its border.
-    ".frame,.nudge{background:#fff;color:#171717;border:1px solid #e5e5e5;border-radius:var(--r,16px);display:none}" +
-    // W-04 dark theme ("auto" keeps the light card; the chat itself follows the system). Before .btn, which keeps its colours.
-    ".dark>*{background:#171717;color:#f5f5f5;border-color:#2f2f2f}" +
-    ".btn{bottom:22px;width:52px;height:52px;border-radius:var(--r,16px);background:var(--c);color:var(--t);display:grid;place-items:center}" +
-    ".badge{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e5484d;" +
-    "color:#fff;font:600 11px/18px system-ui,sans-serif;display:none}" +
-    // The open chat takes the launcher's corner (the button stays under it); phones get the whole screen.
-    ".frame,.nudge{width:min(380px,max(300px,32vw))}.frame{bottom:22px;height:min(540px,100dvh - 44px);border:0;box-shadow:0 8px 40px rgba(0,0,0,.16)}" +
-    ".nudge{padding:16px 18px;font:14px/1.6 Arial,sans-serif}" +
-    // Left side (W-04); the full-screen frame on phones wins over it (same specificity, later).
-    ".left>*{right:auto;left:22px}" +
-    // Opening: the chat grows in from its corner (not the island or the greeting card, which morph themselves).
-    ".o{animation:jo .28s cubic-bezier(.23,1,.32,1);transform-origin:100% 100%}.left .o{transform-origin:0 100%}.card .o,.island .o{animation:none}" +
-    "@keyframes jo{from{opacity:0;transform:translateY(10px) scale(.96)}}@media(prefers-reduced-motion:reduce){.o{animation:none}}" +
+    ":host{all:initial}.w:not(.on){visibility:hidden}" +
+    // The open chat's box, in the plain button's corner (the card and the island resize and place it, jun:css).
+    ".frame{position:fixed;right:22px;bottom:22px;z-index:2147483000;width:min(380px,max(300px,32vw));height:min(540px,100dvh - 44px);border:0;display:none}" +
     "@media(max-width:768px){.frame{inset:0;width:100%;height:100dvh;border-radius:0}}" +
-    // W-04 the greeting card (D-34; mode window, launcher "card") and the island (D-39): no button; the frame draws them and says where it goes (jun:css).
-    // The button shows the company logo (a chat bubble until one is uploaded), or "Chat with us".
-    ".btn img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.txt .btn{width:auto;padding:0 18px;font:600 14px system-ui,sans-serif}" +
-    // Their frame is always shown (D-90: the card's never resizes; it morphs inside, clipped by jun:css), and draws its own edge.
-    ".card .btn,.island .btn{display:none}.card .frame,.island .frame{display:block}" +
-    // Unseen until the frame has sized itself: before that it's the default panel, painted dark by a dark-mode browser.
-    ".card .frame:not(.sized),.island .frame:not(.sized){visibility:hidden}" +
-    ".nudge p{margin:0 24px 14px 0}.from{font-size:12px;color:#737373}.go{width:100%;padding:8px 6px;border-radius:calc(var(--r,16px)*.625);background:var(--c);color:var(--t);font:12px Arial,sans-serif}" +
-    ".x{position:absolute;top:12px;right:12px;width:30px;height:30px;background:none;font-size:23px;font-weight:300;color:#737373}" +
-    "</style><div class=\"w\">" +
-    '<div class="nudge" role="dialog" aria-label="Need help?"><button class="x" aria-label="Dismiss">×</button>' +
-    '<div class="from"></div><p></p><button class="go">Chat with us</button></div>' +
-    '<button class="btn" aria-label="Open chat" aria-expanded="false">' +
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg><span class="badge"></span></button><iframe class="frame" title="Chat" allow="clipboard-write; display-capture; autoplay"></iframe></div>';
+    // The card's and the island's frame is always shown (D-90: the card's never resizes; it morphs inside,
+    // clipped by jun:css) and draws its own edge, unseen until it has sized itself: before that it's the
+    // default box, painted dark by a dark-mode browser.
+    ".self .frame{display:block}.self .frame:not(.sized){visibility:hidden}" +
+    '</style><div class="w"><iframe class="frame" title="Chat" allow="clipboard-write; display-capture; autoplay"></iframe></div>';
 
-  var wrap = root.querySelector(".w"), card = root.querySelector(".nudge");
-  var button = root.querySelector(".btn");
-  // W-04: colour and side from the desk's settings, so changing them needs no new snippet.
+  var wrap = root.lastChild, frame = wrap.firstChild, open, pendingOpener, onExit;
+  // Unread chats (the frame's jun:unread), kept for this tab's next pages: the plain button's badge.
+  var unreadBefore = +store("jun:unread") || 0;
+  // What widget-button.js draws from (see its header); b.ui() redraws, a no-op until it has loaded.
+  var b = {
+    root: root, color: color, n: unreadBefore, ui: () => {},
+    toggle: () => setOpen(!open),
+    go: () => { pendingOpener = b.card; setOpen(true); },
+  };
+  // W-04: colour, side and launcher from the desk's settings, so changing them needs no new snippet.
   // Hidden until then, however long they take: guessing showed the plain button, then swapped it for the
   // island. Only when the desk can't be reached does the button show, in the default colour.
-  var branded, lastLauncher = store("jun:launcher:" + key);
+  var launcherKey = "jun:launcher:" + key, lastLauncher = store(launcherKey), chunks = {}; // chunks: see chunk()
   function brand(cfg) {
-    if (branded) return;
-    branded = 1;
-    var c = color || (cfg && cfg.color);
-    if (c && /^#[0-9a-f]{6}$/i.test(c)) wrap.style.setProperty("--c", c);
+    b.cfg = cfg;
     if (cfg) {
-      // Readable text on that colour: the desk works it out (textOn), for data-color too (?color=).
-      wrap.style.setProperty("--t", cfg.text);
       openers = !open && cfg.openers;
       // The desk's mode changed since this tab's last page: forget the early frame's box.
-      if (lastLauncher && lastLauncher != cfg.launcher) wrap.classList.remove(lastLauncher), frame.style.cssText = "", frame.classList.remove("sized");
-      store("jun:launcher:" + key, cfg.launcher);
-      // W-04: side, corner rounding, dark theme, and the launcher (the card and the island load the frame now).
+      if (lastLauncher && lastLauncher != cfg.launcher) wrap.classList.remove(lastLauncher, "self"), frame.style.cssText = "", frame.classList.remove("sized");
+      store(launcherKey, cfg.launcher);
+      // W-04: side, dark theme, and the launcher (the card and the island load the frame now).
       // D-89: the desk keeps sending `launcher` (island | card | button) from its mode and greeting card switch.
       wrap.classList.add(cfg.position, cfg.launcher); // "left", "island", "card"
       deskTheme = cfg.theme;
-      if (cfg.launcher != "button") load();
-      // W-21: on a dark button colour (white text on it), the logo made for dark backgrounds if there is one.
-      var icon = button.querySelector("svg"), face, logo = (cfg.text == "#ffffff" && cfg.logoDarkUrl) || cfg.logoUrl;
-      if (cfg.buttonStyle == "text") wrap.classList.add("txt"), face = document.createElement("span"), face.textContent = "Chat with us";
-      else if (logo) face = document.createElement("img"), face.src = origin + logo, face.alt = "";
-      if (face) icon.replaceWith(face);
-      wrap.style.setProperty("--r", cfg.radius + "px");
+      if (cfg.launcher != "button") wrap.classList.add("self"), load();
       // AI-32 (D-93): the desk's switch; data-page-control="off" keeps this site out. After consent (connect).
-      pageControl = cfg.pageControl && script.getAttribute("data-page-control") != "off";
+      pageControl = cfg.pageControl && attr("page-control") != "off";
       if (pageControl && consented) chunk("page-control");
-      // D-99: an "auto" island is drawn against the page behind it: widget-backdrop.js watches that colour.
-      if (cfg.launcher == "island" && cfg.islandSurface == "auto") window.JunDesk._bd = { host: host, post: post }, chunk("backdrop");
+      // The island's extras (widget-island.js): "/" opens it (D-39), and an "auto" island is drawn
+      // against the page behind it (D-99): that chunk watches the colour there.
+      if (cfg.launcher == "island") J._bd = { host: host, post: post, auto: cfg.islandSurface == "auto", shown: () => open, open: () => setOpen(true) }, chunk("island");
     }
+    if (!cfg || cfg.launcher == "button") chunk("button");
     paintTheme();
     wrap.classList.add("on");
   }
-  // Only .dark is styled here ("auto" keeps the light button and card; the chat follows the system).
-  function paintTheme() {
-    wrap.classList.toggle("dark", (theme || deskTheme) == "dark");
-  }
-  nativeFetch(origin + "/api/widget/" + encodeURIComponent(key) + "/config?color=" + encodeURIComponent(color || "")).then(function (r) { if (!r.ok) throw r; return r.json(); }).then(brand, function () { brand(); });
-  var badge = root.querySelector(".badge");
-  var frame = root.querySelector("iframe"), open;
+  // Only .dark is styled ("auto" keeps the light button and card; the chat follows the system).
+  var paintTheme = () => wrap.classList.toggle("dark", (theme || deskTheme) == "dark");
+  nativeFetch(api + "/config?color=" + encodeURIComponent(color || "")).then((r) => { if (!r.ok) throw r; return r.json(); }).then(brand, () => brand());
   // The island and the card draw themselves in their frame (unseen until it has sized itself), so on this
-  // tab's next pages it starts loading before the settings answer.
-  if (/^(island|card)$/.test(lastLauncher)) wrap.classList.add(lastLauncher, "on"), load();
+  // tab's next pages it starts loading before the settings answer; the plain button's chunk too.
+  if (/^(island|card)$/.test(lastLauncher)) wrap.classList.add(lastLauncher, "on", "self"), load();
+  if (lastLauncher == "button") chunk("button");
+  // D-138: unread chats from an earlier page: the frame loads (hidden) to keep the count right.
+  if (unreadBefore) load();
 
+  // The offer waiting for the frame (it answers jun:proactive-shown).
+  var proactive = () => post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
   function post(message) {
     if (frame.contentWindow) frame.contentWindow.postMessage(message, origin);
   }
@@ -453,11 +418,9 @@
   function load() {
     if (!frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
   }
-  // AI-21 page actions (D-40): WebMCP tools the page registers, offered to the AI. The code lives in
-  // widget-actions.js, loaded on first use; until then registrations queue here. Without native
-  // WebMCP, a small shim takes document.modelContext.registerTool calls so early page code works.
-  // chunk("actions") loads /widget-actions.js once (added scripts run async).
-  var actionQueue = [], chunks = {};
+  // Lazy chunks, each loaded once (added scripts run async): widget-actions.js (below),
+  // widget-button.js, widget-island.js and widget-page-control.js (AI-32).
+  var actionQueue = [];
   function chunk(name) {
     if (chunks[name]) return;
     chunks[name] = 1;
@@ -465,46 +428,35 @@
     s.src = origin + "/widget-" + name + ".js";
     document.head.appendChild(s);
   }
+  // AI-21 page actions (D-40): WebMCP tools the page registers, offered to the AI. The code lives in
+  // widget-actions.js, loaded on first use; until then registrations queue here. Without native
+  // WebMCP, a small shim takes document.modelContext.registerTool calls so early page code works.
   if (document.modelContext) chunk("actions");
   else document.modelContext = {
     jun: 1, q: [],
     registerTool: function (t, o) { this.q.push([t, o]); chunk("actions"); },
-    getTools: function () { chunk("actions"); return new Promise(function (r) { (function w() { document.modelContext.jun ? setTimeout(w, 50) : r(document.modelContext.getTools()); })(); }); },
+    getTools: function () { var q = this.q; chunk("actions"); return new Promise((r) => q.push([0, r])); }, // answered by widget-actions.js
   };
-  var pendingOpener, onExit;
+  // The plain button's badge: unread chats while the chat is closed; opening it counts as seen (as before D-138).
+  function unread(n) { store("jun:unread", (b.n = !open && n || 0) || 0); }
   function setOpen(next) {
     reacted();
-    open = next;
-    if (open) hideNudge(), load(), openers = 0;
-    frame.style.display = open ? "block" : "";
-    frame.classList.toggle("o", !!open);
-    button.setAttribute("aria-expanded", open);
-    button.setAttribute("aria-label", open ? "Close chat" : "Open chat");
+    open = b.open = next;
+    if (open) b.card = 0, unread(0), load(), openers = 0;
+    b.ui();
     post({ type: open ? "jun:open" : "jun:close" });
-    if (open && pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
+    if (open && pendingOpener) proactive();
   }
 
-  button.addEventListener("click", function () { setOpen(!open); });
-  // Island (D-39): "/" opens it, unless the visitor is typing somewhere on the page.
-  document.addEventListener("keydown", function (e) {
-    var t = e.target;
-    if (e.key == "/" && !open && !e.ctrlKey && !e.metaKey && wrap.classList.contains("island") && !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) { e.preventDefault(); setOpen(true); }
-  });
-  card.querySelector(".x").addEventListener("click", hideNudge);
-  card.querySelector(".go").addEventListener("click", function () {
-    pendingOpener = cardOpener;
-    setOpen(true);
-  });
-
-  window.addEventListener("message", function (e) {
+  on(window, "message", (e) => {
     if (e.origin != origin || !e.data || e.source != frame.contentWindow) return;
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
     if (type == "jun:ready") {
       post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented, theme: theme });
       post({ type: open ? "jun:open" : "jun:close" });
-      if (pendingOpener) post({ type: "jun:proactive", opener: pendingOpener, sessionId: sid });
-      var bd = window.JunDesk._bd;
+      if (pendingOpener) proactive();
+      var bd = J._bd;
       if (bd && bd.dark != null) post({ type: "jun:backdrop", dark: bd.dark });
     }
     if (type == "jun:proactive-shown") pendingOpener = null;
@@ -521,45 +473,43 @@
       if (done) done();
     }
     if (type == "jun:context-request") {
-      // The debug snapshot, and (AI-21) what this page offers the AI right now.
-      var a = window.JunDesk._a, id = e.data.id;
-      var reply = function (actions) { post({ type: "jun:context", id: id, context: snapshot(), actions: actions }); };
+      // The debug snapshot, and (AI-21) what this page offers the AI right now. The frame adds the
+      // browser's own details (userAgent, language, timezone: the same there). events is empty when
+      // capture is off (postMessage sends a copy).
+      var a = J._a, id = e.data.id;
+      var reply = (actions) => post({ type: "jun:context", id: id, context: { page: here(), viewport: { w: innerWidth, h: innerHeight }, capturedAt: Date.now(), events: events }, actions: actions });
       if (a) a.list(reply); else reply();
     }
-    if ((type == "jun:run" || type == "jun:undo") && window.JunDesk._a) window.JunDesk._a.handle(e.data, post);
+    if ((type == "jun:run" || type == "jun:undo") && J._a) J._a.handle(e.data, post);
     // D-51: a card action for the page (ChatKit's handler: "client").
-    if (type == "jun:widget") try { window.dispatchEvent(new CustomEvent("jundesk:widget-action", { detail: e.data.action })); } catch (x) {}
-    if (type == "jun:unread") {
-      var n = Number(e.data.count) || 0;
-      badge.textContent = n > 9 ? "9+" : n;
-      badge.style.display = n > 0 && !open ? "block" : "none";
-    }
+    if (type == "jun:widget") try { dispatchEvent(new CustomEvent("jundesk:widget-action", { detail: e.data.action })); } catch (x) {}
+    if (type == "jun:unread") unread(Number(e.data.count)), b.ui();
   });
 
-  window.JunDesk = {
+  J = window.JunDesk = {
     // AI-20: open({ intent, onExit }) starts an intent's chat (see the header). The frame checks the
     // name (a bad one opens a plain chat) and whether the intent needs onExit.
-    open: function (o) {
+    open: (o) => {
       if (o && o.intent) pendingOpener = { intent: o.intent, exit: !!(onExit = typeof o.onExit == "function" && o.onExit) };
       setOpen(true);
     },
-    close: function () { setOpen(false); },
-    highlight: function (o) { post({ type: "jun:highlight", sound: !!(o && o.sound) }); },
-    toggle: function () { setOpen(!open); },
+    close: () => setOpen(false),
+    highlight: (o) => post({ type: "jun:highlight", sound: !!(o && o.sound) }),
+    toggle: b.toggle,
     // D-92: "light", "dark" or "auto" (the visitor's system) from the site's own theme switch; null = the desk's.
-    setTheme: function (t) {
+    setTheme: (t) => {
       theme = themes.test(t) ? t : null;
       paintTheme();
       post({ type: "jun:theme", theme: theme });
     },
     // Signed-in user: a JWT from your backend. The chat and the visitor list then know who it is.
-    identify: function (token) {
+    identify: (token) => {
       userToken = token || null;
       if (userToken) liveSend({ t: "id", token: userToken });
       post({ type: "jun:identify", userToken: userToken });
     },
     // On sign-out: forget this browser's chat identity so the next person starts fresh.
-    logout: function () {
+    logout: () => {
       userToken = null;
       post({ type: "jun:identify", userToken: null });
       disconnect();
@@ -568,7 +518,7 @@
       connect();
     },
     // S-12: the app says what failed, in its own words. Same masking as shared/debug.ts.
-    reportError: function (err) {
+    reportError: (err) => {
       try {
         var m = err && typeof err.message == "string" && err.message.trim();
         if (!m || !capture || !consented) return;
@@ -580,7 +530,7 @@
     },
     // What the visitor did in your app ("export_started", { format: "csv" }): joins the trail, so
     // the AI and your team see it beside errors. Up to 10 properties: strings (masked, ≤ 100), numbers, booleans.
-    track: function (name, props) {
+    track: (name, props) => {
       try {
         name = typeof name == "string" && name.trim().slice(0, 60).replace(/[^\w.:\/ -]/g, "");
         if (!name || !capture || !consented) return;
@@ -593,9 +543,9 @@
         push(e);
       } catch (x) { /* never break the host page */ }
     },
-    consent: function (yes) {
+    consent: (yes) => {
       // Withdrawn: forget the trail and the session this page stored.
-      if (!yes) store("jun:e", 0), store("jun:session", 0, 1);
+      if (!yes) store("jun:e", 0), store("jun:session", 0, 1), store("jun:unread", 0);
       consented = Boolean(yes);
       if (consented) store("jun:e", JSON.stringify(events));
       post({ type: "jun:consent", persist: consented });
@@ -605,23 +555,24 @@
     // AI-21: a WebMCP tool ({ name, description, inputSchema, execute, annotations }) plus extras
     // (pages, key, element, context, available, undo, risk); see widget-actions.js. Returns a remover.
     _q: actionQueue,
-    onWidgetAction: function (fn) {
-      var h = function (e) { fn(e.detail); };
-      window.addEventListener("jundesk:widget-action", h);
-      return function () { window.removeEventListener("jundesk:widget-action", h); };
+    _b: b, // for widget-button.js
+    onWidgetAction: (fn) => {
+      var h = (e) => fn(e.detail);
+      on(window, "jundesk:widget-action", h);
+      return () => removeEventListener("jundesk:widget-action", h);
     },
-    registerAction: function (t) {
-      var r = { t: t, off: null, dead: false };
-      if (window.JunDesk._a) r.off = window.JunDesk._a.register(t);
+    registerAction: (t) => {
+      var r = { t: t }; // widget-actions.js sets r.off; r.dead once removed
+      if (J._a) r.off = J._a.register(t);
       else { actionQueue.push(r); chunk("actions"); }
-      return function () { r.dead = true; if (r.off) r.off(); };
+      return () => { r.dead = true; if (r.off) r.off(); };
     },
   };
   // For code that loaded before this script (e.g. the React hook): the API is there now.
-  try { window.dispatchEvent(new Event("jundesk:ready")); } catch (e) {}
+  try { dispatchEvent(new Event("jundesk:ready")); } catch (e) {}
   connect();
 
   // Loaded from <head> (recommended, for early error capture) there's no body yet.
   if (document.body) document.body.appendChild(host);
-  else document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(host); });
+  else on(document, "DOMContentLoaded", () => document.body.appendChild(host));
 })();

@@ -67,6 +67,13 @@ const PUSH_TTL = 24 * 3600;
 const STALE_MS = 75_000;
 /** The sweep only closes sockets and tells agents; listings already skip stale ones. */
 const SWEEP_MS = 120_000;
+/**
+ * D-138: a session's contact (`session-contact:<sessionId>`), so a page whose frame hasn't loaded (the
+ * plain button's, until it's opened) still gets `reply` signals. The loader starts a new session after
+ * 24 hours at most, so older entries are ignored, and dropped by the sweep (at most once an hour).
+ */
+const SESSION_CONTACT_MS = 86_400_000;
+const SESSION_CONTACT = "session-contact:";
 
 const clip = (value: unknown, max: number): string => (typeof value === "string" ? value.slice(0, max) : "");
 /** Campaign tags from the loader: only source, medium and campaign, short strings. */
@@ -95,6 +102,8 @@ export class WorkspaceHub extends DurableObject<Env> {
   #vapid: Promise<VapidKeys> | undefined;
   /** The sweep alarm is set (saves a storage read per connect; after eviction, setting it again is harmless). */
   #sweepArmed = false;
+  /** When #forgetOldContacts last ran (in memory: after an eviction it runs again, harmlessly). */
+  #contactsCleanedAt = 0;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
@@ -129,6 +138,8 @@ export class WorkspaceHub extends DurableObject<Env> {
         },
         connectedAt: now,
       };
+      const known = await this.ctx.storage.get<{ cid: string; at: number }>(SESSION_CONTACT + info.sessionId);
+      if (known && now - known.at < SESSION_CONTACT_MS) attachment.cid = known.cid;
       await this.#accept(server, ["visitor", `s:${info.sessionId}`], attachment);
       // Announced to agents on its first page event, which carries the page. The loader offers
       // no subprotocol; echo ours if a client offers it (clients reject a missing echo).
@@ -450,6 +461,7 @@ export class WorkspaceHub extends DurableObject<Env> {
       ws.serializeAttachment(a);
       this.#broadcast(JSON.stringify({ type: "visitor", visitor: a.visitor } satisfies HubEvent));
     }
+    await this.#rememberContact(sessionId, contactId);
   }
 
   /**
@@ -457,11 +469,30 @@ export class WorkspaceHub extends DurableObject<Env> {
    * this session's live sockets get `reply` signals for the contact's conversations.
    */
   async linkContact(sessionId: string, contactId: string): Promise<void> {
+    let changed = false;
     for (const [ws, a] of this.#live<VisitorAttachment>(`s:${sessionId}`)) {
       if (a.cid === contactId) continue;
       a.cid = contactId;
       ws.serializeAttachment(a);
+      changed = true;
     }
+    // Sockets that already had it got it from storage (or an earlier link): nothing to write.
+    if (changed) await this.#rememberContact(sessionId, contactId);
+  }
+
+  /** D-138: this session's next pages (their own sockets) start linked, before any frame loads. */
+  async #rememberContact(sessionId: string, contactId: string): Promise<void> {
+    await this.ctx.storage.put(SESSION_CONTACT + sessionId, { cid: contactId, at: Date.now() });
+  }
+
+  /** Drops session links older than a session can last; from the sweep, at most once an hour. */
+  async #forgetOldContacts(): Promise<void> {
+    const now = Date.now();
+    if (now - this.#contactsCleanedAt < 3_600_000) return;
+    this.#contactsCleanedAt = now;
+    const rows = await this.ctx.storage.list<{ at: number }>({ prefix: SESSION_CONTACT, limit: 1000 });
+    const old = [...rows].filter(([, v]) => now - v.at >= SESSION_CONTACT_MS).map(([k]) => k);
+    for (let i = 0; i < old.length; i += 128) await this.ctx.storage.delete(old.slice(i, i + 128));
   }
 
   /**
@@ -516,6 +547,7 @@ export class WorkspaceHub extends DurableObject<Env> {
       this.#send(ws, { t: "id", ok: result.ok, ...(result.ok ? {} : { error: result.error }) } satisfies LiveServerEvent);
       if (!result.ok) return;
       v.contact = { ...result.contact, verified: true };
+      if (a.cid !== result.contact.id) await this.#rememberContact(v.sessionId, result.contact.id);
       a.cid = result.contact.id;
     } else {
       return;
@@ -554,6 +586,7 @@ export class WorkspaceHub extends DurableObject<Env> {
       }
       await this.webSocketClose(ws);
     }
+    await this.#forgetOldContacts();
     if (this.ctx.getWebSockets().length > 0) await this.#armSweep();
   }
 

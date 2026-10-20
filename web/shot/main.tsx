@@ -37,7 +37,7 @@ function ChatShot({ shot }: { shot: Extract<Shot, { kind: "chat" }> }) {
       const data = e.data as { type?: string; id?: string; css?: unknown } | null;
       if (data?.type === "jun:ready") {
         post({ type: "jun:preview", look: shot.look });
-        // As widget-backdrop.js on a website: an auto island turns light over a dark page (D-99).
+        // As widget-island.js on a website: an auto island turns light over a dark page (D-99).
         post({ type: "jun:backdrop", dark: shot.page === "dark" });
         post({ type: shot.open ? "jun:open" : "jun:close" });
         // The plain button's chat sizes itself only by CSS here; give the frame a moment to draw.
