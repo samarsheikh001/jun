@@ -14,6 +14,7 @@ import {
   type TopicItem,
 } from "../../shared/topics.ts";
 import { newId } from "../lib/crypto.ts";
+import { groupHandoffReasons } from "./handoff-groups.ts";
 import { completeText, createModel, loadAiSettings, type AgentModel } from "./providers.ts";
 
 // A-02: labels quiet conversations with a topic, in batches, off the hot path: from the
@@ -59,7 +60,7 @@ export interface TopicRun {
 const month = () => new Date().toISOString().slice(0, 7);
 
 /** Whether labelling may run now (AI on, under the monthly cap), and the model if so. */
-async function topicModel(env: Env, workspaceId: string): Promise<AgentModel | TopicSkip> {
+export async function topicModel(env: Env, workspaceId: string): Promise<AgentModel | TopicSkip> {
   const [settings, usage] = await Promise.all([
     loadAiSettings(env, workspaceId),
     env.DB.prepare("SELECT replies FROM ai_usage WHERE workspace_id = ? AND month = ?").bind(workspaceId, month()).first<{ replies: number }>(),
@@ -189,6 +190,12 @@ export async function kickTopicLabelling(env: Env, workspaceId: string): Promise
     await labelTopics(env, workspaceId);
   } catch (error) {
     console.warn("topic labelling failed:", (error as Error).message);
+  }
+  // D-137: new handoff reason wordings get their group on the same runs.
+  try {
+    await groupHandoffReasons(env, workspaceId);
+  } catch (error) {
+    console.warn("handoff grouping failed:", (error as Error).message);
   }
 }
 

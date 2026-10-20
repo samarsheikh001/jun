@@ -33,7 +33,7 @@ test("next step: by how reasons are written", () => {
 });
 
 const reason = (name: string, count: number, handedOff: number): HandoffReason =>
-  ({ reason: name, count, share: count / handedOff, topics: [], labeled: 0, replyMedian: null, chats: [] });
+  ({ reason: name, count, share: count / handedOff, topics: [], labeled: 0, replyMedian: null, wordings: [], chats: [] });
 
 test("insight: the top reason, the runner-up without a majority, a knowledge gap", () => {
   assert.equal(handoffInsight([], 0), null);

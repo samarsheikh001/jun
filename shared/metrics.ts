@@ -32,6 +32,8 @@ export interface ConversationFacts {
   /** A-02: the conversation's topic label (null while unlabeled). Optional for older callers. */
   topicId?: string | null;
   topicName?: string | null;
+  /** D-137: the AI's short group for the reason (handoff_groups), null for the desk's own reasons or before a pass. */
+  handoffGroup?: string | null;
 }
 
 export interface RatingRow {
@@ -339,6 +341,8 @@ export interface HandoffReason {
   labeled: number;
   /** Median time from the handoff to the team's first reply, over its chats that got one after it. */
   replyMedian: number | null;
+  /** D-137: how the AI wrote the reasons under this group (handoffReasonLabel), most first (at most 3). */
+  wordings: { reason: string; count: number }[];
   /** Its chats, newest first (at most MAX_REASON_CHATS). */
   chats: HandoffChat[];
 }
@@ -349,6 +353,8 @@ export interface HandoffChat {
   topic: string | null;
   replied: boolean;
   replyAfter: number | null;
+  /** D-137: its own reason (handoffReasonLabel), which may differ from the group's label. */
+  reason: string;
 }
 /** Most reasons the report carries ("Show all" on Reports) and chats per reason. */
 export const MAX_HANDOFF_REASONS = 20;
@@ -521,20 +527,42 @@ const ASKS_FOR_PERSON = new RegExp(
 );
 export const asksForPerson = (reason: string): boolean => ASKS_FOR_PERSON.test(reason.trim().replace(/\s+/g, " "));
 
+/** D-137: the group for knowledge gaps, set in code (handoffNextStep's Knowledge step matches it). */
+export const NOT_IN_KNOWLEDGE = "Not in the knowledge";
+const KNOWLEDGE_REASON = /\bknowledge\b|\b(?:not |isn't |un)documented\b|\b(?:no|missing) (?:docs|documentation|help (?:center|centre|articles?))\b/i;
+
 /**
- * Groups handoff reasons that differ only in details: "AI error: <message>" and "Bug flagged by
- * the AI: <what broke>" become one line each, as does the reply cap's number, and every way of
- * asking for a person is "Asked for a person".
+ * D-137: the reasons grouped in code, never sent to the AI: the desk's own ("AI error: <message>",
+ * "Bug flagged by the AI: <what broke>", the reply cap, the turn limit, an empty reply), every way of
+ * asking for a person and knowledge gaps. Null for a reason the AI's grouping pass may name.
  */
-export function handoffReasonLabel(reason: string): string {
+export function fixedHandoffLabel(reason: string): string | null {
   const text = reason.trim().replace(/\s+/g, " ");
+  if (!text.replace(/[\s.]/g, "")) return "No reason given";
   if (asksForPerson(text)) return ASKED_FOR_PERSON;
   const prefix = /^(Bug flagged by the AI|AI error|AI unavailable):/i.exec(text);
   if (prefix) return prefix[1]!;
   if (/^Monthly AI reply cap \(\d+\) reached/i.test(text)) return "Monthly AI reply cap reached";
-  const label = text.replace(/\.$/, "");
-  return label.length > 120 ? `${label.slice(0, 119)}…` : label || "No reason given";
+  if (/^The AI has answered \d+ times without resolving it/i.test(text)) return "Turn limit reached";
+  if (/^The AI gave an empty reply/i.test(text)) return "The AI gave an empty reply";
+  if (KNOWLEDGE_REASON.test(text)) return NOT_IN_KNOWLEDGE;
+  return null;
 }
+
+/** A reason as shown when ungrouped: its fixed label, else its own words (no final full stop, ≤ 120 characters). */
+export function handoffReasonLabel(reason: string): string {
+  const fixed = fixedHandoffLabel(reason);
+  if (fixed) return fixed;
+  const label = reason.trim().replace(/\s+/g, " ").replace(/\.$/, "");
+  return label.length > 120 ? `${label.slice(0, 119)}…` : label;
+}
+
+/**
+ * D-137: how reasons compare before any AI: case, punctuation and a leading "The customer" don't
+ * matter ("Customer wants a refund." = "customer wants a refund"). Also handoff_groups' key.
+ */
+export const reasonKey = (reason: string): string =>
+  reason.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/^(?:the )?(?:customer|visitor|user|client)s? /, "");
 
 /** "45s", "3m", "1h 20m", "2d 4h". */
 export function formatDuration(ms: number): string {
@@ -575,7 +603,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
   const aiTimes: number[] = [];
   const teamTimes: number[] = [];
   const byAgent = new Map<string, number[]>();
-  const reasons = new Map<string, { reason: string; count: number; topics: Map<string, number>; labeled: number; chats: HandoffChat[]; replies: number[] }>();
+  const reasons = new Map<string, { reason: string; count: number; topics: Map<string, number>; labeled: number; chats: HandoffChat[]; replies: number[]; wordings: Map<string, number> }>();
   const handoffReplies: number[] = [];
   let passedWhileOff = 0;
   const pages = new Map<string, PageRow>();
@@ -617,10 +645,13 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
       if (handed) {
         handedOff++;
         if (topic) topic.handedOff++;
-        const label = handoffReasonLabel(c.handoffReason!);
-        const key = label.toLowerCase();
-        const entry = reasons.get(key) ?? { reason: label, count: 0, topics: new Map<string, number>(), labeled: 0, chats: [] as HandoffChat[], replies: [] as number[] };
+        // D-137: the AI's group when a pass named one, else the reason grouped in code.
+        const own = handoffReasonLabel(c.handoffReason!);
+        const label = c.handoffGroup || own;
+        const key = reasonKey(label);
+        const entry = reasons.get(key) ?? { reason: label, count: 0, topics: new Map<string, number>(), labeled: 0, chats: [] as HandoffChat[], replies: [] as number[], wordings: new Map<string, number>() };
         entry.count++;
+        entry.wordings.set(own, (entry.wordings.get(own) ?? 0) + 1);
         if (topic) {
           entry.labeled++;
           entry.topics.set(topic.name, (entry.topics.get(topic.name) ?? 0) + 1);
@@ -632,7 +663,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
           entry.replies.push(replyAfter);
           handoffReplies.push(replyAfter);
         }
-        entry.chats.push({ id: c.id, createdAt: c.createdAt, topic: topic?.name ?? null, replied: c.firstAgentAt !== null, replyAfter });
+        entry.chats.push({ id: c.id, createdAt: c.createdAt, topic: topic?.name ?? null, replied: c.firstAgentAt !== null, replyAfter, reason: own });
         reasons.set(key, entry);
       } else if (c.firstAgentAt === null && !aiOff) {
         aiResolved++;
@@ -713,6 +744,7 @@ export function computeMetrics(input: MetricsInput): MetricsReport {
           topics: [...x.topics].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 2).map(([name, count]) => ({ name, count })),
           labeled: x.labeled,
           replyMedian: durationStat(x.replies).median,
+          wordings: [...x.wordings].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 3).map(([reason, count]) => ({ reason, count })),
           chats: x.chats.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id)).slice(0, MAX_REASON_CHATS),
         })),
       handoffReply: durationStat(handoffReplies),

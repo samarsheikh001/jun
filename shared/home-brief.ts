@@ -13,6 +13,7 @@ import {
   formatDuration,
   handoffReasonLabel,
   periodDays,
+  reasonKey,
   startOfDay,
   startPage,
   struggleSpots,
@@ -143,6 +144,11 @@ export function pagePath(page: string): string {
 /** Handoff reasons that mean the knowledge didn't cover the question. */
 export const KNOWLEDGE_GAP = /couldn'?t answer from the knowledge|not (?:in|covered by) the knowledge|no (?:information|info|answer|docs?|article)|doesn'?t (?:cover|say|mention)|don'?t (?:know|have (?:the|that|any) (?:info|information|details))|couldn'?t find|can'?t find|unable to find|not documented|missing (?:info|information|docs?)/i;
 export const isKnowledgeGap = (reason: string | null | undefined): boolean => Boolean(reason && KNOWLEDGE_GAP.test(reason));
+/** A reason in the AI's own words, trimmed (a gap point's facts: its group would only say "Not in the knowledge"). */
+const ownWords = (reason: string) => {
+  const t = reason.trim().replace(/\s+/g, " ").replace(/\.$/, "");
+  return t.length > 120 ? `${t.slice(0, 119)}…` : t;
+};
 
 /** One browser problem as a signature, for "new since last week": the error's message, or a failed request's method, path and status. */
 export function issueSignature(e: DebugEvent): string | null {
@@ -404,7 +410,7 @@ export function briefPoints(input: BriefInput): BriefPoint[] {
       id: `gap:${gapN++}`,
       section: "unusual",
       plain: `Knowledge gap: the AI couldn't answer ${plural(g.rows.length, "chat")}${about} from the knowledge this week.`,
-      facts: { topic: g.name, chatsThisWeek: g.rows.length, reasons: [...new Set(g.rows.map((r) => handoffReasonLabel(r.handoffReason!)))].slice(0, 3) },
+      facts: { topic: g.name, chatsThisWeek: g.rows.length, reasons: [...new Set(g.rows.map((r) => ownWords(r.handoffReason!)))].slice(0, 3) },
       link: { label: "Knowledge", path: "/knowledge" },
       chats: newest(g.rows).slice(0, MAX_POINT_CHATS),
       tone: "warn",
@@ -453,14 +459,16 @@ export function shortLine(point: Pick<BriefPoint, "id" | "facts"> & { text?: str
     return parts.join(" · ");
   }
   if (point.id === "reasons" && Array.isArray(f.reasons)) {
-    // Grouped again: a brief cached before D-131 has each wording of "asked for a person" apart.
-    const grouped = new Map<string, number>();
+    // Grouped again: a brief cached before D-131 / D-137 has wordings of one reason apart.
+    const grouped = new Map<string, [string, number]>();
     for (const r of f.reasons as { reason?: unknown; chats?: unknown }[]) {
       if (typeof r.reason !== "string") continue;
       const label = handoffReasonLabel(r.reason);
-      grouped.set(label, (grouped.get(label) ?? 0) + (typeof r.chats === "number" ? r.chats : 0));
+      const g = grouped.get(reasonKey(label)) ?? [label, 0];
+      g[1] += typeof r.chats === "number" ? r.chats : 0;
+      grouped.set(reasonKey(label), g);
     }
-    const reasons = [...grouped].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const reasons = [...grouped.values()].sort((a, b) => b[1] - a[1]).slice(0, 3);
     if (reasons.length) return `Handed off: ${reasons.map(([reason, n]) => `${reason} (${n})`).join(", ")}`;
   }
   return point.text ?? point.plain;

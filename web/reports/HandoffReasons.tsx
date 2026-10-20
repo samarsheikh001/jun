@@ -34,21 +34,26 @@ function NextStep({ step }: { step: HandoffStep }) {
   );
 }
 
+/** D-137: the AI's own words under a group, when they differ from its label. */
+const ownWords = (x: HandoffReason) => x.wordings.filter((w) => w.reason !== x.reason);
+
 function ReasonCard({ x, box }: { x: HandoffReason; box: HTMLDivElement | null }) {
   const step = handoffNextStep(x.reason);
+  const words = ownWords(x).slice(0, 2);
   return (
     <BarCard box={box} active={x.reason}>
       <span className="tt-card-name">{x.reason}</span>
       <span className="tt-card-row"><span>Handoffs</span><b>{x.count.toLocaleString()} ({percent(x.share)})</b></span>
       {x.replyMedian !== null && <span className="tt-card-row"><span>Team replied in</span><b>{formatDuration(x.replyMedian)}</b></span>}
       {x.topics.length > 0 && <span className="tt-card-foot">{x.topics.map((t) => `${t.name} ${t.count}`).join(" · ")}</span>}
+      {words.map((w) => <span key={w.reason} className="tt-card-foot">“{w.reason}”{w.count > 1 ? ` ×${w.count}` : ""}</span>)}
       <span className="tt-card-foot">{step ? `Next step: ${step.label.toLowerCase()}` : "Click for its chats"}</span>
     </BarCard>
   );
 }
 
 /**
- * A-01's handoff reasons after D-126. `ai.reasons` are grouped by handoffReasonLabel, most first;
+ * A-01's handoff reasons after D-126. `ai.reasons` are grouped (D-137: the AI's short group, else handoffReasonLabel), most first;
  * shares are of all handoffs in the period. The section is left out while the AI is off.
  */
 export function HandoffReasons({ ai }: { ai: MetricsReport["ai"] }) {
@@ -134,7 +139,7 @@ export function HandoffReasons({ ai }: { ai: MetricsReport["ai"] }) {
         open={open !== null}
         onClose={() => setOpen(null)}
         title={open?.reason ?? ""}
-        description={open ? `${plural(open.count, "chat")} handed off${topicsOf ? ` · ${topicsOf}` : ""}` : ""}
+        description={open ? `${plural(open.count, "chat")} handed off${topicsOf ? ` · ${topicsOf}` : ""}${ownWords(open).length ? " · the AI's words on each" : ""}` : ""}
         action={step && <NextStep step={step} />}
         total={open?.count ?? 0}
         chats={(open?.chats ?? []).map((c) => ({
@@ -142,7 +147,7 @@ export function HandoffReasons({ ai }: { ai: MetricsReport["ai"] }) {
           createdAt: c.createdAt,
           aside: (
             <>
-              {c.topic && <span className="hr-chat-topic">{c.topic}</span>}
+              {c.reason !== open?.reason ? <span className="hr-chat-topic" title={c.reason}>{c.reason}</span> : c.topic && <span className="hr-chat-topic">{c.topic}</span>}
               <span className={`tt-pill hr-chat-reply${c.replied ? "" : " none"}`}>
                 {c.replyAfter !== null ? `Replied in ${formatDuration(c.replyAfter)}` : c.replied ? "Replied" : "No reply yet"}
               </span>

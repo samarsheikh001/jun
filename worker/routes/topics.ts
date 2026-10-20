@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { normalizeTag } from "../../shared/inbox.ts";
 import { MAX_TOPICS } from "../../shared/topics.ts";
+import { groupHandoffReasons } from "../ai/handoff-groups.ts";
 import { labelTopics } from "../ai/topics.ts";
 import { requireUser } from "../auth/session.ts";
 import { readJson } from "../lib/validate.ts";
@@ -82,9 +83,22 @@ topics.post("/workspaces/:id/topics/label", async (c) => {
   // Lazy runs (Reports, cron) then wait their usual interval after this one.
   await c.env.WORKSPACE_HUB.getByName(workspaceId).claimTopicRun(0);
   try {
-    return c.json(await labelTopics(c.env, workspaceId));
+    const run = await labelTopics(c.env, workspaceId);
+    return c.json({ ...run, handoffGroups: await groupHandoffReasons(c.env, workspaceId) });
   } catch (error) {
     console.warn("topic labelling failed:", (error as Error).message);
     throw new HttpError(502, "ai_failed", "The AI couldn't label conversations just now. Try again in a minute.");
+  }
+});
+
+/** D-137: group new handoff reason wordings now (the cron and Reports do it with topic labelling). */
+topics.post("/workspaces/:id/topics/handoff-groups", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  try {
+    return c.json(await groupHandoffReasons(c.env, workspaceId));
+  } catch (error) {
+    console.warn("handoff grouping failed:", (error as Error).message);
+    throw new HttpError(502, "ai_failed", "The AI couldn't group handoff reasons just now. Try again in a minute.");
   }
 });

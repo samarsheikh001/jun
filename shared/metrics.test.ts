@@ -16,8 +16,11 @@ import {
   durationStat,
   formatDuration,
   ASKED_FOR_PERSON,
+  fixedHandoffLabel,
   handoffReasonLabel,
   MAX_HANDOFF_REASONS,
+  NOT_IN_KNOWLEDGE,
+  reasonKey,
   MAX_REASON_CHATS,
   parsePeriod,
   periodDays,
@@ -329,6 +332,39 @@ test("handoff reasons: grouped, most first, each with its share", () => {
   assert.equal(many.ai.reasons.length, MAX_HANDOFF_REASONS);
 });
 
+test("handoff reasons: fixed labels, loose keys and the AI's groups (D-137)", () => {
+  assert.equal(fixedHandoffLabel("The AI has answered 8 times without resolving it."), "Turn limit reached");
+  assert.equal(fixedHandoffLabel("The AI gave an empty reply."), "The AI gave an empty reply");
+  assert.equal(fixedHandoffLabel("The AI couldn't answer from the knowledge base."), NOT_IN_KNOWLEDGE);
+  assert.equal(fixedHandoffLabel("Not in the knowledge"), NOT_IN_KNOWLEDGE);
+  assert.equal(fixedHandoffLabel("Pricing for enterprise is not documented"), NOT_IN_KNOWLEDGE);
+  assert.equal(fixedHandoffLabel("Customer questions two charges"), null);
+  assert.equal(fixedHandoffLabel(" . "), "No reason given");
+  assert.equal(reasonKey("The customer wants a refund."), reasonKey("customer  wants a REFUND"));
+  assert.equal(reasonKey("Customer questions two charges; verify billing."), "questions two charges verify billing");
+
+  const r = computeMetrics(input({
+    conversations: [
+      conv(NOW, { id: "a", handoffReason: "Customer questions why they were charged twice; needs specific charge verification.", handoffGroup: "Double charge check" }),
+      conv(NOW - MIN, { id: "b", handoffReason: "Customer questions two charges; verify billing amounts and timing.", handoffGroup: "Double charge check" }),
+      conv(NOW - 2 * MIN, { id: "c", handoffReason: "Customer questions two charges; verify billing amounts and timing.", handoffGroup: "Double charge check" }),
+      // No group yet: grouped in code by the loose key.
+      conv(NOW - 3 * MIN, { id: "d", handoffReason: "Refund needs approval." }),
+      conv(NOW - 4 * MIN, { id: "e", handoffReason: "refund needs approval" }),
+      // A group named like a fixed label joins it.
+      conv(NOW - 5 * MIN, { id: "f", handoffReason: "The AI couldn't answer from the knowledge base." }),
+      conv(NOW - 6 * MIN, { id: "g", handoffReason: "Docs don't say how SSO works", handoffGroup: "Not in the knowledge" }),
+    ],
+  }));
+  assert.deepEqual(r.ai.reasons.map((x) => [x.reason, x.count]), [["Double charge check", 3], ["Not in the knowledge", 2], ["Refund needs approval", 2]]);
+  const dbl = r.ai.reasons[0]!;
+  assert.deepEqual(dbl.wordings, [
+    { reason: "Customer questions two charges; verify billing amounts and timing", count: 2 },
+    { reason: "Customer questions why they were charged twice; needs specific charge verification", count: 1 },
+  ]);
+  assert.deepEqual(dbl.chats.map((c) => [c.id, c.reason.slice(0, 28)]), [["a", "Customer questions why they "], ["b", "Customer questions two charg"], ["c", "Customer questions two charg"]]);
+});
+
 test("handoff reasons: topics, chats and the time from handoff to the team's reply (D-126)", () => {
   const refund = { handoffReason: "Refund needs approval", firstAiAt: NOW + S };
   const r = computeMetrics(input({
@@ -350,7 +386,7 @@ test("handoff reasons: topics, chats and the time from handoff to the team's rep
   assert.deepEqual(x.topics, [{ name: "Refunds", count: 2 }, { name: "Accounts", count: 1 }]);
   assert.equal(x.replyMedian, 3 * MIN);
   assert.deepEqual(x.chats.map((c) => c.id), ["c", "b", "a", "d", "e"], "newest first");
-  assert.deepEqual(x.chats.find((c) => c.id === "d"), { id: "d", createdAt: NOW - 4 * MIN, topic: null, replied: true, replyAfter: null });
+  assert.deepEqual(x.chats.find((c) => c.id === "d"), { id: "d", createdAt: NOW - 4 * MIN, topic: null, replied: true, replyAfter: null, reason: "Refund needs approval" });
   assert.equal(x.chats.find((c) => c.id === "c")!.replied, false);
   assert.deepEqual(r.ai.reasons[1]!.topics, []);
   // Over every reason: 2m, 4m, 10m.

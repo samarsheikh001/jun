@@ -134,6 +134,11 @@ export function topicInput(items: readonly TopicItem[]): string {
  * code fences, prose around the array, `{ "topics": [...] }`, numeric ids and junk entries.
  */
 export function parseTopicOutput(text: string): { id: string; topic: string }[] | null {
+  return parseLabelOutput(text, "topic")?.map(({ id, label }) => ({ id, topic: label })) ?? null;
+}
+
+/** parseTopicOutput for any label field (D-137's handoff groups answer with "group"). */
+export function parseLabelOutput(text: string, field: string): { id: string; label: string }[] | null {
   const candidates: string[] = [];
   const start = text.indexOf("[");
   const end = text.lastIndexOf("]");
@@ -153,12 +158,12 @@ export function parseTopicOutput(text: string): { id: string; topic: string }[] 
       value = inner ?? null;
     }
     if (!Array.isArray(value)) continue;
-    const out: { id: string; topic: string }[] = [];
+    const out: { id: string; label: string }[] = [];
     for (const entry of value) {
       if (!entry || typeof entry !== "object") continue;
-      const { id, topic } = entry as Record<string, unknown>;
-      if ((typeof id !== "string" && typeof id !== "number") || typeof topic !== "string") continue;
-      out.push({ id: String(id).trim(), topic });
+      const { id, [field]: label } = entry as Record<string, unknown>;
+      if ((typeof id !== "string" && typeof id !== "number") || typeof label !== "string") continue;
+      out.push({ id: String(id).trim(), label });
     }
     return out;
   }
