@@ -2602,14 +2602,18 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .ask-source-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); }
 .ask-source-path { margin-left: auto; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10.5px; }
 /* D-134: the newest answer's next questions, chips that ask them. */
-.ask-next { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-.ask-next-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 4px 11px 4px 9px; border: 0; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-sm); color: var(--foreground); font: inherit; font-size: 12.5px; line-height: 18px; text-align: left; cursor: pointer; transition: background-color 150ms; animation: approval-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-.ask-next-chip:hover:not(:disabled) { background: var(--muted); }
-.ask-next-chip:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-.ask-next-chip:disabled { opacity: 0.5; cursor: default; }
-.ask-next-chip > svg { width: 12px; height: 12px; flex: none; color: var(--muted-foreground); }
-.ask-next-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (prefers-reduced-motion: reduce) { .ask-next-chip { animation: none; } }
+/* D-136, after beautifului.dev's Streaming Text follow-ups: a small label, then plain rows (return mark, hairline, soft hover) that fade in one by one. */
+.ask-next { display: flex; flex-direction: column; margin-top: 6px; }
+.ask-next-label { margin: 0 0 2px; color: var(--muted-foreground); font-size: 12px; line-height: 18px; font-weight: 500; }
+.ask-next-row { display: flex; align-items: center; gap: 8px; margin: 0 -6px; padding: 6px; border: 0; border-bottom: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--foreground); font: inherit; font-size: 12.5px; line-height: 18px; text-align: left; cursor: pointer; transition: background-color 100ms; animation: ask-next-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.ask-next-row:last-child { border-bottom: 0; }
+.ask-next-row:hover:not(:disabled) { background: var(--muted); }
+.ask-next-row:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.ask-next-row:disabled { opacity: 0.5; cursor: default; }
+.ask-next-row > svg { width: 11px; height: 11px; flex: none; color: var(--muted-foreground); }
+.ask-next-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes ask-next-in { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { .ask-next-row { animation: none; } }
 /* D-134, after beautifului.dev's Records Table: the chats or contacts a step found, sortable, folding. */
 .rec { width: 100%; min-width: 0; }
 .rec-head { display: inline-flex; align-items: center; gap: 6px; height: 26px; margin-left: -6px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 150ms, color 150ms; }

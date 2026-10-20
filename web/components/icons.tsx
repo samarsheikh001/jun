@@ -130,6 +130,11 @@ export const SparkleIcon = make(SparklesIcon);
 export const AsteriskIcon = make([
   ["path", { d: "M12 3.5V20.5M3.5 12H20.5M6 6L18 18M18 6L6 18", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "0" }],
 ] as IconSvgElement);
+/** A follow-up question (↵, after beautifului.dev's Streaming Text): ask this next. */
+export const ReturnIcon = make([
+  ["path", { d: "M9 10L4 15L9 20", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", key: "0" }],
+  ["path", { d: "M20 4V11C20 13.2 18.2 15 16 15H4", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", key: "1" }],
+] as IconSvgElement);
 /** The AI wherever the desk shows it (the Agent page, AI stats, assistant cards): the same asterisk, not a robot (the user's call). */
 export const BotIcon = AsteriskIcon;
 export const StopIcon = make(HugeStopIcon);

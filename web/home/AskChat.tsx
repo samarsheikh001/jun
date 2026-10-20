@@ -21,7 +21,7 @@ import { ApiError } from "../api.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { formatElapsed } from "../components/PixelLoader.tsx";
 import {
-  ArrowRightIcon,
+  ReturnIcon,
   ArrowUpIcon,
   BookOpenIcon,
   BotIcon,
@@ -814,13 +814,15 @@ function settle(ws: string, turnId: number, confirm: boolean, chosen?: string[])
   void decide(ws, turnId, confirm, chosen);
 }
 
-/** D-134: the newest answer's next questions as chips; one asks it. */
+/** D-134: the newest answer's next questions; one asks it. D-136: drawn like beautifului.dev's Streaming Text
+ * follow-ups (a small label over plain rows with a return mark and a hairline), not pill chips. */
 function NextQuestions({ ws, questions, busy }: { ws: string; questions: string[]; busy: boolean }) {
   return (
-    <div className="ask-next" role="group" aria-label="Ask next">
+    <div className="ask-next" role="group" aria-labelledby="ask-next-label">
+      <p className="ask-next-label" id="ask-next-label">Follow-ups</p>
       {questions.map((q, i) => (
-        <button key={q} type="button" data-plain className="ask-next-chip" style={{ animationDelay: `${i * 60}ms` }} disabled={busy} onClick={() => askDesk(ws, q)}>
-          <ArrowRightIcon aria-hidden="true" />
+        <button key={q} type="button" data-plain className="ask-next-row" style={{ animationDelay: `${i * 60}ms` }} disabled={busy} onClick={() => askDesk(ws, q)}>
+          <ReturnIcon aria-hidden="true" />
           <span>{q}</span>
         </button>
       ))}
