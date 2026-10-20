@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { api } from "../api.ts";
 import { formatSize } from "../lib/thread.ts";
 import { useAction } from "../useAction.ts";
+import { navigate, usePath } from "../lib/router.ts";
 import { FileUpload } from "./FileUpload.tsx";
 import { SourceDetail } from "./SourceDetail.tsx";
 import { KbSheet, KbSheetBody, KbSheetFooter } from "./KbSheet.tsx";
 import { ago, plural, type SourceRow } from "./sources.ts";
+import { sourceIdOf } from "../../shared/knowledge-link.ts";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Textarea } from "@/components/ui/textarea.tsx";
@@ -35,7 +37,8 @@ import {
 
 // The Knowledge page, laid out after Chatbase's Sources page: a row of "add" cards, then a
 // searchable, filterable, paged list of sources. Adding a source, a source's details and the
-// search tester each open in a right-hand sheet (KbSheet); the page itself never navigates.
+// search tester each open in a right-hand sheet (KbSheet). D-139: a source's sheet has its own address,
+// /knowledge/<sourceId> (links from the Home assistant open it; back or closing it returns to the list).
 
 
 interface Hit {
@@ -136,6 +139,8 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
   const [page, setPage] = useState(0);
   const [loadingRows] = useState(() => lastRows(workspaceId));
   const { busy, error, run } = useAction();
+  // D-139: the source in the address, if any (its details sheet open over the list).
+  const routeSource = sourceIdOf(usePath());
 
   const load = useCallback(async () => {
     try {
@@ -169,6 +174,23 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
   const show = (next: Panel) => {
     setPanel(next);
     setOpen(true);
+  };
+  // D-139: the address drives a source's sheet: /knowledge/<id> opens it, /knowledge closes it.
+  useEffect(() => {
+    if (routeSource) {
+      setPanel({ kind: "source", id: routeSource });
+      setOpen(true);
+    } else if (panel?.kind === "source") {
+      setOpen(false);
+    }
+    // Only the address change matters here; the panel is read as it is then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeSource]);
+  const openSource = (id: string) => navigate(`/knowledge/${encodeURIComponent(id)}${location.search}`);
+  const closeSource = () => navigate(`/knowledge${location.search}`);
+  const onSheetOpenChange = (next: boolean) => {
+    if (!next && routeSource) closeSource();
+    else setOpen(next);
   };
   const changed = () => void load();
 
@@ -214,7 +236,10 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
     run(async () => {
       await api(`${base}/${s.id}`, { method: "DELETE" });
       setConfirmDelete(null);
-      if (panel?.kind === "source" && panel.id === s.id) setOpen(false);
+      if (panel?.kind === "source" && panel.id === s.id) {
+        setOpen(false);
+        if (routeSource === s.id) navigate("/knowledge", { replace: true });
+      }
       await load();
     });
 
@@ -298,7 +323,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
                 source={s}
                 canEdit={canEdit}
                 busy={busy}
-                onOpen={() => show({ kind: "source", id: s.id })}
+                onOpen={() => openSource(s.id)}
                 onResync={() => resync(s)}
                 onDelete={() => setConfirmDelete(s)}
               />
@@ -339,7 +364,7 @@ export function KnowledgePage({ workspaceId, canEdit }: { workspaceId: string; c
       <KnowledgeSheet
         panel={panel}
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={onSheetOpenChange}
         base={base}
         canEdit={canEdit}
         source={sourceInPanel}

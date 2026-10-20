@@ -5,6 +5,9 @@
 
 import { NOTIFICATION_PREF_KEYS, type NotificationPrefs } from "./notifications.ts";
 import type { ConversationStatus } from "./protocol.ts";
+import { isSourceId, knowledgeLink } from "./knowledge-link.ts";
+
+export { knowledgeLink };
 
 export class AssistantInputError extends Error {}
 
@@ -1023,7 +1026,8 @@ export const MAX_CHART_ROWS = 8;
 /** D-134: what search_knowledge found, as cards: the source, where in it, a bit of the text. */
 export interface StepPassages {
   query: string;
-  hits: { title: string; heading: string; source: string; kind: string; url: string | null; text: string }[];
+  /** D-139: `sourceId` links a card to its source's page (`knowledgeLink`). */
+  hits: { title: string; heading: string; source: string; sourceId?: string; kind: string; url: string | null; text: string }[];
 }
 export const MAX_PASSAGES = 5;
 
@@ -1265,7 +1269,7 @@ export function stepPassages(tool: string, input: Record<string, unknown>, outpu
   const hits = raw
     .filter((h) => h && typeof h === "object" && typeof h.text === "string")
     .slice(0, MAX_PASSAGES)
-    .map((h) => ({ title: text(h.title) ?? "Untitled", heading: text(h.heading) ?? "", source: text(h.source) ?? text(h.title) ?? "Knowledge", kind: text(h.kind) ?? "website", url: text(h.url), text: clip(h.text as string, 500)! }));
+    .map((h) => ({ title: text(h.title) ?? "Untitled", heading: text(h.heading) ?? "", source: text(h.source) ?? text(h.title) ?? "Knowledge", ...(isSourceId(h.sourceId) ? { sourceId: h.sourceId } : {}), kind: text(h.kind) ?? "website", url: text(h.url), text: clip(h.text as string, 500)! }));
   return hits.length ? { query: clip(typeof input.query === "string" ? input.query : "", 200)!, hits } : undefined;
 }
 
@@ -1432,3 +1436,4 @@ export function agentFileLink(path: string): string {
 /** Paths an answer may link to (Markdown `[label](/inbox/cv_1)`); anything else stays text. */
 const DESK_LINK = /^\/(?:home|inbox|visitors|contacts|dashboard|knowledge|agent|playground|channels|connect|settings)(?:[/?#][\w\-./?=&%#:~+]*)?$/;
 export const isDeskLink = (href: string): boolean => DESK_LINK.test(href) && !href.includes("//");
+

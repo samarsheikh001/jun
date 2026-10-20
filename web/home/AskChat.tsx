@@ -3,6 +3,7 @@ import {
   agentFileLink,
   bulkOutcome,
   isDeskLink,
+  knowledgeLink,
   outcomeTitle,
   proposalCard,
   proposalRisk,
@@ -632,7 +633,8 @@ function Chip({ icon, children, tone, href, title }: { icon?: ReactNode; childre
 function targetHref(p: Proposal): string | undefined {
   if (p.kind === "contact") return `/contacts/${p.contactId}`;
   if (p.kind === "agent_file") return p.op === "delete" ? undefined : agentFileLink(p.path);
-  if (p.kind.startsWith("knowledge_")) return "/knowledge";
+  // D-139: a source that stays has its own page; a removed one is gone, so Knowledge.
+  if (p.kind.startsWith("knowledge_")) return "sourceId" in p && p.kind !== "knowledge_remove" ? knowledgeLink(p.sourceId) : "/knowledge";
   if (p.kind.startsWith("saved_reply_") || p.kind.startsWith("tag_")) return "/settings/inbox";
   if (p.kind.startsWith("topic_")) return "/dashboard/topics";
   if (p.kind.startsWith("team_")) return "/settings/team";

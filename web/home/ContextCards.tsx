@@ -1,6 +1,6 @@
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { useState } from "react";
-import type { StepPassages } from "../../shared/desk-assistant.ts";
+import { knowledgeLink, type StepPassages } from "../../shared/desk-assistant.ts";
 import { Chevron, Fold } from "@/components/agent-steps.tsx";
 import { BookOpenIcon, ExternalLinkIcon, FileIcon, TextIcon } from "@/components/icons.tsx";
 import { domainOf, excerpt } from "../lib/context-cards.ts";
@@ -8,8 +8,8 @@ import { DeskLink } from "./DeskLink.tsx";
 
 // D-134, after beautifului.dev's Context Cards (patterns only): the knowledge passages a search found,
 // one card each: where it's from (the site's favicon and domain, or the document's name), the page and
-// heading, a few lines around the words that matched (marked), its size, and links to Knowledge and
-// the page itself. Under the turn's steps, folding.
+// heading, a few lines around the words that matched (marked), its size, and links to its source's page
+// in Knowledge (D-139) and the page itself. Under the turn's steps, folding.
 
 function SourceIcon({ kind, url }: { kind: string; url: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -50,7 +50,7 @@ export function ContextCards({ passages }: { passages: StepPassages }) {
                   {excerpt(h.text, passages.query).map((part, j) => (part.match ? <mark key={j}>{part.text}</mark> : <span key={j}>{part.text}</span>))}
                 </p>
                 <div className="ctx-links">
-                  <DeskLink href="/knowledge" className="ctx-link">Knowledge</DeskLink>
+                  <DeskLink href={knowledgeLink(h.sourceId)} className="ctx-link" title={h.sourceId ? `${h.source} in Knowledge` : undefined}>Knowledge</DeskLink>
                   {h.url && /^https?:\/\//.test(h.url) && (
                     <a className="ctx-link" href={h.url} target="_blank" rel="noreferrer noopener">
                       Open page <ExternalLinkIcon />
