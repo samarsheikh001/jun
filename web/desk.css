@@ -2418,7 +2418,9 @@ a.ws-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); bor
 .ws-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .ws-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .ws-card-mark { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px #0000000f, 0 1px 3px #0000001f; font-size: 14px; font-weight: 700; }
-.ws-card-mark > img { width: 100%; height: 100%; padding: 4px; object-fit: contain; }
+.ws-card-mark > img { width: 100%; height: 100%; object-fit: contain; }
+/* A logo shows as itself, no tile around it (the user's call); only an initial gets a tile. */
+.ws-card-mark:has(> img) { border-radius: 0; background: none; box-shadow: none; overflow: visible; }
 /* No logo: the initial on a soft white tile, in the card's own colour. */
 .ws-card-initial { box-shadow: none; }
 .ws-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; font-weight: 665; letter-spacing: -0.01em; }
