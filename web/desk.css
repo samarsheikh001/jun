@@ -2582,6 +2582,10 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 /* A cited chat or page inline: its icon and the answer's words, a small inset chip. */
 .ask-src { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 20px; margin: 0 1px; padding: 0 6px 0 4px; border-radius: 6px; background: var(--muted); box-shadow: var(--shadow-xs); color: var(--foreground); font-size: 12.5px; font-weight: 500; line-height: 20px; text-decoration: none; vertical-align: 1px; transition: background-color 150ms; }
 .ask-src:hover { background: color-mix(in oklch, var(--muted), var(--foreground) 8%); }
+/* Punctuation written right after a chip hugs it ("Billing:"), never a gap or a line of its own. */
+.md-hug:has(> .ask-src + .md-hug-p) { white-space: nowrap; }
+.md-hug:has(> .md-hug-p) > .ask-src { margin-right: 0; padding-right: 5px; }
+.ask-src + .md-hug-p { margin-left: -2.5px; }
 .ask-src-icon { display: inline-flex; flex: none; color: var(--muted-foreground); }
 .ask-src-icon > svg { width: 12px; height: 12px; }
 .ask-src-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

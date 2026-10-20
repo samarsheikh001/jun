@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { markdownToPlain, parseInline, parseMarkdown, safeHref, tokenCount, type MdBlock, type MdToken } from "./markdown.ts";
+import { hugsLink, markdownToPlain, parseInline, parseMarkdown, safeHref, tokenCount, type MdBlock, type MdToken } from "./markdown.ts";
 
 /** Tokens back to a compact string: B(bold) I(italic) L(text|href) C(code) [n] and ⏎ for a break. */
 function show(tokens: MdToken[]): string {
@@ -117,4 +117,21 @@ test("markdown: relative links only when the caller allows them (I-19 desk links
   assert.deepEqual(href("See [Ana's chat](/inbox/cv_1)."), []);
   assert.deepEqual(href("See [Ana's chat](/inbox/cv_1).", (h) => h.startsWith("/inbox/")), ["/inbox/cv_1", "/inbox/cv_1"]);
   assert.deepEqual(href("[x](/api/secret)", (h) => h.startsWith("/inbox/")), []);
+});
+
+test("markdown: punctuation right after a link hugs it, also while streaming (D-139)", () => {
+  const desk = (h: string) => h.startsWith("/");
+  const hugs = (body: string, streaming = false) => {
+    const t = parseMarkdown(body, { paths: desk, streaming }).flatMap((b) => b.tokens);
+    return t.flatMap((tok, i) => (hugsLink(tok, t[i + 1]) ? [(t[i + 1] as { text: string }).text] : []));
+  };
+  assert.deepEqual(hugs("In [Billing](/knowledge): refunds."), [":"]);
+  assert.deepEqual(hugs("See [Knowledge](/knowledge)."), ["."]);
+  assert.deepEqual(hugs("**[Ana](/inbox/cv_1)**, then [Bo](/inbox/cv_2)), and"), [",", "),"]);
+  assert.deepEqual(hugs("See [Knowledge](/knowledge) now."), []);
+  assert.deepEqual(hugs("See [Knowledge](/knowledge)x"), []);
+  assert.deepEqual(hugs("Plain word: no link."), []);
+  // Mid-stream: the chip's punctuation arrives later and still hugs it.
+  assert.deepEqual(hugs("In [Billing](/knowledge)", true), []);
+  assert.deepEqual(hugs("In [Billing](/knowledge):", true), [":"]);
 });

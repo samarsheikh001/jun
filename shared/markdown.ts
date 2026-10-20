@@ -147,6 +147,18 @@ export function parseMarkdown(body: string, options: MarkdownOptions = {}): MdBl
   return blocks;
 }
 
+/** Punctuation that closes onto the word before it (a link chip's "Billing:" or "Knowledge."). */
+const HUGGING = /^[.,:;!?)\]}…%'"’”]/u;
+
+/**
+ * Whether `next` is punctuation written right after a link (no space between): drawn together with
+ * the link so it hugs the chip and never wraps onto a line of its own.
+ */
+export function hugsLink(link: MdToken | undefined, next: MdToken | undefined): boolean {
+  if (!link || !next || (link.kind !== "word" && link.kind !== "code") || !link.href || link.space) return false;
+  return next.kind === "word" && next.href !== link.href && HUGGING.test(next.text);
+}
+
 /** How many reveal steps the blocks take. */
 export function tokenCount(blocks: MdBlock[]): number {
   let n = 0;

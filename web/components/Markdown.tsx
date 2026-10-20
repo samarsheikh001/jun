@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import type { MdBlock, MdToken } from "../../shared/markdown.ts";
+import { hugsLink, type MdBlock, type MdToken } from "../../shared/markdown.ts";
 
 // Draws `parseMarkdown` blocks as React elements (never HTML strings). Used for AI answers in the
 // widget (`answer.tsx`, with the paced reveal: `shown` tokens, each word in a `wordClass` span)
@@ -43,16 +43,22 @@ function Inline({ tokens, wordClass, cite, renderLink }: { tokens: MdToken[]; wo
         j++;
       }
       const run = tokens.slice(i, j) as Item[];
+      const link = href.startsWith("/") && renderLink ? (
+        renderLink(href, run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space)))
+      ) : (
+        <a className="md-a" href={href} target="_blank" rel="noopener noreferrer nofollow">{run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space))}</a>
+      );
+      // Punctuation right after the link ("Billing:") stays on its line, against the chip. The
+      // wrapper is there from the start, so the chip isn't remounted when the reveal reaches it.
+      const after = tokens[j];
+      const hug = hugsLink(run.at(-1), after) ? (after as Item) : null;
       out.push(
         <Fragment key={i}>
-          {href.startsWith("/") && renderLink ? (
-            renderLink(href, run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space)))
-          ) : (
-            <a className="md-a" href={href} target="_blank" rel="noopener noreferrer nofollow">{run.map((r, k) => word(r, k, k === run.length - 1 ? "" : r.space))}</a>
-          )}
-          {run.at(-1)!.space}
+          <span className="md-hug">{link}{hug && <span className="md-hug-p">{word({ ...hug, space: "" }, 0, "")}</span>}</span>
+          {hug ? hug.space : run.at(-1)!.space}
         </Fragment>,
       );
+      if (hug) j++;
       i = j;
       continue;
     } else out.push(word(t, i, t.space));
