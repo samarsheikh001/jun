@@ -1,8 +1,8 @@
-import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { api, describeError, type Me } from "../api.ts";
 import { navigate, usePath } from "../lib/router.ts";
 import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref } from "../lib/theme.ts";
-import { APPEARANCE_DEFAULTS, textOn } from "../../shared/appearance.ts";
+import { textOn } from "../../shared/appearance.ts";
 import type { WorkspaceSummary } from "../../shared/workspace-summary.ts";
 import { BotIcon, ChatIcon, CheckIcon, ColumnsIcon, RefreshIcon, GlobeIcon, HandoffIcon, KeyIcon, MonitorIcon, MoonIcon, PlusIcon, SignOutIcon, SunIcon } from "@/components/icons";
 import { DeskIcon } from "../components/DeskIcon.tsx";
@@ -54,7 +54,7 @@ export function DeskHome({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       {error && !list && <p className="error">{error}</p>}
       <ul className="home-grid" aria-busy={list ? undefined : "true"}>
         {list
-          ? list.map((w, i) => <WorkspaceCard key={w.workspaceId} workspace={w} index={i} />)
+          ? list.map((w) => <WorkspaceCard key={w.workspaceId} workspace={w} />)
           : (me.memberships ?? []).map((m) => <WorkspaceCardSkeleton key={m.workspaceId} name={m.workspaceName} />)}
         {owner && (
           <li>
@@ -123,16 +123,12 @@ function DeskHomeFrame({ user, onSignOut, children }: { user: { name: string; em
   );
 }
 
-/** A workspace still on the widget's default colour gets one from this row, so the cards tell apart (after the user's
- * coloured-cards reference). */
-const CARD_COLORS = ["#2bb36b", "#f7cf4a", "#2f6fe4", "#f05a6e", "#8b5cf6"];
-const cardColor = (w: WorkspaceSummary, i: number) => (w.color.toLowerCase() === APPEARANCE_DEFAULTS.color.toLowerCase() ? CARD_COLORS[i % CARD_COLORS.length]! : w.color);
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const today = () => new Date().toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 
-/** D-140: a card in the workspace's colour: its name and a line on how it's doing, over a small inbox panel
+/** D-140: a card per workspace (D-143: neutral, its colour only in the mark): its name and a line on how it's doing, over a small inbox panel
  * peeking from the bottom (open chats, who needs a person, AI replies, where the widget is). */
-function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; index: number }) {
+function WorkspaceCard({ workspace: w }: { workspace: WorkspaceSummary }) {
   const href = `/w/${encodeURIComponent(w.workspaceSlug)}/home`;
   const open = (e: MouseEvent) => {
     // A new tab or window keeps the browser's own behaviour.
@@ -140,7 +136,6 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
     e.preventDefault();
     switchWorkspace(w);
   };
-  const bg = cardColor(w, index);
   const [version, setVersion] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const shot = useSiteShot(w, version);
@@ -155,7 +150,7 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
   const more = [w.installed ? (w.installedOn ? `Live on ${hostOf(w.installedOn)}` : "Widget installed") : "Widget not installed yet", w.aiOn ? "the AI answers first" : "AI replies are off"].join(", ") + ".";
   return (
     <li>
-      <a className="ws-card" href={href} onClick={open} style={{ "--ws-bg": bg, "--ws-fg": textOn(bg) } as CSSProperties}>
+      <a className="ws-card" href={href} onClick={open}>
         <div className="ws-card-head">
           <WorkspaceMark workspace={w} />
           <span className="ws-card-name">{w.workspaceName}</span>
@@ -229,7 +224,7 @@ function WorkspaceMark({ workspace: w }: { workspace: WorkspaceSummary }) {
   const logo = (dark ? w.logoDarkUrl : null) ?? w.logoUrl;
   if (logo) return <span className="ws-card-mark"><img src={logo} alt="" /></span>;
   return (
-    <span className="ws-card-mark ws-card-initial" aria-hidden="true">
+    <span className="ws-card-mark ws-card-initial" style={{ background: w.color, color: textOn(w.color) }} aria-hidden="true">
       {w.workspaceName.slice(0, 1).toUpperCase()}
     </span>
   );
