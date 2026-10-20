@@ -141,8 +141,9 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
     switchWorkspace(w);
   };
   const bg = cardColor(w, index);
+  const shot = useSiteShot(w);
   const lede = w.waiting ? `${plural(w.waiting, "chat")} ${w.waiting === 1 ? "needs" : "need"} a person.` : w.open ? "Nothing waiting on a person." : "All quiet.";
-  const more = [w.installed ? (w.installedOn ? `Live on ${w.installedOn}` : "Widget installed") : "Widget not installed yet", w.aiOn ? "the AI answers first" : "AI replies are off"].join(", ") + ".";
+  const more = [w.installed ? (w.installedOn ? `Live on ${hostOf(w.installedOn)}` : "Widget installed") : "Widget not installed yet", w.aiOn ? "the AI answers first" : "AI replies are off"].join(", ") + ".";
   return (
     <li>
       <a className="ws-card" href={href} onClick={open} style={{ "--ws-bg": bg, "--ws-fg": textOn(bg) } as CSSProperties}>
@@ -152,19 +153,48 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
           <span className="ws-card-role">{ROLE_LABEL[w.role]}</span>
         </div>
         <p className="ws-card-lede"><b>{lede}</b> {more}</p>
-        <div className="ws-card-panel" aria-hidden="true">
-          <span className="ws-card-date">{today()}</span>
-          <p className="ws-card-panel-title">Inbox</p>
-          <ul>
-            <li data-on={w.open ? "" : undefined}><span className="ws-check"><ChatIcon /></span>{plural(w.open, "open chat")}</li>
-            <li data-warn={w.waiting ? "" : undefined}><span className="ws-check"><HandoffIcon /></span>{w.waiting ? `${w.waiting} need a person` : "No one waiting"}</li>
-            <li data-on={w.aiOn ? "" : undefined}><span className="ws-check">{w.aiOn ? <CheckIcon /> : <BotIcon />}</span>AI replies {w.aiOn ? "on" : "off"}</li>
-            <li data-on={w.installed ? "" : undefined}><span className="ws-check"><GlobeIcon /></span>{w.installedOn ?? (w.installed ? "Installed" : "Not installed")}</li>
-          </ul>
-        </div>
+        {shot ? (
+          <>
+            <p className="ws-card-chips"><span>{plural(w.open, "open chat")}</span>{w.waiting > 0 && <span data-warn="">{w.waiting} need a person</span>}</p>
+            <div className="ws-card-site" aria-hidden="true">
+              <div className="ws-card-site-bar"><i /><i /><i /><span>{hostOf(w.installedOn)}</span></div>
+              <img src={shot} alt="" />
+            </div>
+          </>
+        ) : (
+          <div className="ws-card-panel" aria-hidden="true">
+            <span className="ws-card-date">{today()}</span>
+            <p className="ws-card-panel-title">Inbox</p>
+            <ul>
+              <li data-on={w.open ? "" : undefined}><span className="ws-check"><ChatIcon /></span>{plural(w.open, "open chat")}</li>
+              <li data-warn={w.waiting ? "" : undefined}><span className="ws-check"><HandoffIcon /></span>{w.waiting ? `${w.waiting} need a person` : "No one waiting"}</li>
+              <li data-on={w.aiOn ? "" : undefined}><span className="ws-check">{w.aiOn ? <CheckIcon /> : <BotIcon />}</span>AI replies {w.aiOn ? "on" : "off"}</li>
+              <li data-on={w.installed ? "" : undefined}><span className="ws-check"><GlobeIcon /></span>{w.installedOn ? hostOf(w.installedOn) : w.installed ? "Installed" : "Not installed"}</li>
+            </ul>
+          </div>
+        )}
       </a>
     </li>
   );
+}
+
+const hostOf = (origin: string | null) => (origin ? origin.replace(/^https?:\/\//, "") : "");
+
+/** D-141: the picture of the workspace's website (`…/site-shot`), once it has loaded; null while it loads or when
+ * there's none, so the card shows its inbox panel instead. */
+function useSiteShot(w: WorkspaceSummary): string | null {
+  const [ready, setReady] = useState<string | null>(null);
+  useEffect(() => {
+    if (!w.installedOn) return;
+    const src = `/api/workspaces/${encodeURIComponent(w.workspaceId)}/site-shot`;
+    const img = new Image();
+    img.onload = () => setReady(src);
+    img.src = src;
+    return () => {
+      img.onload = null;
+    };
+  }, [w.workspaceId, w.installedOn]);
+  return ready;
 }
 
 /** Under the cards (the reference's stat row): the desk's numbers across every workspace you're in. */
