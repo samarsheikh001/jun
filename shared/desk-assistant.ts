@@ -1289,7 +1289,7 @@ export function stepLabel(tool: string, input: Record<string, unknown>, done: bo
     search_conversations: [`Searching conversations${q("text")}`, `Searched conversations${q("text")}`],
     read_conversation: ["Reading a conversation", "Read a conversation"],
     debug_context: ["Reading its debug context", "Read its debug context"],
-    report_metrics: ["Reading Reports", "Read Reports"],
+    report_metrics: ["Reading Analytics", "Read Analytics"],
     topics_and_handoffs: ["Reading topics and handoff reasons", "Read topics and handoff reasons"],
     struggle_spots: ["Looking at struggle spots", "Looked at struggle spots"],
     live_visitors: ["Checking who's on the site", "Checked who's on the site"],
@@ -1565,7 +1565,7 @@ export const MAX_NEXT_QUESTIONS = 3;
 const NEXT_MAX_CHARS = 70;
 
 /** The small call after an answer: what the person might ask next. As the widget's follow-ups (D-42), never asked of the answer itself. */
-export const NEXT_QUESTIONS_SYSTEM = `You suggest what a support team member might ask their desk assistant next. The assistant reads the desk (chats, customers, companies, Reports, topics, errors, knowledge, the support agent's files, the team) and proposes changes for them to confirm.
+export const NEXT_QUESTIONS_SYSTEM = `You suggest what a support team member might ask their desk assistant next. The assistant reads the desk (chats, customers, companies, Analytics, topics, errors, knowledge, the support agent's files, the team) and proposes changes for them to confirm.
 Write 2 or 3 short follow-up questions (under 60 characters each) in the person's words and language, each one the natural next step after the answer: dig into something it named, compare, or act on it. Don't repeat the question or ask what the answer already says.
 One question per line, nothing else: no numbering, no quotes, no introduction.`;
 

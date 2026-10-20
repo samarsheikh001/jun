@@ -120,7 +120,7 @@ export function TopicsMovedNote() {
       description={
         <>
           Topics are managed in{" "}
-          <a href={deskHref("/dashboard/topics")} onClick={(e) => { e.preventDefault(); navigate("/dashboard/topics"); }}>Reports</a>
+          <a href={deskHref("/dashboard/topics")} onClick={(e) => { e.preventDefault(); navigate("/dashboard/topics"); }}>Analytics</a>
           , beside the topic map.
         </>
       }

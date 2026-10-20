@@ -51,8 +51,8 @@ const NAV_GROUPS = [
       { id: "visitors", label: "Visitors", Icon: UsersIcon },
       // V-16 (D-118): every person and company the desk knows; companies at /contacts/companies.
       { id: "contacts", label: "Contacts", Icon: ContactsIcon },
-      // The page is Reports; /dashboard stays its address.
-      { id: "dashboard", label: "Reports", Icon: ChartColumnIcon },
+      // The page is Analytics (Reports until D-145); /dashboard stays its address, /analytics and /reports open it too.
+      { id: "dashboard", label: "Analytics", Icon: ChartColumnIcon },
     ],
   },
   {
@@ -84,7 +84,7 @@ function sectionOf(pagePath: string) {
     : pagePath.startsWith("/channels") ? "channels"
     : pagePath.startsWith("/visitors") ? "visitors"
     : pagePath.startsWith("/contacts") ? "contacts"
-    : pagePath.startsWith("/dashboard") || pagePath.startsWith("/reports") ? "dashboard"
+    : pagePath.startsWith("/dashboard") || pagePath.startsWith("/analytics") || pagePath.startsWith("/reports") ? "dashboard"
     : pagePath.startsWith("/welcome") ? "welcome"
     : "inbox";
 }

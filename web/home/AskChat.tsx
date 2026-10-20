@@ -1054,7 +1054,7 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
       )}
       {empty && !disabled && (
         <div className="ask-empty">
-          <p className="ask-intro">Ask about chats, customers, errors, Reports, knowledge or the agent. Changes wait for your Confirm.</p>
+          <p className="ask-intro">Ask about chats, customers, errors, Analytics, knowledge or the agent. Changes wait for your Confirm.</p>
           {recent.length > 0 && (
             <div className="ask-recent" role="group" aria-labelledby="ask-recent-title">
               <h3 id="ask-recent-title">Recent</h3>

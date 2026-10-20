@@ -277,7 +277,7 @@ export function briefPoints(input: BriefInput): BriefPoint[] {
       section: "yesterday",
       plain: `${plural(total, "chat")} since yesterday${change}.${aiPart}`,
       facts: { chats: total, previousTwoDays: previousTotal, aiChats: ai.conversations, aiResolved: ai.resolved, handedOff: ai.handedOff, aiResolvedPercent: pct(ai.resolutionRate), aiOn: input.aiEnabled },
-      link: { label: "Reports", path: "/dashboard" },
+      link: { label: "Analytics", path: "/dashboard" },
       chats: newest(inWindow).slice(0, MAX_POINT_CHATS),
       tone: "info",
     });
@@ -346,7 +346,7 @@ export function briefPoints(input: BriefInput): BriefPoint[] {
       section: "unusual",
       plain: `More chats starting on ${pagePath(page)}: ${e.now.length} since yesterday, against ${e.before} in the whole week before.`,
       facts: { page: pagePath(page), chatsSinceYesterday: e.now.length, chatsWeekBefore: e.before },
-      link: { label: "Pages in Reports", path: "/dashboard" },
+      link: { label: "Pages in Analytics", path: "/dashboard" },
       chats: newest(e.now).slice(0, MAX_POINT_CHATS),
       tone: "warn",
       weight: e.now.length - s.usual,

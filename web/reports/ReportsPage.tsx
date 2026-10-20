@@ -419,7 +419,7 @@ export function ReportsPage({ workspaceId, path, canEdit }: { workspaceId: strin
   const [days, setDays] = useState<MetricPeriod>(7);
   // Bumped after a topic change in the sheet, so the report behind it refreshes.
   const [reload, setReload] = useState(0);
-  const topicsOpen = /^\/(dashboard|reports)\/topics\/?$/.test(path);
+  const topicsOpen = /^\/(dashboard|analytics|reports)\/topics\/?$/.test(path);
   const [report, setReport] = useState<MetricsReport | null>(() => reportCache.get(`${workspaceId}:7`) ?? null);
   const [error, setError] = useState<string | null>(null);
 
@@ -452,7 +452,7 @@ export function ReportsPage({ workspaceId, path, canEdit }: { workspaceId: strin
   return (
     <div className="content wide reports">
       <div className="row reports-head">
-        <h1>Reports</h1>
+        <h1>Analytics</h1>
         <span className="spacer" />
         <div className="segmented" role="group" aria-label="Period">
           {METRIC_PERIODS.map((p) => (

@@ -373,7 +373,7 @@ export function HomePage({ workspaceId, me, role, hub }: { workspaceId: string; 
       </div>
       <section className="dash-card home-ask" aria-labelledby="ask-title">
         <div className="home-ask-head">
-          <h2 id="ask-title" title="Chats, customers, errors, Reports, knowledge and the agent. Changes wait for your Confirm."><AsteriskIcon aria-hidden="true" />Assistant</h2>
+          <h2 id="ask-title" title="Chats, customers, errors, Analytics, knowledge and the agent. Changes wait for your Confirm."><AsteriskIcon aria-hidden="true" />Assistant</h2>
           <div className="home-ask-tools">
             <AskThreads ws={workspaceId} />
             <button type="button" className="home-ask-tool" aria-label="New chat" title="New chat" disabled={!started} onClick={() => newAskChat(workspaceId)}><EditIcon /></button>
