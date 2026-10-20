@@ -24,22 +24,18 @@ import {
 
 type Picked = { kind: "mention"; option: MentionOption } | { kind: "command"; command: AskCommand };
 
-/** Chats, topics and files load once per workspace (a minute); people are searched as typed. */
+/** Topics and file names load once per workspace (a minute); chats and people are searched on the server as typed (D-135). */
 const cache = new Map<string, { at: number; options: Promise<MentionOption[]> }>();
 function baseOptions(ws: string): Promise<MentionOption[]> {
   const hit = cache.get(ws);
   if (hit && Date.now() - hit.at < 60_000) return hit.options;
   const options = Promise.all([
-    api<{ conversations: ConversationSummary[] }>(`/workspaces/${ws}/conversations?status=all`).then(
-      (r) => r.conversations.map((c): MentionOption => ({ kind: "chat", id: c.id, label: contactLabel(c.contact), detail: [c.status, c.lastMessagePreview].filter(Boolean).join(" · ") })),
-      () => [],
-    ),
     api<{ topics: { id: string; name: string; conversations: number }[] }>(`/workspaces/${ws}/topics`).then(
       (r) => r.topics.map((t): MentionOption => ({ kind: "topic", id: t.id, label: t.name, detail: `${t.conversations} chat${t.conversations === 1 ? "" : "s"}` })),
       () => [],
     ),
-    api<{ files: Record<string, string> }>(`/workspaces/${ws}/agent`).then(
-      (r) => Object.keys(r.files).sort().map((path): MentionOption => ({ kind: "file", id: path, label: path })),
+    api<{ paths: string[] }>(`/workspaces/${ws}/agent?paths=1`).then(
+      (r) => r.paths.map((path): MentionOption => ({ kind: "file", id: path, label: path })),
       () => [],
     ),
   ]).then((lists) => lists.flat());
@@ -47,23 +43,32 @@ function baseOptions(ws: string): Promise<MentionOption[]> {
   return options;
 }
 
-function usePeople(ws: string, query: string | null): MentionOption[] {
-  const [people, setPeople] = useState<MentionOption[]>([]);
+const SEARCH_LIMIT = 6;
+
+function useSearched(ws: string, query: string | null): MentionOption[] {
+  const [found, setFound] = useState<MentionOption[]>([]);
   useEffect(() => {
     if (query === null) return;
     let live = true;
+    const q = query ? `q=${encodeURIComponent(query)}&` : "";
     const t = setTimeout(() => {
-      api<{ people: { id: string; name: string | null; email: string | null; company: { name: string } | null }[] }>(`/workspaces/${ws}/people${query ? `?q=${encodeURIComponent(query)}` : ""}`).then(
-        (r) => live && setPeople(r.people.map((p) => ({ kind: "contact", id: p.id, label: contactLabel(p), detail: [p.email !== p.name ? p.email : null, p.company?.name].filter(Boolean).join(" · ") }))),
-        () => live && setPeople([]),
-      );
+      Promise.all([
+        api<{ conversations: ConversationSummary[] }>(`/workspaces/${ws}/conversations?status=all&${q}limit=${SEARCH_LIMIT}`).then(
+          (r) => r.conversations.map((c): MentionOption => ({ kind: "chat", id: c.id, label: contactLabel(c.contact), detail: [c.status, c.lastMessagePreview].filter(Boolean).join(" · ") })),
+          () => [],
+        ),
+        api<{ people: { id: string; name: string | null; email: string | null; company: { name: string } | null }[] }>(`/workspaces/${ws}/people${query ? `?q=${encodeURIComponent(query)}` : ""}`).then(
+          (r) => r.people.slice(0, SEARCH_LIMIT).map((p): MentionOption => ({ kind: "contact", id: p.id, label: contactLabel(p), detail: [p.email !== p.name ? p.email : null, p.company?.name].filter(Boolean).join(" · ") })),
+          () => [],
+        ),
+      ]).then((lists) => live && setFound(lists.flat()));
     }, 180);
     return () => {
       live = false;
       clearTimeout(t);
     };
   }, [ws, query]);
-  return people;
+  return found;
 }
 
 const KIND_ICONS: Record<MentionKind, () => ReactNode> = { chat: () => <ChatIcon />, contact: () => <ContactsIcon />, topic: () => <TagIcon />, file: () => <FileIcon /> };
@@ -110,13 +115,13 @@ export const AskInput = forwardRef<AskInputHandle, {
   useEffect(() => {
     if (query !== null) void baseOptions(ws).then(setBase);
   }, [ws, query !== null]);
-  const people = usePeople(ws, query);
+  const searched = useSearched(ws, query);
   const items: Picked[] = useMemo(() => {
     if (shut || disabled) return [];
     if (command !== null) return matchCommands(command).map((c) => ({ kind: "command", command: c }));
     if (query === null) return [];
-    return filterMentions([...base, ...people], query, query ? 4 : 3).map((o) => ({ kind: "mention", option: o }));
-  }, [command, query, base, people, shut, disabled]);
+    return filterMentions([...base, ...searched], query, query ? 4 : 3).map((o) => ({ kind: "mention", option: o }));
+  }, [command, query, base, searched, shut, disabled]);
   const open = items.length > 0;
   const pick = active < items.length ? active : 0;
   useEffect(() => setActive(0), [key]);

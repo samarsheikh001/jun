@@ -226,6 +226,8 @@ agent.get("/workspaces/:id/agent", async (c) => {
   await memberRole(c, workspaceId);
   const v = c.req.query("version");
   const stored = await loadConfigFiles(c.env, workspaceId, v ? Number(v) : undefined);
+  // D-135: just the file names (the assistant's @ list), without the checks, versions or desk.yaml.
+  if (c.req.query("paths") === "1") return c.json({ paths: [...new Set([...Object.keys(stored.files), DESK_PATH])].sort() });
   if (v && stored.version === null) throw new HttpError(404, "not_found", `No version ${v}.`);
   // D-84: a desk whose config has no desk.yaml yet gets one written from its current settings
   // (`generated`: not saved; the dashboard leaves it out of a save while it's unchanged).

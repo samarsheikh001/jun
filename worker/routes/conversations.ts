@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AiAction, ConversationStatus } from "../../shared/protocol.ts";
+import { likePattern } from "../../shared/contacts.ts";
 import { draftSuggestions } from "../ai/suggestions.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
@@ -139,11 +140,19 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
     where.push("c.csat_rating = ?");
     params.push(rating);
   }
+  // D-135: the assistant's @ list searches as typed instead of filtering the latest 100 in the browser.
+  const q = (c.req.query("q") ?? "").trim().slice(0, 100);
+  if (q) {
+    const like = likePattern(q);
+    where.push(`(ct.name LIKE ? ESCAPE '\\' OR ct.email LIKE ? ESCAPE '\\' OR c.last_message_preview LIKE ? ESCAPE '\\')`);
+    params.push(like, like, like);
+  }
+  const limit = Math.min(100, Math.max(1, Number(c.req.query("limit")) || 100));
   const filtered = where.join(" AND ");
   const byStatus = status === "all" ? "" : " AND c.status = ?";
   const [rows, counted] = await c.env.DB.batch([
-    c.env.DB.prepare(`${SUMMARY_SELECT} WHERE ${filtered}${byStatus} ORDER BY c.last_message_at DESC LIMIT 100`).bind(...params, ...(byStatus ? [status] : [])),
-    c.env.DB.prepare(`SELECT c.status AS status, COUNT(*) AS n FROM conversations c WHERE ${filtered} GROUP BY c.status`).bind(...params),
+    c.env.DB.prepare(`${SUMMARY_SELECT} WHERE ${filtered}${byStatus} ORDER BY c.last_message_at DESC LIMIT ?`).bind(...params, ...(byStatus ? [status] : []), limit),
+    c.env.DB.prepare(`SELECT c.status AS status, COUNT(*) AS n FROM conversations c JOIN contacts ct ON ct.id = c.contact_id WHERE ${filtered} GROUP BY c.status`).bind(...params),
   ]);
   const statusCounts = counted!.results as { status: string; n: number }[];
   const counts: Record<string, number> = { all: statusCounts.reduce((sum, row) => sum + row.n, 0) };
