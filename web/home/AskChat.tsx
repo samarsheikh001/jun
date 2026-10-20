@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import {
   agentFileLink,
   bulkOutcome,
+  bulkRows,
+  isBulk,
   isDeskLink,
   knowledgeLink,
   outcomeTitle,
@@ -10,6 +12,7 @@ import {
   type AskEvent,
   type AskStep,
   type AskTurn,
+  type BulkProposal,
   type Proposal,
   type ProposalKind,
   type ProposalOutcome,
@@ -485,9 +488,9 @@ async function decide(ws: string, turnId: number, confirm: boolean, chosen?: str
   let outcome: ProposalOutcome = { status: "cancelled" };
   if (confirm) {
     const action = turn.proposal;
-    set(ws, { running: action.callId, bulkRows: action.proposal.kind === "bulk" ? {} : null });
+    set(ws, { running: action.callId, bulkRows: isBulk(action.proposal) ? {} : null });
     outcome =
-      action.proposal.kind === "bulk" && chosen
+      isBulk(action.proposal) && chosen
         ? await runBulk(ws, action, chosen, (id, state) => set(ws, { bulkRows: { ...get(ws).bulkRows, [id]: state } }))
         : await runProposal(ws, action);
   }
@@ -496,18 +499,18 @@ async function decide(ws: string, turnId: number, confirm: boolean, chosen?: str
   void answer(ws, turns);
 }
 
-/** D-134: one failed chat of a settled bulk card again; the outcome the model gets next time is updated. */
-async function retryBulkRow(ws: string, turnId: number, conversationId: string): Promise<void> {
+/** D-134: one failed row of a settled bulk card again; the outcome the model gets next time is updated. */
+async function retryBulkRow(ws: string, turnId: number, rowId: string): Promise<void> {
   const turn = get(ws).turns.find((x) => x.id === turnId);
-  if (!turn || turn.role !== "assistant" || turn.proposal?.proposal.kind !== "bulk" || !turn.outcome?.results) return;
+  if (!turn || turn.role !== "assistant" || !turn.proposal || !isBulk(turn.proposal.proposal) || !turn.outcome?.results) return;
   const action = turn.proposal;
-  const again = await runBulk(ws, action, [conversationId], () => {});
-  const row = again.results?.find((r) => r.conversationId === conversationId);
+  const again = await runBulk(ws, action, [rowId], () => {});
+  const row = again.results?.find((r) => r.id === rowId);
   if (!row) return;
   const current = get(ws).turns.find((x) => x.id === turnId);
   if (!current || current.role !== "assistant" || !current.outcome?.results) return;
-  const results = current.outcome.results.map((r) => (r.conversationId === conversationId ? row : r));
-  const outcome = bulkOutcome((action.proposal as Extract<Proposal, { kind: "bulk" }>).items, results);
+  const results = current.outcome.results.map((r) => (r.id === rowId ? row : r));
+  const outcome = bulkOutcome(bulkRows(action.proposal as BulkProposal), results);
   set(ws, { turns: get(ws).turns.map((x) => (x.id === turnId ? ({ ...x, outcome } as Turn) : x)) });
 }
 
@@ -871,7 +874,7 @@ function InviteLink({ url }: { url: string }) {
 function ProposalCard({ ws, turn, running, blocked, latest, bulkRows }: { ws: string; turn: AssistantTurn; running: boolean; blocked: boolean; latest: boolean; bulkRows: Record<string, BulkRowState> | null }) {
   const action = turn.proposal!;
   const p = action.proposal;
-  if (p.kind === "bulk")
+  if (isBulk(p))
     return (
       <BulkCard
         action={action}

@@ -62,6 +62,7 @@ function readProposal(v: unknown): ProposedAction | null {
   if (p.kind === "tags" && (!Array.isArray(p.add) || !Array.isArray(p.remove))) return null;
   if ("changes" in p && !Array.isArray(p.changes)) return null;
   if (p.kind === "bulk" && (!Array.isArray(p.items) || !p.items.every((i) => isObj(i) && str(i.conversationId) && str(i.customer) && str(i.before) && str(i.after)))) return null;
+  if (p.kind === "bulk_delete" && (!str(p.target) || !Array.isArray(p.items) || !p.items.every((i) => isObj(i) && str(i.id) && str(i.name) && str(i.detail)))) return null;
   const text = (x: unknown) => x === null || str(x);
   if (p.kind === "agent_file" && (!str(p.path) || !text(p.before) || !text(p.after))) return null;
   return v as unknown as ProposedAction;
@@ -69,7 +70,16 @@ function readProposal(v: unknown): ProposedAction | null {
 
 function readOutcome(v: unknown): ProposalOutcome | null {
   if (!isObj(v) || !OUTCOME_STATUS.has(v.status as string)) return null;
-  const results = Array.isArray(v.results) ? v.results.filter((r): r is NonNullable<ProposalOutcome["results"]>[number] => isObj(r) && str(r.conversationId) && RESULT_STATUS.has(r.status as string)) : [];
+  // D-144: a row's `id` (D-134 stored it as conversationId).
+  const results = Array.isArray(v.results)
+    ? v.results.flatMap((r): NonNullable<ProposalOutcome["results"]> => {
+        if (!isObj(r) || !RESULT_STATUS.has(r.status as string)) return [];
+        const id = str(r.id) ? r.id : str(r.conversationId) ? r.conversationId : null;
+        if (!id) return [];
+        const { conversationId: _c, ...rest } = r;
+        return [{ ...rest, id } as NonNullable<ProposalOutcome["results"]>[number]];
+      })
+    : [];
   return { status: v.status as ProposalOutcome["status"], ...(str(v.detail) ? { detail: v.detail } : {}), ...(results.length ? { results } : {}) };
 }
 

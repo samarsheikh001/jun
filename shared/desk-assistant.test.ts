@@ -243,7 +243,7 @@ test("assistant: settings changes, risk and the card's words (D-133)", () => {
 });
 
 test("assistant: bulk proposals (D-134)", async () => {
-  const { bulkOutcome, bulkSingle, bulkVerb, runPool } = await import("./desk-assistant.ts");
+  const { bulkOutcome, bulkRows, bulkSingle, bulkVerb, runPool } = await import("./desk-assistant.ts");
   const p = readProposal("propose_bulk", { op: "status", status: "resolved", conversationIds: ["cv_1aa", "cv_2bb", "cv_1aa"] }, "usr_me");
   assert.deepEqual(p, { kind: "bulk", op: "status", conversationIds: ["cv_1aa", "cv_2bb"], items: [], status: "resolved" });
   assert.throws(() => readProposal("propose_bulk", { op: "status", status: "resolved", conversationIds: ["cv_1aa"] }, "usr_me"), /at least 2/);
@@ -258,11 +258,12 @@ test("assistant: bulk proposals (D-134)", async () => {
   assert.equal(proposalSummary(bulk, {}), "Resolve 2 chats");
   assert.deepEqual(bulkSingle(bulk, "cv_2bb"), { kind: "status", conversationId: "cv_2bb", status: "resolved" });
   assert.deepEqual(proposalForModel(bulk), { kind: "bulk", op: "status", status: "resolved", conversationIds: ["cv_1aa", "cv_2bb"] });
-  const out = bulkOutcome(bulk.items, [{ conversationId: "cv_1aa", status: "done" }, { conversationId: "cv_2bb", status: "failed", error: "Not found" }]);
+  assert.deepEqual(bulkRows(bulk)[0], { id: "cv_1aa", name: "Hana Kim", href: "/inbox/cv_1aa", before: "open", after: "resolved" });
+  const out = bulkOutcome(bulkRows(bulk), [{ id: "cv_1aa", status: "done" }, { id: "cv_2bb", status: "failed", error: "Not found" }]);
   assert.equal(out.status, "done");
   assert.equal(out.detail, "1 done, 1 failed: Zane (Not found)");
   assert.equal(outcomeTitle(bulk, {}, out), "Resolved · 1 chat · 1 failed");
-  assert.equal(bulkOutcome(bulk.items, [{ conversationId: "cv_1aa", status: "skipped" }, { conversationId: "cv_2bb", status: "failed", error: "x" }]).status, "failed");
+  assert.equal(bulkOutcome(bulkRows(bulk), [{ id: "cv_1aa", status: "skipped" }, { id: "cv_2bb", status: "failed", error: "x" }]).status, "failed");
   // At most 3 at once, every item once.
   let running = 0, peak = 0;
   const seen: number[] = [];
@@ -274,6 +275,41 @@ test("assistant: bulk proposals (D-134)", async () => {
   });
   assert.equal(peak, 3);
   assert.deepEqual(seen.sort(), [1, 2, 3, 4, 5, 6, 7]);
+});
+
+test("assistant: bulk deletes (D-144)", async () => {
+  const { bulkOutcome, bulkRows, bulkSingle, deleteVerb, isBulk, proposalRisk } = await import("./desk-assistant.ts");
+  const p = readProposal("propose_bulk_delete", { what: "tag", ids: ["tg_1aa", "tg_2bb", "tg_1aa"] }, "usr_me");
+  assert.deepEqual(p, { kind: "bulk_delete", target: "tag", ids: ["tg_1aa", "tg_2bb"], items: [] });
+  assert.ok(isBulk(p));
+  assert.equal(readProposal("propose_bulk_delete", { what: "saved_reply", ids: "sr_1aa, sr_2bb" }, "usr_me").kind, "bulk_delete");
+  assert.throws(() => readProposal("propose_bulk_delete", { what: "tag", ids: ["tg_1aa"] }, "usr_me"), /at least 2/);
+  assert.throws(() => readProposal("propose_bulk_delete", { what: "chat", ids: ["cv_1aa", "cv_2bb"] }, "usr_me"), /what must be/);
+  assert.throws(() => readProposal("propose_bulk_delete", { what: "topic", ids: Array.from({ length: 51 }, (_, i) => `top_${i}x`) }, "usr_me"), /At most 50/);
+  assert.throws(() => readProposal("propose_bulk_delete", { what: "topic", ids: ["top_1", "a b"] }, "usr_me"), /ids must be ids/);
+  const tags = { kind: "bulk_delete" as const, target: "tag" as const, ids: ["tg_1aa", "tg_2bb"], items: [{ id: "tg_1aa", name: "old", detail: "on 3 chats" }, { id: "tg_2bb", name: "older", detail: "on 1 chat" }] };
+  assert.equal(deleteVerb(tags, 2), "Delete 2 tags");
+  assert.deepEqual(proposalCard(tags), { title: "Delete 2 tags?", confirm: "Delete 2 tags" });
+  assert.equal(proposalSummary(tags, {}), "Delete 2 tags from every chat they're on");
+  assert.equal(proposalRisk(tags)?.tone, "destructive");
+  assert.deepEqual(proposalForModel(tags), { kind: "bulk_delete", what: "tag", ids: ["tg_1aa", "tg_2bb"] });
+  assert.deepEqual(bulkSingle(tags, "tg_2bb"), { kind: "tag_delete", tagId: "tg_2bb" });
+  assert.deepEqual(bulkRows(tags)[0], { id: "tg_1aa", name: "old", href: null, before: "on 3 chats", after: "deleted" });
+  const pages = { kind: "bulk_delete" as const, target: "knowledge_page" as const, ids: ["doc_1", "doc_2"], items: [{ id: "doc_1", name: "/a", detail: "in Docs", sourceId: "src_1" }, { id: "doc_2", name: "/b", detail: "in Help", sourceId: "src_2" }] };
+  assert.deepEqual(bulkSingle(pages, "doc_2"), { kind: "knowledge_remove_page", sourceId: "src_2", documentId: "doc_2" });
+  assert.equal(bulkRows(pages)[1]!.href, "/knowledge/src_2");
+  assert.equal(proposalCard(pages).confirm, "Remove 2 knowledge pages");
+  assert.match(proposalRisk(pages)!.line, /no history/);
+  const sources = { kind: "bulk_delete" as const, target: "knowledge_source" as const, ids: ["src_1", "src_2"], items: [{ id: "src_1", name: "Docs", detail: "website · 4 pages" }, { id: "src_2", name: "FAQ", detail: "text document" }] };
+  assert.deepEqual(bulkSingle(sources, "src_1"), { kind: "knowledge_remove", sourceId: "src_1" });
+  const replies = { kind: "bulk_delete" as const, target: "saved_reply" as const, ids: ["sr_1", "sr_2"], items: [{ id: "sr_1", name: "Hi", detail: "Hello" }, { id: "sr_2", name: "Bye", detail: "Bye" }] };
+  assert.deepEqual(bulkSingle(replies, "sr_1"), { kind: "saved_reply_delete", replyId: "sr_1" });
+  const topics = { ...replies, target: "topic" as const };
+  assert.deepEqual(bulkSingle(topics, "sr_2"), { kind: "topic_delete", topicId: "sr_2" });
+  const out = bulkOutcome(bulkRows(tags), [{ id: "tg_1aa", status: "done" }, { id: "tg_2bb", status: "failed", error: "Not found" }]);
+  assert.equal(out.detail, "1 done, 1 failed: older (Not found)");
+  assert.equal(outcomeTitle(tags, {}, out), "Deleted · 1 tag · 1 failed");
+  assert.equal(outcomeTitle(sources, {}, { status: "done", results: [{ id: "src_1", status: "done" }, { id: "src_2", status: "done" }] }), "Removed · 2 knowledge sources");
 });
 
 test("assistant: next questions are cleaned (D-134)", async () => {

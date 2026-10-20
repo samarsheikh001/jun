@@ -3,6 +3,9 @@ import { describeTarget, type DebugEvent } from "../../shared/debug.ts";
 import {
   ACTION_TOOLS,
   ADMIN_ACTIONS,
+  ADMIN_DELETE_TARGETS,
+  BULK_DELETE_TARGETS,
+  type BulkDeleteItem,
   AI_SETTING_LABELS,
   applyAgentFileEdit,
   AssistantInputError,
@@ -885,6 +888,19 @@ export function actionTools(role: Role): ToolSet {
         ["op", "conversationIds"],
       ),
     },
+    propose_bulk_delete: {
+      description:
+        role === "agent"
+          ? "Propose deleting several of the team's saved replies at once (2–50 ids from list_inbox_setup). The person sees a list of them, can leave some out, and confirms once. Can't be undone."
+          : "Propose deleting several things of one kind at once (2–50 ids from tool results): saved replies, tags (they come off every chat) or topics (ids from list_inbox_setup), knowledge pages (document ids from read_knowledge_source) or whole knowledge sources (ids from list_knowledge). The person sees a list with what goes, can leave some out, and confirms once. Can't be undone. Use it instead of several single deletes; topics are merged one at a time (propose_topic).",
+      input: obj(
+        {
+          what: opOf(role === "agent" ? ["saved_reply"] : [...BULK_DELETE_TARGETS], "What to delete."),
+          ids: { type: "array", items: { type: "string" }, description: "Their ids, 2–50." },
+        },
+        ["what", "ids"],
+      ),
+    },
     propose_identity_off: { description: "Propose turning identity verification off: the secret is deleted and signed-in customers become anonymous. Can't be undone (turning it on again needs a new secret, in the desk).", input: obj({}) },
   };
   const out: ToolSet = {};
@@ -918,6 +934,7 @@ How you work:
 Changing things:
 - You can't change anything yourself. To change something, call one propose_ tool: the person sees a card and presses Confirm or Cancel, and you're told which. Write one short sentence saying what it will do, then call it. One proposal per reply; after an outcome you may propose the next step.
 - For the same change on several chats (resolve, assign, tag, hand to or from the AI), call propose_bulk once with all their ids (up to 50), never one proposal per chat.
+- To delete several saved replies, tags, topics, knowledge pages or knowledge sources, call propose_bulk_delete once with their ids (one kind per card), never one proposal each.
 - You can propose most of what a person does in the desk: a chat's status, assignee, tags, notes, a reply draft, handing it to or from the AI, an issue; inviting a live visitor; a contact's name or email; the support agent's files (instructions.md, tasks, actions, widgets, tests); the chat widget's settings; the AI settings; knowledge; saved replies, tags and topics; the team; your notifications; the workspace's name; email replies.
 - Read before you change: read_agent_file before propose_agent_file (copy find texts exactly), read_settings before a settings proposal, list_inbox_setup, read_knowledge_source or list_teammates for ids. If a proposal comes back with problems, fix them and propose again, or tell the person.
 - Propose only what they asked for or clearly agreed to, and never say it's done until you're told it was. Removing or deleting can't be undone: say so in your sentence.
@@ -960,7 +977,7 @@ async function prepareProposal(ctx: AssistantContext, tool: ActionTool, input: u
   } catch (e) {
     return e instanceof AssistantInputError ? e.message : "That proposal didn't make sense.";
   }
-  if (ctx.role === "agent" && ADMIN_ACTIONS.includes(tool)) return "Only owners and admins can do that: say an admin can.";
+  if (ctx.role === "agent" && (ADMIN_ACTIONS.includes(tool) || (proposal.kind === "bulk_delete" && ADMIN_DELETE_TARGETS.includes(proposal.target)))) return "Only owners and admins can do that: say an admin can.";
   const labels: ProposalLabels = {};
   try {
     const problem = await resolveProposal(ctx, proposal, labels);
@@ -1210,6 +1227,39 @@ async function resolveProposal(ctx: AssistantContext, p: Proposal, labels: Propo
       }
       if (!items.length) return "Nothing would change: every one of those chats already has that.";
       p.items = items;
+      return null;
+    }
+    case "bulk_delete": {
+      // D-144: every id must be one of this workspace's; the card lists them in the order given.
+      const marks = p.ids.map(() => "?").join(",");
+      const chats = (n: number) => `on ${n} chat${n === 1 ? "" : "s"}`;
+      let found: BulkDeleteItem[];
+      if (p.target === "saved_reply") {
+        const rows = await db.prepare(`SELECT id, title, body FROM saved_replies WHERE workspace_id = ? AND id IN (${marks})`).bind(workspaceId, ...p.ids).all<{ id: string; title: string; body: string }>();
+        found = rows.results.map((r) => ({ id: r.id, name: r.title, detail: clip(r.body.replace(/\s+/g, " "), 80) ?? "" }));
+      } else if (p.target === "tag") {
+        const rows = await db.prepare(`SELECT id, name, (SELECT COUNT(*) FROM conversation_tags ct WHERE ct.tag_id = tags.id) AS chats FROM tags WHERE workspace_id = ? AND id IN (${marks})`).bind(workspaceId, ...p.ids).all<{ id: string; name: string; chats: number }>();
+        found = rows.results.map((r) => ({ id: r.id, name: r.name, detail: chats(r.chats) }));
+      } else if (p.target === "topic") {
+        const rows = await db.prepare(`SELECT t.id, t.name, (SELECT COUNT(*) FROM conversations c WHERE c.workspace_id = t.workspace_id AND c.topic_id = t.id) AS chats FROM topics t WHERE t.workspace_id = ? AND t.id IN (${marks})`).bind(workspaceId, ...p.ids).all<{ id: string; name: string; chats: number }>();
+        found = rows.results.map((r) => ({ id: r.id, name: r.name, detail: chats(r.chats) }));
+      } else if (p.target === "knowledge_source") {
+        const rows = await db
+          .prepare(`SELECT s.id, s.kind, s.title, s.url, (SELECT COUNT(*) FROM kb_documents d WHERE d.source_id = s.id AND d.content_hash IS NOT NULL) AS pages FROM kb_sources s WHERE s.workspace_id = ? AND s.id IN (${marks})`)
+          .bind(workspaceId, ...p.ids)
+          .all<{ id: string; kind: string; title: string; url: string | null; pages: number }>();
+        found = rows.results.map((r) => ({ id: r.id, name: r.title || r.url || "Untitled", detail: r.kind === "website" ? `website · ${r.pages} page${r.pages === 1 ? "" : "s"}` : r.kind === "file" ? "file" : "text document" }));
+      } else {
+        const rows = await db
+          .prepare(`SELECT d.id, d.url, d.title, d.source_id, s.title AS source FROM kb_documents d JOIN kb_sources s ON s.id = d.source_id WHERE s.workspace_id = ? AND d.id IN (${marks})`)
+          .bind(workspaceId, ...p.ids)
+          .all<{ id: string; url: string | null; title: string | null; source_id: string; source: string }>();
+        found = rows.results.map((r) => ({ id: r.id, name: clip(r.title || r.url || "Untitled page", 120)!, detail: `in ${clip(r.source || "a source", 60)}`, sourceId: r.source_id }));
+      }
+      const byId = new Map(found.map((f) => [f.id, f]));
+      const missing = p.ids.filter((id) => !byId.has(id));
+      if (missing.length) return `No ${p.target.replace(/_/g, " ")} ${missing.slice(0, 5).join(", ")} in this workspace: use ids from ${p.target.startsWith("knowledge_") ? (p.target === "knowledge_page" ? "read_knowledge_source" : "list_knowledge") : "list_inbox_setup"}.`;
+      p.items = p.ids.map((id) => byId.get(id)!);
       return null;
     }
     default:

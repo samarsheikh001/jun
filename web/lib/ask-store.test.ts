@@ -89,14 +89,22 @@ test("ask store: a bulk card's rows come back (D-134)", () => {
   const bulk = { kind: "bulk", op: "status", status: "resolved", conversationIds: ["cv_1", "cv_2"], items: [{ conversationId: "cv_1", customer: "Hana", before: "open", after: "resolved" }] };
   const turns = [
     { id: 1, role: "user" as const, text: "resolve them" },
-    { id: 2, role: "assistant" as const, text: "", proposal: { callId: "abcdefghi", tool: "propose_bulk" as const, proposal: bulk as never, labels: {}, summary: "Resolve 1 chat" }, outcome: { status: "done" as const, detail: "1 done", results: [{ conversationId: "cv_1", status: "done" as const }] } },
+    { id: 2, role: "assistant" as const, text: "", proposal: { callId: "abcdefghi", tool: "propose_bulk" as const, proposal: bulk as never, labels: {}, summary: "Resolve 1 chat" }, outcome: { status: "done" as const, detail: "1 done", results: [{ conversationId: "cv_1", status: "done" }] as never } },
   ];
   let id = 0;
   const back = restoreOne(serialiseAsk(turns, []), () => ++id);
   const a = back.turns[1] as Extract<(typeof back.turns)[number], { role: "assistant" }>;
-  assert.deepEqual(a.outcome?.results, [{ conversationId: "cv_1", status: "done" }]);
+  // D-144: rows stored before results had `id` (D-134 called it conversationId) read back as `id`.
+  assert.deepEqual(a.outcome?.results, [{ id: "cv_1", status: "done" }]);
   const broken = restoreOne(serialiseAsk([turns[0]!, { ...turns[1]!, proposal: { ...turns[1]!.proposal, proposal: { ...bulk, items: "x" } as never } } as Turn], []), () => ++id);
   assert.equal((broken.turns[1] as { proposal?: unknown }).proposal, undefined);
+  const del = { kind: "bulk_delete", target: "tag", ids: ["tg_1", "tg_2"], items: [{ id: "tg_1", name: "old", detail: "on 2 chats" }, { id: "tg_2", name: "older", detail: "on 0 chats" }] };
+  const delTurns = [turns[0]!, { ...turns[1]!, proposal: { ...turns[1]!.proposal, tool: "propose_bulk_delete" as const, proposal: del as never }, outcome: { status: "done" as const, detail: "2 done", results: [{ id: "tg_1", status: "done" as const }, { id: "tg_2", status: "failed" as const, error: "x" }] } }] as Turn[];
+  const delBack = restoreOne(serialiseAsk(delTurns, []), () => ++id).turns[1] as Extract<Turn, { role: "assistant" }>;
+  assert.equal(delBack.proposal?.proposal.kind, "bulk_delete");
+  assert.equal(delBack.outcome?.results?.length, 2);
+  const delBroken = restoreOne(serialiseAsk([turns[0]!, { ...delTurns[1]!, proposal: { ...turns[1]!.proposal, proposal: { ...del, items: [{ id: "tg_1" }] } as never } } as Turn], []), () => ++id);
+  assert.equal((delBroken.turns[1] as { proposal?: unknown }).proposal, undefined);
 });
 
 test("threads: v1 migrates, upsert / merge / caps (D-134)", () => {

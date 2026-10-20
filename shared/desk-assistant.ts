@@ -273,6 +273,7 @@ export const ACTION_TOOLS = [
   "propose_email",
   "propose_identity_off",
   "propose_bulk",
+  "propose_bulk_delete",
 ] as const;
 export type ActionTool = (typeof ACTION_TOOLS)[number];
 export const isActionTool = (name: string): name is ActionTool => (ACTION_TOOLS as readonly string[]).includes(name);
@@ -296,6 +297,30 @@ export const MAX_NOTE = 4000;
 export const MAX_BULK = 50;
 export const BULK_OPS = ["status", "assign", "tags", "handling"] as const;
 export type BulkOp = (typeof BULK_OPS)[number];
+
+/** D-144: what a bulk delete card removes, several at once (each through its single delete's route). */
+export const BULK_DELETE_TARGETS = ["saved_reply", "tag", "topic", "knowledge_page", "knowledge_source"] as const;
+export type BulkDeleteTarget = (typeof BULK_DELETE_TARGETS)[number];
+/** Only owners and admins delete these (their single proposals and routes are admin-only); agents may delete saved replies. */
+export const ADMIN_DELETE_TARGETS: readonly BulkDeleteTarget[] = ["tag", "topic", "knowledge_page", "knowledge_source"];
+const DELETE_NOUNS: Record<BulkDeleteTarget, [string, string]> = {
+  saved_reply: ["saved reply", "saved replies"],
+  tag: ["tag", "tags"],
+  topic: ["topic", "topics"],
+  knowledge_page: ["knowledge page", "knowledge pages"],
+  knowledge_source: ["knowledge source", "knowledge sources"],
+};
+export const deleteNoun = (target: BulkDeleteTarget, n: number): string => DELETE_NOUNS[target][n === 1 ? 0 : 1];
+
+/** D-144: one thing on a bulk delete card: its name and what goes with it (readable text, from the Worker). */
+export interface BulkDeleteItem {
+  id: string;
+  name: string;
+  /** "on 12 chats", "website · 140 pages", the saved reply's first words. */
+  detail: string;
+  /** knowledge_page: the source it's in. */
+  sourceId?: string;
+}
 
 /** One chat on a bulk card: who it's with and the field before → after (readable text, from the Worker). */
 export interface BulkItem {
@@ -414,14 +439,16 @@ export type Proposal =
       remove?: string[];
       handling?: "ai" | "human";
       items: BulkItem[];
-    };
+    }
+  /** D-144: several saved replies, tags, topics or knowledge pages / sources deleted; `items` filled by the Worker. */
+  | { kind: "bulk_delete"; target: BulkDeleteTarget; ids: string[]; items: BulkDeleteItem[] };
 
 export type ProposalKind = Proposal["kind"];
 export const PROPOSAL_KINDS: readonly ProposalKind[] = [
   "assign", "status", "handling", "tags", "note", "reply_draft", "issue", "invite_visitor", "contact", "agent_file", "desk_settings", "ai_settings",
   "knowledge_website", "knowledge_text", "knowledge_resync", "knowledge_edit", "knowledge_remove_page", "knowledge_remove",
   "saved_reply_create", "saved_reply_edit", "saved_reply_delete", "tag_rename", "tag_delete", "topic_rename", "topic_merge", "topic_delete", "topic_label",
-  "team_invite", "team_revoke_invite", "team_role", "team_remove", "notifications", "workspace_name", "email_settings", "email_test", "identity_off", "bulk",
+  "team_invite", "team_revoke_invite", "team_role", "team_remove", "notifications", "workspace_name", "email_settings", "email_test", "identity_off", "bulk", "bulk_delete",
 ];
 
 /** What the card names, filled in by the Worker: the conversation's customer, the teammate, the thing changed. */
@@ -694,10 +721,48 @@ export function readProposal(tool: ActionTool, rawInput: unknown, me: string): P
       for (const t of [...add, ...remove]) if (!TAG.test(t)) fail("Tag names are 1 to 40 characters on one line.");
       return { ...base, add, remove };
     }
+    case "propose_bulk_delete": {
+      const target = oneOf(input, "what", BULK_DELETE_TARGETS) ?? fail(`what is required (${BULK_DELETE_TARGETS.join(", ")}).`);
+      const v = input.ids;
+      const given = typeof v === "string" ? v.split(",") : Array.isArray(v) ? v : fail("ids must be a list of ids from a tool result.");
+      const ids: string[] = [];
+      for (const x of given as unknown[]) {
+        const one = typeof x === "string" ? x.trim() : "";
+        if (!ID.test(one)) fail("ids must be ids from a tool result (list_inbox_setup, list_knowledge, read_knowledge_source).");
+        if (!ids.includes(one)) ids.push(one);
+      }
+      if (ids.length < 2) fail("Give at least 2 ids (for one, use the single proposal).");
+      if (ids.length > MAX_BULK) fail(`At most ${MAX_BULK} at once.`);
+      return { kind: "bulk_delete", target, ids, items: [] };
+    }
   }
 }
 
 type Bulk = Extract<Proposal, { kind: "bulk" }>;
+type BulkDelete = Extract<Proposal, { kind: "bulk_delete" }>;
+export type BulkProposal = Bulk | BulkDelete;
+export const isBulk = (p: Proposal): p is BulkProposal => p.kind === "bulk" || p.kind === "bulk_delete";
+
+/** A bulk card's row, either kind: its id, name, desk link, and before → after (a delete: what goes → "deleted"). */
+export interface BulkRow {
+  id: string;
+  name: string;
+  href: string | null;
+  before: string;
+  after: string;
+}
+
+const deleteHref = (target: BulkDeleteTarget, item: BulkDeleteItem): string | null =>
+  target === "saved_reply" ? "/settings/inbox" : target === "topic" ? `/inbox?topic=${encodeURIComponent(item.id)}` : target === "knowledge_source" ? knowledgeLink(item.id) : target === "knowledge_page" ? knowledgeLink(item.sourceId) : null;
+
+export function bulkRows(p: BulkProposal): BulkRow[] {
+  if (p.kind === "bulk") return p.items.map((i) => ({ id: i.conversationId, name: i.customer, href: `/inbox/${i.conversationId}`, before: i.before, after: i.after }));
+  const gone = p.target.startsWith("knowledge_") ? "removed" : "deleted";
+  return p.items.map((i) => ({ id: i.id, name: i.name, href: deleteHref(p.target, i), before: i.detail, after: gone }));
+}
+
+/** D-144: a bulk delete's verb for `n`: "Delete 4 tags", "Remove 3 knowledge sources". */
+export const deleteVerb = (p: BulkDelete, n: number): string => `${p.target.startsWith("knowledge_") ? "Remove" : "Delete"} ${n} ${deleteNoun(p.target, n)}`;
 const BULK_FIELDS: Record<BulkOp, string> = { status: "Status", assign: "Assignee", tags: "Tags", handling: "Handled by" };
 export const bulkField = (op: BulkOp): string => BULK_FIELDS[op];
 
@@ -716,8 +781,23 @@ export function bulkVerb(p: Bulk, n: number, assignee?: string): string {
   }
 }
 
-/** One chat of a bulk card as its single proposal, so Confirm runs it through the same route. */
-export function bulkSingle(p: Bulk, conversationId: string): Proposal {
+/** One row of a bulk card as its single proposal, so Confirm runs it through the same route. */
+export function bulkSingle(p: BulkProposal, id: string): Proposal {
+  if (p.kind === "bulk_delete") {
+    switch (p.target) {
+      case "saved_reply":
+        return { kind: "saved_reply_delete", replyId: id };
+      case "tag":
+        return { kind: "tag_delete", tagId: id };
+      case "topic":
+        return { kind: "topic_delete", topicId: id };
+      case "knowledge_source":
+        return { kind: "knowledge_remove", sourceId: id };
+      case "knowledge_page":
+        return { kind: "knowledge_remove_page", sourceId: p.items.find((i) => i.id === id)?.sourceId ?? "", documentId: id };
+    }
+  }
+  const conversationId = id;
   switch (p.op) {
     case "status":
       return { kind: "status", conversationId, status: p.status! };
@@ -730,21 +810,21 @@ export function bulkSingle(p: Bulk, conversationId: string): Proposal {
   }
 }
 
-/** A bulk row after it ran (or was left out). */
+/** A bulk row after it ran (or was left out); `id` is the row's (a chat's, or the deleted thing's). */
 export interface BulkResult {
-  conversationId: string;
+  id: string;
   status: "done" | "failed" | "skipped";
   error?: string;
 }
 
 /** What the model hears about a bulk run: "5 done, 1 failed: Hana Kim (not found), 2 left out by the person". */
-export function bulkOutcome(items: BulkItem[], results: BulkResult[]): ProposalOutcome {
-  const name = (id: string) => items.find((i) => i.conversationId === id)?.customer ?? id;
+export function bulkOutcome(rows: BulkRow[], results: BulkResult[]): ProposalOutcome {
+  const name = (id: string) => rows.find((i) => i.id === id)?.name ?? id;
   const done = results.filter((r) => r.status === "done");
   const failed = results.filter((r) => r.status === "failed");
   const skipped = results.filter((r) => r.status === "skipped");
   const parts = [`${done.length} done`];
-  if (failed.length) parts.push(`${failed.length} failed: ${failed.slice(0, 5).map((r) => `${name(r.conversationId)} (${clip(r.error ?? "error", 80)})`).join("; ")}`);
+  if (failed.length) parts.push(`${failed.length} failed: ${failed.slice(0, 5).map((r) => `${name(r.id)} (${clip(r.error ?? "error", 80)})`).join("; ")}`);
   if (skipped.length) parts.push(`${skipped.length} left out by the person`);
   return { status: done.length ? "done" : skipped.length === results.length ? "cancelled" : "failed", detail: parts.join(", "), results };
 }
@@ -895,6 +975,10 @@ export function proposalSummary(p: Proposal, labels: ProposalLabels): string {
       }
       return bulkVerb(p, n, labels.assignee);
     }
+    case "bulk_delete": {
+      const tail = p.target === "tag" ? " from every chat they're on" : p.target === "topic" ? " (their chats get labelled again later)" : p.target.startsWith("knowledge_") ? " from the knowledge" : " for the whole team";
+      return `${deleteVerb(p, p.items.length)}${tail}`;
+    }
   }
 }
 
@@ -914,6 +998,8 @@ export function proposalRisk(p: Proposal): { tone: "destructive" | "external"; l
       return { tone: "destructive", line: "This can't be undone: they lose access at once (and their account, if this was their only workspace)." };
     case "identity_off":
       return { tone: "destructive", line: "This can't be undone: the secret is deleted, signed-in customers become anonymous, and turning it on again makes a new secret." };
+    case "bulk_delete":
+      return { tone: "destructive", line: p.target.startsWith("knowledge_") ? "This can't be undone: knowledge has no history to bring it back from." : p.target === "tag" ? "This can't be undone: the tags come off every chat." : "This can't be undone." };
     case "invite_visitor":
       return { tone: "external", line: "The visitor sees this message on their screen." };
     case "email_test":
@@ -966,6 +1052,7 @@ export function proposalCard(p: Proposal): { title: string; confirm: string } {
     case "email_test": return c("Send a test email?", "Send test email");
     case "identity_off": return c("Turn identity verification off?", "Turn off");
     case "bulk": return c(`Change ${p.items.length} chats?`, bulkVerb(p, p.items.length));
+    case "bulk_delete": return c(`${deleteVerb(p, p.items.length)}?`, deleteVerb(p, p.items.length));
   }
 }
 
@@ -976,6 +1063,7 @@ export function proposalForModel(p: Proposal): Record<string, unknown> {
     const { items, ...rest } = p;
     return { ...rest, conversationIds: Array.isArray(items) ? items.map((i) => i.conversationId) : p.conversationIds };
   }
+  if (p && typeof p === "object" && p.kind === "bulk_delete") return { kind: p.kind, what: p.target, ids: Array.isArray(p.items) && p.items.length ? p.items.map((i) => i.id) : p.ids };
   return p as unknown as Record<string, unknown>;
 }
 
@@ -1357,6 +1445,12 @@ export function outcomeTitle(p: Proposal, labels: ProposalLabels, outcome: Propo
       const failed = r.filter((x) => x.status === "failed").length;
       const verb = p.op === "status" ? (p.status === "resolved" ? "Resolved" : p.status === "open" ? "Reopened" : "Marked pending") : p.op === "assign" ? (p.assigneeId === null ? "Unassigned" : "Assigned") : p.op === "handling" ? (p.handling === "ai" ? "Handed to the AI" : "Taken over") : "Tags updated";
       return `${verb} · ${done} chat${done === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
+    }
+    case "bulk_delete": {
+      const r = outcome.results ?? [];
+      const done = r.filter((x) => x.status === "done").length;
+      const failed = r.filter((x) => x.status === "failed").length;
+      return `${p.target.startsWith("knowledge_") ? "Removed" : "Deleted"} · ${done} ${deleteNoun(p.target, done)}${failed ? ` · ${failed} failed` : ""}`;
     }
   }
 }
