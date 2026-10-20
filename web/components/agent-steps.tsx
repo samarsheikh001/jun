@@ -166,7 +166,7 @@ export function StepTrace({
       </button>
       {steps.length > 0 && (
         <Fold open={open}>
-          <ul className="relative m-0 mt-0.5 ml-[7px] flex list-none flex-col gap-0.5 border-l border-border py-0.5 pr-1 pl-3">
+          <ul className="step-tree relative m-0 mt-0.5 ml-[7px] flex list-none flex-col gap-0.5 py-0.5 pr-1 pl-4">
             {steps.map((s) => (
               <StepRow key={s.id} step={s} />
             ))}
