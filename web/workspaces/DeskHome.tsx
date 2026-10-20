@@ -153,26 +153,21 @@ function WorkspaceCard({ workspace: w, index }: { workspace: WorkspaceSummary; i
           <span className="ws-card-role">{ROLE_LABEL[w.role]}</span>
         </div>
         <p className="ws-card-lede"><b>{lede}</b> {more}</p>
-        {shot ? (
-          <>
-            <p className="ws-card-chips"><span>{plural(w.open, "open chat")}</span>{w.waiting > 0 && <span data-warn="">{w.waiting} need a person</span>}</p>
-            <div className="ws-card-site" aria-hidden="true">
-              <div className="ws-card-site-bar"><i /><i /><i /><span>{hostOf(w.installedOn)}</span></div>
-              <img src={shot} alt="" />
-            </div>
-          </>
-        ) : (
-          <div className="ws-card-panel" aria-hidden="true">
-            <span className="ws-card-date">{today()}</span>
-            <p className="ws-card-panel-title">Inbox</p>
-            <ul>
+        <p className="ws-card-chips"><span>{plural(w.open, "open chat")}</span>{w.waiting > 0 && <span data-warn="">{w.waiting} need a person</span>}</p>
+        {/* One window for both: the website's picture once it has loaded, else the inbox at a glance (D-141). */}
+        <div className="ws-card-site" aria-hidden="true">
+          <div className="ws-card-site-bar"><i /><i /><i /><span>{shot ? hostOf(w.installedOn) : `Inbox · ${today()}`}</span></div>
+          {shot ? (
+            <img src={shot} alt="" />
+          ) : (
+            <ul className="ws-card-inbox">
               <li data-on={w.open ? "" : undefined}><span className="ws-check"><ChatIcon /></span>{plural(w.open, "open chat")}</li>
               <li data-warn={w.waiting ? "" : undefined}><span className="ws-check"><HandoffIcon /></span>{w.waiting ? `${w.waiting} need a person` : "No one waiting"}</li>
               <li data-on={w.aiOn ? "" : undefined}><span className="ws-check">{w.aiOn ? <CheckIcon /> : <BotIcon />}</span>AI replies {w.aiOn ? "on" : "off"}</li>
               <li data-on={w.installed ? "" : undefined}><span className="ws-check"><GlobeIcon /></span>{w.installedOn ? hostOf(w.installedOn) : w.installed ? "Installed" : "Not installed"}</li>
             </ul>
-          </div>
-        )}
+          )}
+        </div>
       </a>
     </li>
   );
@@ -232,7 +227,7 @@ function WorkspaceCardSkeleton({ name }: { name?: string }) {
       <div className="ws-card ws-card-skel">
         <div className="ws-card-head"><Skeleton className="ws-card-mark" /><span className="ws-card-name">{name ?? <SkelText width={96} />}</span></div>
         <p className="ws-card-lede"><SkelText width="80%" /></p>
-        <div className="ws-card-panel"><p className="ws-card-panel-title"><SkelText width={60} /></p></div>
+        <div className="ws-card-site"><div className="ws-card-site-bar"><i /><i /><i /></div><ul className="ws-card-inbox"><li><SkelText width={90} /></li><li><SkelText width={110} /></li></ul></div>
       </div>
     </li>
   );
