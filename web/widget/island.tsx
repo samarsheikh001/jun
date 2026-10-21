@@ -66,8 +66,11 @@ function Typewriter({ phrases, fallback }: { phrases: string[]; fallback: string
  */
 export type IslandState = "rest" | "intro" | "nudge" | "open" | "thinking" | "answer" | "panel";
 
-/** Each state's width; phones cap every width at the frame minus 24px. */
-const WIDTHS: Record<IslandState, number> = { rest: 360, intro: 460, nudge: 440, open: 660, thinking: 420, answer: 560, panel: 660 };
+/**
+ * Each state's width; phones cap every width at the frame minus 24px. The suggestions, an answer and the
+ * whole chat share one width, so picking a question only grows the island taller, never narrower.
+ */
+const WIDTHS: Record<IslandState, number> = { rest: 360, intro: 460, nudge: 440, open: 600, thinking: 420, answer: 600, panel: 600 };
 /** D-79: a one-line pill that hugs its text stays within these. */
 const HUG_MIN = 240;
 const HUG_MAX = 480;
