@@ -1390,11 +1390,22 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 .agent-tally { gap: 6px; margin: 0; }
 
 /* ---------- visitors (M6) ---------- */
+/* Type follows Home, not the mono-heavy Dashboard: Geist with tabular figures, quiet 13px labels, and each list in
+   a soft bordered card like the brief's rows. Shared Dashboard parts are scoped to .visitors-page here. */
+.visitors-page { font-variant-numeric: tabular-nums; }
+.visitors-page .dash-card:not(.dash-hero) { padding: 16px 20px 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.visitors-page .dash-card-head h2 { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.01em; }
+.visitors-page .kpi-label { font-size: 13px; line-height: 20px; font-weight: 525; color: var(--muted-foreground); }
+.visitors-page .dash-rows li { padding: 9px 0; }
+.visitors-page .dash-rows.bars li { padding-bottom: 17px; }
+.visitors-page .dash-rows.bars li::before, .visitors-page .dash-rows.bars li::after { bottom: 8px; height: 3px; }
+.visitors-page .dash-row-label { font-size: 14px; line-height: 20px; font-weight: 405; }
+.visitors-page .dash-row-value { font: 525 14px/20px var(--font-sans); letter-spacing: normal; }
 .team-table th { color: var(--muted-foreground); font-size: 12px; }
 /* The header's "● Live" pill; grey and still while nobody's on the site. */
 .live-pill {
   display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border-radius: 999px;
-  font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--success);
+  font-size: 12px; font-weight: 525; color: var(--success);
   background: color-mix(in oklch, var(--success) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--success) 25%, transparent);
 }
 .live-pill .live-dot { width: 6px; height: 6px; }
@@ -1403,32 +1414,32 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 /* Hero: the globe, then the count and the top countries. */
 .visitor-hero { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 24px 48px; align-items: center; }
 @media (max-width: 1100px) { .visitor-hero { grid-template-columns: minmax(0, 1fr); } .visitor-hero .visitor-hero-stats { max-width: none; } }
-.visitor-hero-stats { display: grid; gap: 4px; align-content: center; max-width: 440px; }
-.visitor-live-count { font: 500 72px/1 var(--font-mono); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; margin: 4px 0 8px; }
-.visitor-mini { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: space-between; gap: 12px 20px; margin: 8px 0 0; padding: 14px 0; border-block: 1px solid var(--border); }
+.visitor-hero-stats { display: grid; gap: 4px; align-content: center; max-width: 440px; padding: 18px 20px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+.visitor-live-count { font-size: 44px; line-height: 1; font-weight: 500; letter-spacing: -0.03em; margin: 6px 0; }
+.visitor-mini { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: space-between; gap: 12px 20px; margin: 8px 0 0; padding: 12px 0; border-block: 1px solid var(--border); }
 .visitor-mini div { display: grid; gap: 2px; }
 .visitor-mini dt { font-size: 12px; font-weight: 525; color: var(--muted-foreground); }
-.visitor-mini dd { margin: 0; font: 500 22px/1.2 var(--font-mono); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.visitor-mini dd { margin: 0; font-size: 18px; line-height: 26px; font-weight: 500; letter-spacing: -0.01em; }
 .visitor-hero-note { margin: 16px 0 0; }
 /* Country codes, not flag emoji: Windows draws those as two loose letters. */
 .visitor-cc {
   display: inline-grid; place-items: center; min-width: 26px; height: 18px; margin-right: 10px; padding: 0 4px; border-radius: 5px; vertical-align: 1px;
-  font: 600 10px var(--font-mono); letter-spacing: 0.04em; color: var(--muted-foreground); background: var(--muted); box-shadow: inset 0 0 0 1px var(--border);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted-foreground); background: var(--muted); box-shadow: inset 0 0 0 1px var(--border);
 }
 .visitor-avatar .visitor-cc { position: absolute; right: -8px; bottom: -6px; margin: 0; min-width: 0; height: 15px; font-size: 9px; color: var(--foreground); background: var(--background); }
-.visitors-page .dash-rows .page-path { font: 13px/20px var(--font-mono); overflow-wrap: anywhere; }
+.visitors-page .dash-rows .page-path { overflow-wrap: anywhere; }
 /* Everyone on the site: avatar, who, page, time on site, action; the invite opens under its row. */
-.visitor-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; }
+.visitor-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; }
 .visitor-list li {
   display: grid; grid-template-columns: 44px minmax(0, 1.1fr) minmax(0, 1.4fr) 96px 110px; gap: 4px 16px; align-items: center;
-  padding: 14px 12px; margin: 0 -12px; border-radius: 12px; transition: background-color 0.15s;
+  padding: 12px; margin: 0 -12px; border-radius: 12px; transition: background-color 0.15s;
 }
 .visitor-list li + li { box-shadow: 0 -1px 0 var(--border); }
 .visitor-list li:hover, .visitor-list li.focus { background: color-mix(in oklch, var(--tint) 8%, transparent); box-shadow: none; }
 .visitor-list li:hover + li, .visitor-list li.focus + li { box-shadow: none; }
 .visitor-avatar {
   position: relative; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
-  font: 600 14px var(--font-mono); color: var(--tint);
+  font-size: 13px; font-weight: 600; color: var(--tint);
   background:
     radial-gradient(circle, color-mix(in oklch, var(--tint) 45%, transparent) 0.7px, transparent 1.1px) 0 0 / 4px 4px,
     color-mix(in oklch, var(--tint) 12%, transparent);
@@ -1436,12 +1447,12 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 }
 .visitor-who, .visitor-page { display: grid; gap: 2px; min-width: 0; }
 .visitor-skel-avatar { width: 40px; height: 40px; border-radius: 12px; }
-.visitor-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 15px; font-weight: 665; }
+.visitor-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 14px; line-height: 20px; font-weight: 525; }
 .visitor-name .verified { margin-left: -4px; }
 .visitor-page-title { font-weight: 525; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.visitor-list code { font: 12px var(--font-mono); color: var(--muted-foreground); background: none; padding: 0; overflow-wrap: anywhere; }
+.visitor-list code { font: inherit; font-size: 13px; color: var(--muted-foreground); background: none; padding: 0; overflow-wrap: anywhere; }
 .visitor-time { display: grid; gap: 2px; justify-items: end; text-align: right; }
-.visitor-time-n { font: 500 17px/1.2 var(--font-mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.visitor-time-n { font-size: 14px; line-height: 20px; font-weight: 525; white-space: nowrap; }
 .visitor-action { display: flex; justify-content: flex-end; white-space: nowrap; }
 .visitor-invite { grid-column: 2 / -1; display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .visitor-invite input { flex: 1; min-width: 240px; }
@@ -2300,7 +2311,7 @@ dialog.shortcuts { width: min(720px, calc(100vw - 32px)); max-height: calc(100dv
   .visitor-action:empty { display: none; }
   .visitor-invite { grid-column: 1 / -1; }
   .visitor-mini { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .visitor-live-count { font-size: 56px; }
+  .visitor-live-count { font-size: 38px; }
   .issue-dialog form { padding: 14px; }
   .issue-chip-title { max-width: 140px; }
   .issue-actions > .muted { flex-basis: 100%; }

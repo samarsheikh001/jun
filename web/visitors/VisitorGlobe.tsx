@@ -16,7 +16,7 @@ setWorkerUrl(workerUrl);
 // hovering a visitor in the table turns the globe to them. Day or night map follows the desk theme.
 
 const WORLD_URL = "/geo/world.v1.json";
-const FONT = "Outfit";
+const FONT = "Geist";
 /** Degrees of longitude per second while idle. */
 const SPIN = 4;
 
@@ -86,7 +86,7 @@ function style(world: World, countries: string[], p: Palette): StyleSpecificatio
     version: 8,
     projection: { type: "globe" },
     // Labels in the desk's font, drawn in the browser (no glyph server).
-    "font-faces": { [FONT]: new URL("/fonts/outfit-latin-wght-normal.woff2", location.href).href },
+    "font-faces": { [FONT]: new URL("/fonts/geist-latin-wght-normal.woff2", location.href).href },
     sources: Object.fromEntries(Object.entries(world).filter(([name]) => name !== "seaLabels" && name !== "cities").map(([name, data]) => [name, { type: "geojson", data }])),
     layers,
   };
