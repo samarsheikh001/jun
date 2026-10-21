@@ -313,7 +313,16 @@ export function Island({ state, live, onOpen, autoFold = null, hug = false, high
   const answerMax = Math.max(panelHeight, Math.min(720, viewport.h - edge(viewport.w) - GLOW - 48));
   const h = state === "panel" ? panelHeight : state === "answer" ? Math.min(measured, answerMax) : measured;
   const x = dragX ?? spotX(spot, w, viewport.w);
-  useIslandFrame({ x, w, h }, live, hidden, dragging);
+  // The frame's width changed (the first jun:css after the loader's 380px default, or the page was
+  // resized): jump to the new place instead of springing across from the old one.
+  const [placedW, setPlacedW] = useState(viewport.w);
+  const snap = placedW !== viewport.w;
+  useEffect(() => {
+    if (!snap) return;
+    const raf = requestAnimationFrame(() => setPlacedW(viewport.w));
+    return () => cancelAnimationFrame(raf);
+  }, [snap, viewport.w]);
+  useIslandFrame({ x, w, h }, live, hidden, dragging || snap);
   // Hold and throw (the resting pill, on frames wide enough for the sides). A press that moves less
   // than DRAG_START_PX stays a click; after a drag the click that follows the release is swallowed.
   const drag = useRef<{ id: number; startX: number; baseX: number; moved: boolean; samples: [number, number][] } | null>(null);
@@ -381,7 +390,7 @@ export function Island({ state, live, onOpen, autoFold = null, hug = false, high
       {/* The box carries the size and its spring; the highlight's glow sits on it, outside the clipped shell. */}
       <div
         ref={boxRef}
-        className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}${flash ? " i-flash" : ""}${compact ? " i-compact" : ""}${hidden ? " i-away" : ""}${dragging ? " i-drag" : ""}`}
+        className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}${flash ? " i-flash" : ""}${compact ? " i-compact" : ""}${hidden ? " i-away" : ""}${dragging ? " i-drag" : ""}${snap ? " i-snap" : ""}`}
         style={{ width: w, height: h, left: x }}
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}

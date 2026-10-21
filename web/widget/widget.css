@@ -331,6 +331,8 @@ html.island.island-dark {
 .i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s, 0.65s; }
 /* Held and dragged: it follows the pointer at once, lifted a little; let go, it springs to its spot. */
 .i-box.i-drag { transform: scale(1.04); transition: transform 0.2s ease-out; cursor: grabbing; }
+/* The frame changed width (first load, a resize): straight to the new place, no spring across. */
+.i-box.i-snap { transition: none; }
 .i-box.i-drag .i-shell { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 14px 36px rgba(0, 0, 0, 0.22); }
 .i-s-rest { touch-action: pan-y; }
 /* While an answer streams in, the box grows with it without bouncing. */
