@@ -420,6 +420,12 @@ function Thread({
     api<{ savedReplies: SavedReply[] }>(`/workspaces/${workspaceId}/saved-replies`).then((r) => setSavedReplies(r.savedReplies), () => {});
   }, [workspaceId]);
 
+  // C-02: with email replies off, a customer who left an address only sees a reply if they come back.
+  const [emailOn, setEmailOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    api<{ on: boolean }>(`/workspaces/${workspaceId}/email`).then((r) => setEmailOn(r.on), () => setEmailOn(null));
+  }, [workspaceId]);
+
   // AI-11: tool calls, reloaded as each one is recorded (the `ai_action` event) and when an AI reply lands.
   const [actions, setActions] = useState<AiAction[]>([]);
   const [actionTick, setActionTick] = useState(0);
@@ -642,6 +648,12 @@ function Thread({
         }}
       />
       </ScrollArea>
+      {emailOn === false && conversation.contact.email && (
+        <p className="email-off small muted">
+          Email replies are off, so they'll only see your reply if they come back to your site.{" "}
+          <a href={deskHref("/channels/email")} onClick={(e) => { e.preventDefault(); navigate("/channels/email"); }}>Set up email</a>
+        </p>
+      )}
       <Composer
         control={composer}
         placeholder={savedReplies.length ? "Reply… (/ for saved replies, Shift+Enter for a new line)" : "Reply… (Enter to send, Shift+Enter for a new line)"}

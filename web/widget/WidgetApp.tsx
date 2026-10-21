@@ -15,7 +15,7 @@ import { bindSounds, cue, playChime, setSoundOn, unlockSoundOnInteraction } from
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
 import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
 import { Badge, MiniCard, morph, useCardFrame, usePhoneFrame } from "./card.tsx";
-import { Island, type Highlight, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandState } from "./island.tsx";
+import { Island, type Highlight, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandSpot, type IslandState } from "./island.tsx";
 
 // The chat UI inside the widget iframe. The visitor's token is created only when they
 // first send something, so just opening the chat stores nothing in their browser.
@@ -172,6 +172,28 @@ function noteSent(clientMsgId: string): void {
     sessionStorage.setItem(SENT_KEY, JSON.stringify(memorySent));
   } catch {
     // storage blocked: this page remembers
+  }
+}
+
+// Where the visitor threw the island (IslandSpot), per site: stored with consent, else for this page.
+const spotKey = (key: string) => `jun:island-spot:${key}`;
+let memorySpot: IslandSpot = "center";
+function readSpot(key: string): IslandSpot {
+  if (!persist) return memorySpot;
+  try {
+    const v = localStorage.getItem(spotKey(key));
+    return v === "left" || v === "right" || v === "center" ? v : memorySpot;
+  } catch {
+    return memorySpot;
+  }
+}
+function writeSpot(key: string, spot: IslandSpot): void {
+  memorySpot = spot;
+  if (!persist) return;
+  try {
+    localStorage.setItem(spotKey(key), spot);
+  } catch {
+    // storage blocked: remembered until the page reloads
   }
 }
 
@@ -399,6 +421,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [backdrop, setBackdrop] = useState<Backdrop>(null);
   /** W-34: JunDesk.highlight() calls from the host page, counted (each one plays the island's glow once). */
   const [highlight, setHighlight] = useState<Highlight | null>(null);
+  // The host page is scrolling down (`jun:away` from widget-island.js): a quiet resting island slides away.
+  const [pageAway, setPageAway] = useState(false);
+  const [islandSpot, setIslandSpot] = useState<IslandSpot>(() => readSpot(api.key));
   const config = useMemo(() => {
     const look = saved && draft ? { ...saved, ...draft } : saved;
     return look && hostTheme ? { ...look, theme: hostTheme } : look;
@@ -585,6 +610,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       }
       if (data?.type === "jun:highlight") setHighlight((h) => ({ n: (h?.n ?? 0) + 1, sound: data.sound === true }));
       if (data?.type === "jun:backdrop") setBackdrop(data.dark === true ? "dark" : data.dark === false ? "light" : null);
+      if (data?.type === "jun:away") setPageAway(data.away === true);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
         if (typeof data.persist === "boolean") setPersist(api.key, data.persist);
         if (typeof data.sessionId === "string") setSessionId(data.sessionId);
@@ -805,6 +831,12 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
           placeholder: config.placeholder,
           cardTheme,
           highlight,
+          away: pageAway,
+          spot: islandSpot,
+          setSpot: (spot: IslandSpot) => {
+            writeSpot(api.key, spot);
+            setIslandSpot(spot);
+          },
           unread: Boolean(summary && unread(summary)),
           setOpen: setIslandOpen,
           newChat: () => {
@@ -1009,6 +1041,11 @@ function WidgetThread({
     cardTheme: "light" | "dark";
     /** W-34: the latest JunDesk.highlight() call. */
     highlight: Highlight | null;
+    /** The page is scrolling down: the resting island may slide away. */
+    away: boolean;
+    /** Where the visitor threw it, and keeping a new spot. */
+    spot: IslandSpot;
+    setSpot: (spot: IslandSpot) => void;
     unread: boolean;
     setOpen: (open: boolean) => void;
     newChat: () => void;
@@ -1649,7 +1686,7 @@ function WidgetThread({
     const folded = restSummary(thread.messages) ?? (serverLine && !serverLine.waiting ? serverLine.text : null);
     const hug = shown === "thinking" || (shown === "rest" && Boolean(island.unread || waitingLine || (conversationId && folded)));
     return (
-      <Island state={shown} live={live} highlight={island.highlight} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug}>
+      <Island state={shown} live={live} highlight={island.highlight} onOpen={() => island.setOpen(true)} autoFold={autoFold} hug={hug} quiet={!island.unread && !waitingLine} away={island.away} spot={island.spot} onSpot={island.setSpot}>
         {shown === "rest" && <RestPill logoUrl={island.logoUrl} suggestions={island.suggestions} placeholder={placeholder} unread={island.unread ? `New reply${teammate ? ` from ${teammate}` : ""}` : null} summary={folded} chat={Boolean(conversationId)} waiting={waitingLine} onOpen={() => island.setOpen(true)} />}
         {shown === "intro" && (
           <div className="i-open">

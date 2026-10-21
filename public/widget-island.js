@@ -2,6 +2,7 @@
  * Loaded by widget.js for the island (D-39), with J._bd = { host, post, auto, shown, open } (D-138: moved
  * out of widget.js to keep the loader under its budget).
  * "/" on the page opens the island, unless the visitor is typing somewhere on the page.
+ * Scrolling down tells the frame the visitor is reading (jun:away), so a resting island steps aside.
  * D-99, when the desk's island colour is "auto" (bd.auto): tells the island frame whether
  * the page behind it is dark (jun:backdrop), so it draws itself near-black on light pages and light on
  * dark ones; again whenever that changes (scrolling past a dark section, the site's theme switch).
@@ -17,7 +18,30 @@
     var t = e.target;
     if (e.key == "/" && !bd.shown() && !e.ctrlKey && !e.metaKey && !(t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) { e.preventDefault(); bd.open(); }
   });
+  // Scrolling down the page: the resting island slides away (jun:away) while the visitor scrolls, and
+  // comes back once they stop (a pause), scroll up, or reach the top or end of the page. Only the page's
+  // own scroll; the frame decides when it may.
+  var lastY = scrollY, run = 0, away = false, rest;
+  function tell(a) {
+    if (a != away) bd.post({ type: "jun:away", away: (away = a) });
+  }
+  addEventListener("scroll", function () {
+    var y = scrollY, d = y - lastY, a = away;
+    lastY = y;
+    if (!d) return;
+    run = (d > 0) == (run > 0) ? run + d : d;
+    if (run > 60 && y > 200) a = true;
+    if (run < -12 || y < 100 || y + innerHeight > document.documentElement.scrollHeight - 40) a = false;
+    tell(a);
+    clearTimeout(rest);
+    if (away) rest = setTimeout(function () { run = 0; tell(false); }, 900);
+  }, { passive: true });
   if (!bd.auto) return;
+  // The island's middle along the page, from the frame (jun:spot): the visitor can throw it to a side.
+  var cx = null;
+  addEventListener("message", function (e) {
+    if (e.data && e.data.type == "jun:spot" && typeof e.data.cx == "number") cx = e.data.cx, look();
+  });
   var timer, paint;
   // Dark (true), light (false), or null when the value has no solid colour in it.
   function shade(s) {
@@ -38,8 +62,8 @@
     if (timer) return;
     timer = setTimeout(function () {
       timer = 0;
-      // The island's middle: 24px from the bottom (12px on phones) plus half its 54px.
-      var list = document.elementsFromPoint(innerWidth / 2, innerHeight - (innerWidth < 640 ? 39 : 51)), el, dark = null, c;
+      // The island's middle: 24px from the bottom (12px on phones) plus half its 44px.
+      var list = document.elementsFromPoint(cx == null ? innerWidth / 2 : cx, innerHeight - (innerWidth < 640 ? 34 : 46)), el, dark = null, c;
       for (var i = 0; i < list.length && !el; i++) if (list[i] != bd.host) el = list[i];
       for (; el && dark == null; el = el.parentElement) {
         c = getComputedStyle(el);

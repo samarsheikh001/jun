@@ -254,6 +254,8 @@ html.mini[data-morph^="pill"]::view-transition-old(jun-composer), html.mini[data
 .w-shell .composer.pill { padding: 12px 16px 8px; border-top: 1px solid var(--border-soft); background: var(--surface); flex-shrink: 0; }
 /* No outline or shadow: a flat filled box. */
 .w-shell .composer-box { padding: 6px; border-radius: var(--radius); background: var(--hover); }
+/* A file dragged over the frame: the box rings in the brand colour ("Drop to attach"). */
+.w-shell .composer.dropping .composer-box { box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--hover)); }
 .w-shell .composer.pill textarea { min-height: 30px; max-height: 120px; margin: 0; padding: 5px 6px; border: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 20px; outline: none; }
 .w-shell .composer.pill textarea::placeholder { color: var(--muted); }
 .w-shell .composer-plus { width: 30px; height: 30px; border-radius: var(--radius-xs); background: transparent; color: var(--muted); }
@@ -318,14 +320,19 @@ html.island.island-dark {
 .island-dark .i-body::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.14); }
 .island-dark .i-body:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.26); }
 .island-dark .i-view .composer-menu { box-shadow: 0 8px 24px rgb(0 0 0 / 0.5); }
-.i-root { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 24px; overflow: visible; }
+/* The box is placed by its `left` (Island: its spot, or where it's being dragged). */
+.i-root { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: flex-start; padding-bottom: 24px; overflow: visible; }
 @media (max-width: 639px) { .i-root { padding-bottom: 12px; } }
 /* The box springs to the measured size (the proposal's stiffness 380 / damping 30, about 0.65s with a
    slight overshoot). The shell fills it; the highlight's glow sits on the box, outside the shell's
    clip, and stays inside the 32px the frame keeps visible around the island. */
-.i-box { position: relative; border-radius: 28px; transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), transform 0.35s cubic-bezier(0.34, 1.6, 0.5, 1); }
+.i-box { position: relative; border-radius: 28px; transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), transform 0.35s cubic-bezier(0.34, 1.6, 0.5, 1), left 0.65s cubic-bezier(0.34, 1.25, 0.5, 1); }
 /* Pressing the resting pill squishes it a little; it springs back on release. */
-.i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s; }
+.i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s, 0.65s; }
+/* Held and dragged: it follows the pointer at once, lifted a little; let go, it springs to its spot. */
+.i-box.i-drag { transform: scale(1.04); transition: transform 0.2s ease-out; cursor: grabbing; }
+.i-box.i-drag .i-shell { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 14px 36px rgba(0, 0, 0, 0.22); }
+.i-s-rest { touch-action: pan-y; }
 /* While an answer streams in, the box grows with it without bouncing. */
 .i-box.i-live { transition-duration: 0.25s; transition-timing-function: ease-out; }
 .i-s-intro, .i-s-open, .i-s-answer, .i-s-panel { border-radius: var(--radius); }
@@ -351,7 +358,7 @@ html.island.island-dark {
 .i-root :is(button, a, textarea, input):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 /* Resting: the light, the hint typing out the suggested questions (or a new reply), and the "/" key. */
-.i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 54px; padding: 0 16px 0 16px; border: 0; background: transparent; color: var(--text); font-size: 14px; text-align: left; transition: background 0.15s; }
+.i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 44px; padding: 0 16px 0 16px; border: 0; background: transparent; color: var(--text); font-size: 14px; text-align: left; transition: background 0.15s; }
 .i-rest:hover { background: var(--hover); }
 .i-rest:focus-visible { outline-offset: -4px; border-radius: 28px; }
 .i-rest .i-hint { flex: 1; min-width: 0; height: 20px; overflow: hidden; pointer-events: none; user-select: none; white-space: nowrap; font-size: 14px; line-height: 150%; color: var(--muted); mask-image: linear-gradient(to right, black 85%, transparent 100%); }
@@ -359,13 +366,19 @@ html.island.island-dark {
 .i-rest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Folded with a chat: its last answer in a few words. */
 .i-rest-sum { color: var(--text-soft); animation: i-fade 300ms ease-out; }
+/* Idle (Island's `compact`): the pill shrinks to its mark, "Ask" and the "/" key; scrolled away
+   (`i-away`): it slides below the bottom edge, and the frame's clip lets the page have the clicks. */
+.i-rest-ask { display: none; flex: 1; font-weight: 500; white-space: nowrap; animation: i-fade 300ms ease-out; }
+.i-compact .i-rest .i-hint, .i-compact .i-rest .i-rest-text { display: none; }
+.i-compact .i-rest .i-rest-ask { display: block; }
+.i-box.i-away { transform: translateY(calc(100% + 40px)); pointer-events: none; }
 .i-kbd { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px/1 "Jun Mono", ui-monospace, monospace; }
 @media (hover: none) { .i-kbd { display: none; } }
 .i-up { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
 .i-up svg { width: 16px; height: 16px; }
 
 /* Nudge: a one-line offer with Ask; × or 8 s puts it to rest. */
-.i-nudge { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 9px 9px 9px 16px; }
+.i-nudge { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 6px 6px 16px; }
 .i-nudge-text { flex: 1; min-width: 0; color: var(--text-soft); font-size: 13.5px; line-height: 1.45; }
 .i-nudge-from { color: var(--muted); }
 .i-ask { height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 600; }
@@ -377,7 +390,7 @@ html.island.island-dark {
 .i-icon svg { width: 15px; height: 15px; }
 
 /* Thinking: one specific line (a running tool step's label, else "Thinking…"). */
-.i-status { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 20px 0 16px; }
+.i-status { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 20px 0 16px; }
 .i-status-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; background: linear-gradient(90deg, var(--muted) 35%, var(--text) 50%, var(--muted) 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: w-shimmer 1.6s linear infinite; }
 
 /* Open: the suggested questions over the pill's row. */
@@ -410,11 +423,13 @@ html.island.island-dark {
 .i-ctl .i-ghost:hover { background: var(--border); }
 .i-ctl svg { width: 14px; height: 14px; }
 
-/* The pill's row: the mark and the question box, 54px like the resting pill. "+" and Send stay out
+/* The pill's row: the mark and the question box, 44px like the resting pill. "+" and Send stay out
    of the way until the visitor types (or points at the row, or tabs to "+"). */
-.i-row { display: flex; align-items: flex-end; gap: 10px; flex: none; min-height: 54px; padding: 0 10px 0 16px; }
-.i-row > .i-mark { margin-bottom: 16px; }
+.i-row { display: flex; align-items: flex-end; gap: 10px; flex: none; min-height: 44px; padding: 0 10px 0 16px; }
+.i-row > .i-mark { margin-bottom: 11px; }
 .i-row > .w-composer-wrap { flex: 1; min-width: 0; }
+/* A file dragged over the frame: the row tints in the brand colour ("Drop to attach"). */
+.i-row:has(.composer.dropping) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* Answer (the latest exchange) and panel (the whole conversation): the chat window's thread styles. */
 .i-answer, .i-panel { display: flex; flex-direction: column; }
@@ -483,7 +498,7 @@ html.island.island-dark {
 
 /* The box, in the pill's row: no field of its own (the island is the field), with "+", the input and Send. */
 .i-view .composer.pill { flex: none; padding: 0; border: 0; background: transparent; }
-.i-view .composer-box { min-height: 54px; padding: 12px 0; border-radius: 0; background: transparent; justify-content: center; }
+.i-view .composer-box { min-height: 44px; padding: 7px 0; border-radius: 0; background: transparent; justify-content: center; }
 /* "+" and Send fold away while the box is empty; "+" comes back on hover, when tabbed to or open (and when focused on touch). */
 .i-row .composer.pill .composer-plus, .i-row .composer.pill .composer-send { overflow: hidden; transition: width 0.2s ease-out, opacity 0.2s ease-out, background-color 150ms, color 150ms, transform 150ms; }
 .i-view .i-row .composer.pill .composer-send:disabled { width: 0; opacity: 0; pointer-events: none; }
@@ -497,7 +512,10 @@ html.island.island-dark {
 .i-view .composer-send:hover:not(:disabled) { background: var(--accent-hover); }
 .i-view .composer.pill .composer-send:disabled { opacity: 1; background: var(--border); color: var(--muted); }
 .i-view .composer-file { border-radius: var(--radius-xs); background: var(--surface); box-shadow: 0 0 0 1px var(--border); color: var(--text-soft); }
-.i-view .composer-menu { position: relative; margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 1px 3px rgb(0 0 0 / 0.06); }
+/* The "+" menu floats over what's above the row; it never moves the island. Only when there's less
+   than the menu's height above the row (an open island with no questions) does the view make room. */
+.i-view:has(.composer-menu) { min-height: 136px; }
+.i-view .composer-menu { left: 0; right: 0; bottom: calc(100% + 2px); margin: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 1px 3px rgb(0 0 0 / 0.06); }
 .i-view .composer-menu-glide { border-radius: var(--radius-xs); background: var(--hover); }
 .i-view .composer-menu button { border-radius: var(--radius-xs); color: var(--text); }
 .i-view .composer-menu-icon { color: var(--text-soft); }

@@ -20,7 +20,7 @@ export interface ComposerControl {
 type Suggestion = { kind: "mention"; id: string; label: string; start: number } | { kind: "reply"; id: string; label: string; body: string };
 
 /**
- * Message input with attachments. Enter sends, Shift+Enter adds a line. In the dashboard it
+ * Message input with attachments (picked, pasted or dropped). Enter sends, Shift+Enter adds a line. In the dashboard it
  * also writes internal notes with @mentions (I-05) and inserts saved replies with "/" (I-06).
  * Ctrl/⌘+Enter sends too, even with suggestions open; in the dashboard Esc leaves the input (I-13).
  */
@@ -189,6 +189,55 @@ export function Composer({
     if (fileInput.current) fileInput.current.value = "";
   };
 
+  // Files dragged in (a screenshot from the desktop) attach like picked ones. In the widget the whole
+  // frame is the chat, so a drop anywhere in it counts; in the dashboard, a drop on the composer.
+  const root = useRef<HTMLDivElement>(null);
+  const [dropping, setDropping] = useState(false);
+  const addFilesRef = useRef(addFiles);
+  addFilesRef.current = addFiles;
+  useEffect(() => {
+    const target: Document | HTMLElement | null = pill ? document : root.current;
+    if (!target || disabled) return;
+    const hasFiles = (e: DragEvent) => Boolean(e.dataTransfer?.types.includes("Files"));
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDropping(true);
+    };
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = "copy";
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDropping(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDropping(false);
+      void addFilesRef.current(e.dataTransfer!.files);
+      input.current?.focus();
+    };
+    const t = target as HTMLElement;
+    t.addEventListener("dragenter", enter);
+    t.addEventListener("dragover", over);
+    t.addEventListener("dragleave", leave);
+    t.addEventListener("drop", drop);
+    return () => {
+      t.removeEventListener("dragenter", enter);
+      t.removeEventListener("dragover", over);
+      t.removeEventListener("dragleave", leave);
+      t.removeEventListener("drop", drop);
+      setDropping(false);
+    };
+  }, [pill, disabled]);
+
   const takeScreenshot = async () => {
     setError(null);
     setShooting(true);
@@ -305,7 +354,7 @@ export function Composer({
   };
 
   return (
-    <div className={`composer ${note ? "note" : ""} ${pill ? "pill" : ""}`}>
+    <div ref={root} className={`composer ${note ? "note" : ""} ${pill ? "pill" : ""} ${dropping ? "dropping" : ""}`}>
       {notes && (
         <div className="composer-modes" role="tablist">
           <button role="tab" aria-selected={!note} className={`mode ${note ? "" : "active"}`} onClick={() => switchMode(false)}>Reply</button>
@@ -428,7 +477,7 @@ export function Composer({
                 ref={input}
                 rows={1}
                 value={body}
-                placeholder={placeholder}
+                placeholder={dropping ? "Drop to attach" : placeholder}
                 disabled={disabled}
                 aria-label="Message"
                 onChange={(e) => change(e.target.value)}
@@ -459,7 +508,7 @@ export function Composer({
           ref={input}
           rows={1}
           value={body}
-          placeholder={note ? "Note for your team… (@ to mention)" : placeholder}
+          placeholder={dropping ? "Drop to attach" : note ? "Note for your team… (@ to mention)" : placeholder}
           disabled={disabled}
           aria-label={note ? "Note" : "Message"}
           onChange={(e) => {

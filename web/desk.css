@@ -558,6 +558,8 @@ form.ws-rename { display: flex; gap: 8px; align-items: center; width: 100%; marg
 .tag-bar input { height: 24px; min-height: 0; padding: 2px 8px; font-size: 12px; width: 140px; }
 .tag-chip [data-slot="button"] { height: auto; padding: 0 2px; }
 .ai-banner { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--sidebar-border); }
+.email-off { margin: 0; padding: 6px 16px 0; }
+.email-off a { text-decoration: underline; text-underline-offset: 2px; }
 .issue-button { display: inline-flex; gap: 8px; align-items: center; }
 .issue-chip { color: var(--foreground); text-decoration: none; max-width: 100%; min-width: 0; font-family: var(--font-mono); font-size: 12px; }
 .issue-chip:hover { border-color: var(--ring); }
@@ -639,6 +641,7 @@ mark.mention { background: color-mix(in oklch, var(--warning) 35%, transparent);
    round icon buttons + Send all sit inside the one card. A note turns the whole card amber. */
 .composer { position: relative; margin: 0 16px 16px; padding: 8px; border-radius: 16px; background: var(--background); box-shadow: var(--shadow-md-tokens); }
 .composer.note { background: var(--note); color: var(--note-foreground); box-shadow: 0 0 0 1px var(--note-border), var(--shadow-md-tokens); }
+.composer.dropping { box-shadow: 0 0 0 2px var(--ring), var(--shadow-md-tokens); }
 /* Input on the first row; attach (and screenshot) bottom left, Send bottom right. */
 .composer-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 4px; }
 .composer-row > textarea { grid-row: 1; grid-column: 1 / -1; }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { playNow } from "../lib/sound.ts";
 
 // W-04 "island" mode (D-39, D-89): one small control at the bottom centre of the page that changes
@@ -8,7 +8,7 @@ import { playNow } from "../lib/sound.ts";
 // near-black surface, the default, also `html.island-dark`).
 //
 // It is one object, never a box swapped for another: in the open, answer and panel states the
-// bottom row is the pill itself (the mark and the input, 54px like the resting pill) and the
+// bottom row is the pill itself (the mark and the input, 44px like the resting pill) and the
 // content grows above it. There's no header bar: the visitor's question is the answer's title,
 // Minimize and End sit in the top-right corner on hover (IslandControls), and a short top row
 // carries what must stay visible (an intent's exit, who's talking, Earlier/Latest).
@@ -84,26 +84,54 @@ export interface Highlight {
 }
 /** W-34: how long JunDesk.highlight()'s lift and glow last (widget.css `i-flash`). */
 const FLASH_MS = 1_400;
+/** How long the resting pill waits, untouched, before it shrinks to its mark and "Ask". */
+export const IDLE_MS = 10_000;
+/** The shrunk pill's width: the mark, "Ask" and the "/" key. */
+const COMPACT_W = 136;
+/**
+ * Where the island sits along the bottom edge. The visitor can hold the resting pill and throw it to a
+ * side (Island's drag); phones keep it in the centre.
+ */
+export type IslandSpot = "left" | "center" | "right";
+/** How far the pill moves before a press becomes a drag (a smaller move is still a click). */
+const DRAG_START_PX = 6;
+/** A throw carries on for this long at the speed it was let go, then snaps to the nearest spot. */
+const THROW_MS = 180;
+/** Narrower frames (phones) keep the island in the centre. */
+const SPOTS_MIN_W = 640;
 
 /**
  * Sizes the frame: a fixed transparent box at the bottom centre (up to 720×680), clipped to the
  * island's box plus its shadow so the rest of the frame doesn't take the page's clicks. The clip
  * animates with the same curve as the island, so the two stay together.
  */
-function useIslandFrame(box: { w: number; h: number }, live: boolean): void {
+function useIslandFrame(box: { x: number; w: number; h: number }, live: boolean, away = false, dragging = false): void {
   useLayoutEffect(() => {
-    const motion = reducedMotion() ? "" : `transition:clip-path ${live ? ".25s ease-out" : `.65s ${SPRING}`};`;
+    const motion = reducedMotion() || dragging ? "" : `transition:clip-path ${live ? ".25s ease-out" : `.65s ${SPRING}`};`;
     const bottom = edge(window.innerWidth);
     postToHost({
       type: "jun:css",
       css:
-        // Room for the tallest answer (720px) plus its edge and glow; the clip-path leaves the rest of
-        // the page clickable. Inside, innerHeight is this height: the page's, up to 840px.
-        "display:block;top:auto;bottom:0;left:0;right:0;margin:0 auto;width:min(720px,100%);height:min(840px,100%);" +
+        // The page's width, so the island can sit at either side (IslandSpot), and room for the tallest
+        // answer (720px) plus its edge and glow; the clip-path leaves the rest of the page clickable.
+        // Inside, innerWidth is the page's and innerHeight its height up to 840px.
+        "display:block;top:auto;bottom:0;left:0;right:0;margin:0;width:100%;height:min(840px,100%);" +
         `border:0;border-radius:0;background:none;box-shadow:none;color-scheme:normal;${motion}` +
-        `clip-path:inset(calc(100% - ${box.h + bottom + GLOW}px) calc(50% - ${box.w / 2 + GLOW}px) ${Math.max(0, bottom - GLOW)}px)`,
+        // Away: nothing of the frame is left to take the page's clicks.
+        `clip-path:inset(${away ? "100%" : `calc(100% - ${box.h + bottom + GLOW}px)`} calc(100% - ${Math.round(box.x + box.w + GLOW)}px) ${Math.max(0, bottom - GLOW)}px ${Math.max(0, Math.round(box.x - GLOW))}px)`,
     });
-  }, [box.w, box.h, live]);
+  }, [box.x, box.w, box.h, live, away, dragging]);
+  // widget-island.js reads the page's colour under the island's middle (D-99).
+  useEffect(() => {
+    postToHost({ type: "jun:spot", cx: Math.round(box.x + box.w / 2) });
+  }, [box.x, box.w]);
+}
+
+/** The island's left edge in the frame for a spot (the centre on narrow frames). */
+function spotX(spot: IslandSpot, w: number, frameW: number): number {
+  const m = edge(frameW);
+  if (frameW < SPOTS_MIN_W || spot === "center") return (frameW - w) / 2;
+  return spot === "left" ? m : frameW - w - m;
 }
 
 /**
@@ -183,10 +211,20 @@ function useAutoFold(box: RefObject<HTMLDivElement | null>, fold: (() => void) |
  * `highlight` (W-34): bumped by the host page's JunDesk.highlight(); the folded island lifts a little
  * and glows once (just the glow under reduced motion), with cuelume's `attention` when the call asked
  * for `sound` (and the desk's sound switch is on). Open, it's already in view: nothing happens.
+ * `quiet`: the resting pill has nothing to say (no unread reply, no card waiting), so it may step
+ * back: after IDLE_MS untouched it shrinks to its mark and "Ask" (pointing at it or focusing it
+ * brings the whole pill back), and while the page scrolls down (`away`, from the loader's
+ * `jun:away`) it slides below the edge, back once the scrolling pauses or turns up. Never under
+ * reduced motion.
+ * `spot`: where along the bottom it sits. The resting pill can be held and thrown: it follows the
+ * pointer, and on release carries on a little at the speed it was let go (THROW_MS), then springs to
+ * the nearest spot, which `onSpot` keeps. Every shape grows from there, inward from a side.
  */
-export function Island({ state, live, onOpen, autoFold = null, hug = false, highlight = null, children }: { state: IslandState; live: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: Highlight | null; children: ReactNode }) {
+export function Island({ state, live, onOpen, autoFold = null, hug = false, highlight = null, quiet = false, away = false, spot = "center", onSpot, children }: { state: IslandState; live: boolean; onOpen: () => void; autoFold?: (() => void) | null; hug?: boolean; highlight?: Highlight | null; quiet?: boolean; away?: boolean; spot?: IslandSpot; onSpot?: (spot: IslandSpot) => void; children: ReactNode }) {
   const content = useRef<HTMLDivElement>(null);
   const folded = state === "rest" || state === "intro" || state === "nudge";
+  const resting = state === "rest" && quiet;
+  const [idle, setIdle] = useState(false);
   const [flash, setFlash] = useState(0);
   useEffect(() => {
     if (!highlight || !folded) return;
@@ -199,6 +237,36 @@ export function Island({ state, live, onOpen, autoFold = null, hug = false, high
   }, [highlight]);
   const boxRef = useRef<HTMLDivElement>(null);
   useAutoFold(boxRef, autoFold);
+  // The idle shrink: IDLE_MS after the pill was last pointed at or focused.
+  useEffect(() => {
+    const el = boxRef.current;
+    setIdle(false);
+    if (!resting || !el) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const inUse = () => el.matches(":hover") || el.contains(document.activeElement);
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => (inUse() ? arm() : setIdle(true)), IDLE_MS);
+    };
+    const wake = () => {
+      setIdle(false);
+      arm();
+    };
+    arm();
+    el.addEventListener("pointerenter", wake);
+    el.addEventListener("pointerleave", arm);
+    el.addEventListener("focusin", wake);
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener("pointerenter", wake);
+      el.removeEventListener("pointerleave", arm);
+      el.removeEventListener("focusin", wake);
+    };
+  }, [resting]);
+  const [dragX, setDragX] = useState<number | null>(null);
+  const dragging = dragX !== null;
+  const compact = resting && idle && !dragging;
+  const hidden = resting && away && !dragging && !reducedMotion();
   // "/" opens the resting island from inside the frame too (after Escape the focus is still here;
   // the loader handles the key on the host page).
   useEffect(() => {
@@ -224,7 +292,7 @@ export function Island({ state, live, onOpen, autoFold = null, hug = false, high
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const hugMax = Math.min(HUG_MAX, viewport.w - 24);
-  const w = hug ? Math.min(Math.max(measuredW, HUG_MIN), hugMax) : Math.min(WIDTHS[state], viewport.w - 24);
+  const w = compact ? COMPACT_W : hug ? Math.min(Math.max(measuredW, HUG_MIN), hugMax) : Math.min(WIDTHS[state], viewport.w - 24);
   // The panel fills what it's given; everything else is as tall as its content.
   const panelHeight = Math.max(240, Math.min(560, viewport.h - edge(viewport.w) - GLOW));
   useEffect(() => {
@@ -244,7 +312,54 @@ export function Island({ state, live, onOpen, autoFold = null, hug = false, high
   // view; the panel's height when the screen is short. Only taller answers scroll.
   const answerMax = Math.max(panelHeight, Math.min(720, viewport.h - edge(viewport.w) - GLOW - 48));
   const h = state === "panel" ? panelHeight : state === "answer" ? Math.min(measured, answerMax) : measured;
-  useIslandFrame({ w, h }, live);
+  const x = dragX ?? spotX(spot, w, viewport.w);
+  useIslandFrame({ x, w, h }, live, hidden, dragging);
+  // Hold and throw (the resting pill, on frames wide enough for the sides). A press that moves less
+  // than DRAG_START_PX stays a click; after a drag the click that follows the release is swallowed.
+  const drag = useRef<{ id: number; startX: number; baseX: number; moved: boolean; samples: [number, number][] } | null>(null);
+  const draggable = state === "rest" && viewport.w >= SPOTS_MIN_W && Boolean(onSpot);
+  const pointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggable || e.button !== 0) return;
+    drag.current = { id: e.pointerId, startX: e.clientX, baseX: x, moved: false, samples: [[e.timeStamp, e.clientX]] };
+  };
+  const pointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    if (!d.moved) {
+      if (Math.abs(dx) < DRAG_START_PX) return;
+      d.moved = true;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId); // keeps the drag when the pointer leaves the clipped frame
+      } catch {
+        // a pointer that's already gone: the drag ends on its pointerup/cancel
+      }
+    }
+    d.samples = [...d.samples.filter(([t]) => e.timeStamp - t < 100), [e.timeStamp, e.clientX]];
+    const m = edge(viewport.w);
+    setDragX(Math.min(Math.max(d.baseX + dx, m), viewport.w - w - m));
+  };
+  const pointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    if (!d.moved) return;
+    const [t0, x0] = d.samples[0]!;
+    const speed = e.timeStamp > t0 ? (e.clientX - x0) / (e.timeStamp - t0) : 0;
+    const landing = d.baseX + (e.clientX - d.startX) + speed * THROW_MS + w / 2;
+    const spots: IslandSpot[] = ["left", "center", "right"];
+    const gap = (s: IslandSpot) => Math.abs(spotX(s, w, viewport.w) + w / 2 - landing);
+    const next = spots.reduce((best, s) => (gap(s) < gap(best) ? s : best));
+    setDragX(null);
+    onSpot?.(next);
+    const box = e.currentTarget;
+    const swallow = (c: MouseEvent) => {
+      c.stopPropagation();
+      c.preventDefault();
+    };
+    box.addEventListener("click", swallow, { capture: true, once: true });
+    setTimeout(() => box.removeEventListener("click", swallow, { capture: true }), 0);
+  };
   // An answer taller than the panel scrolls inside: fade its bottom edge while there's more below.
   useEffect(() => {
     if (state !== "answer") return;
@@ -264,10 +379,18 @@ export function Island({ state, live, onOpen, autoFold = null, hug = false, high
   return (
     <div className="i-root">
       {/* The box carries the size and its spring; the highlight's glow sits on it, outside the clipped shell. */}
-      <div ref={boxRef} className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}${flash ? " i-flash" : ""}`} style={{ width: w, height: h }}>
+      <div
+        ref={boxRef}
+        className={`i-box i-s-${state}${live ? " i-live" : ""}${hug ? " i-hug" : ""}${flash ? " i-flash" : ""}${compact ? " i-compact" : ""}${hidden ? " i-away" : ""}${dragging ? " i-drag" : ""}`}
+        style={{ width: w, height: h, left: x }}
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerUp}
+      >
         {flash > 0 && <div key={flash} className="i-flash-glow" aria-hidden="true" />}
         <div className="i-shell" role="region" aria-label="Chat">
-          <div key={state} className="i-view" ref={content} style={{ ...(hug ? { width: "max-content", minWidth: HUG_MIN, maxWidth: hugMax } : { width: w }), ...(state === "panel" ? { height: panelHeight } : state === "answer" ? { maxHeight: answerMax } : {}) }}>
+          <div key={state} className="i-view" ref={content} style={{ ...(hug && !compact ? { width: "max-content", minWidth: HUG_MIN, maxWidth: hugMax } : { width: w }), ...(state === "panel" ? { height: panelHeight } : state === "answer" ? { maxHeight: answerMax } : {}) }}>
             {children}
           </div>
         </div>
@@ -295,6 +418,8 @@ export function RestPill({ logoUrl, suggestions, placeholder, unread, summary = 
       <Mark logoUrl={logoUrl} pulse={Boolean(unread)} />
       {waiting && !unread && <span className="i-wait-dot" aria-hidden="true" />}
       {line ? <span className={`i-rest-text${unread || waiting ? "" : " i-rest-sum"}`}>{line}</span> : <Typewriter phrases={suggestions} fallback={placeholder} />}
+      {/* Shown instead of the line while the idle pill is shrunk (.i-compact). */}
+      <span className="i-rest-ask" aria-hidden="true">Ask</span>
       {chat ? <span className="i-up" aria-hidden="true">{chevron(CHEVRON_UP)}</span> : <kbd className="i-kbd" aria-hidden="true">/</kbd>}
     </button>
   );
@@ -388,7 +513,7 @@ export function IslandTop({ who, view, exit }: {
   );
 }
 
-/** The pill's row at the bottom of the open shapes: the mark and the question box, 54px like the resting pill. */
+/** The pill's row at the bottom of the open shapes: the mark and the question box, 44px like the resting pill. */
 export function IslandRow({ logoUrl, pulse = false, children }: { logoUrl: string | null; pulse?: boolean; children: ReactNode }) {
   return (
     <div className="i-row">
