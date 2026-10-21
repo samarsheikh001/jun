@@ -1456,20 +1456,8 @@ form.wchat-composer { display: flex; align-items: flex-end; gap: 8px; margin: 0 
 .visitor-action { display: flex; justify-content: flex-end; white-space: nowrap; }
 .visitor-invite { grid-column: 2 / -1; display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .visitor-invite input { flex: 1; min-width: 240px; }
-.visitors-empty {
-  display: flex; align-items: center; gap: 18px; margin-top: 12px; padding: 20px; border-radius: 14px; border: 1px dashed var(--border);
-  background: radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 22%, transparent) 0.6px, transparent 1px) 0 0 / 6px 6px;
-}
-.visitors-empty p { margin: 0; font-size: 14px; line-height: 1.5; }
-/* A radar ping: the dot in the middle, a ring that keeps going out. */
-.visitors-empty-art {
-  position: relative; flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
-  background: color-mix(in oklch, var(--stream-2) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--stream-2) 30%, transparent);
-}
-.visitors-empty-art span { width: 8px; height: 8px; border-radius: 50%; background: var(--stream-2); box-shadow: 0 0 10px var(--stream-2); }
-.visitors-empty-art::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--stream-2); animation: ping 2.4s ease-out infinite; }
-@keyframes ping { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.25); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .visitors-empty-art::after { animation: none; opacity: 0; } }
+/* Nobody on the site: one quiet line, like the inbox's empty table. */
+.visitors-empty { margin: 4px 0 8px; padding: 24px 18px; text-align: center; font-size: 13px; line-height: 20px; color: var(--tertiary); }
 /* The live globe (VisitorGlobe.tsx, MapLibre). Markers are plain DOM placed by MapLibre; ones on the
    far side of the globe fade out (opacityWhenCovered). */
 .visitor-globe { position: relative; isolation: isolate; width: 100%; max-width: 560px; aspect-ratio: 1; justify-self: center; }

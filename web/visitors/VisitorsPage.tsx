@@ -236,10 +236,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
             <VisitorRowSkeleton who={96} page={180} />
           </ul>
         ) : sorted.length === 0 ? (
-          <div className="visitors-empty">
-            <span className="visitors-empty-art" aria-hidden><span /></span>
-            <p>Nobody right now. Open your site, or the demo page from Settings, in another tab to see yourself here.</p>
-          </div>
+          <p className="visitors-empty">Nobody right now. Open your site, or the demo page from Settings, in another tab to see yourself here.</p>
         ) : (
           <ul className="visitor-list">
             {sorted.map((v) => (
