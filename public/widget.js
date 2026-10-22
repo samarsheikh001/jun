@@ -56,7 +56,7 @@
   if (!themes.test(theme)) theme = null;
 
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
-  var events = [], reacted = () => {}; // reacted: the page answered pending clicks (set below)
+  var events = [], reacted = () => {}; // reacted: the page answered pending clicks (widget-clicks.js sets it)
   var capture = attr("capture") != "off";
   // S-13 state for the current page (path).
   var pagePath = location.pathname, pageIssue, seen = 0, stuckSent, stuckMs = 180000;
@@ -155,62 +155,7 @@
         return xhrSend.apply(this, arguments);
       };
 
-      // S-02 rage clicks. Sentry's definitions (docs.sentry.io/product/issues/issue-details/replay-issues/rage-clicks/,
-      // checked 2026-10-05): a dead click is a click on a button/input/link with no DOM change or
-      // scroll within 7 s; 3+ such clicks in that time are a rage click. Ours is stricter on time:
-      // 3+ clicks on the same element within 1 s and 30 px, and nothing in the DOM changes or
-      // scrolls from the first click until 1 s after the last.
-      // Dead clicks (PostHog's rule, posthog-js dead-clicks-autocapture, checked 2026-10-18): one
-      // click on a button or link and nothing changes, scrolls, submits or navigates for 2.5 s.
-      // Kept in the trail only (one dead click is no reason to offer help). Not for links that
-      // open elsewhere (new tab, download, mail, phone) or the clicks of a rage burst.
-      // Recorded: a safe description of the element (never values or arbitrary text) and the count.
-      // Only changes a visitor could see count: browser extensions (Matter, password managers)
-      // rewrite attributes on their own hidden iframes, often outside <body>, on every click.
-      // Hiding something counts.
-      var burst, waiting = [], mo = new MutationObserver((ms) => {
-        if (ms.some((m) => {
-          var n = m.target.nodeType == 1 ? m.target : m.target.parentElement;
-          return n && document.body.contains(n) && (n.getClientRects().length || /^(class|style|hidden|open)$/.test(m.attributeName) && m.oldValue != n.getAttribute(m.attributeName));
-        })) reacted();
-      });
-      // The page answered every click still waiting.
-      reacted = () => { waiting.forEach((c) => { c.changed = 1; }); waiting = []; mo.disconnect(); };
-      var settled = (c) => { var i = waiting.indexOf(c); if (i > -1) waiting.splice(i, 1); if (!waiting.length) mo.disconnect(); };
-      var targetOf = (el, button) => {
-        var t = { tag: el.tagName.toLowerCase() }, role = el.getAttribute("role"), text = button && String(el.innerText || "").replace(/\s+/g, " ").trim();
-        ["id", "aria-label", "name"].forEach((a) => { var v = el.getAttribute(a); if (v) t[a == "id" || a == "name" ? a : "label"] = redact(v, 60); });
-        if (role) t.role = role.slice(0, 20);
-        if (text && text.length <= 40) t.text = redact(text, 40);
-        return t;
-      };
-      on(window, "scroll", () => reacted(), true);
-      on(window, "click", (ev) => {
-        var el = ev.target, now = Date.now(), b = burst, c = {};
-        el = el && el.closest && (el.closest("button,a,[role=button],input") || el);
-        // Not typing, media, our own widget, or scripted clicks.
-        if (!el || !ev.isTrusted || el.closest("[data-jun-desk],[contenteditable],textarea,select,canvas,video,audio,input:not([type=submit],[type=button])")) return;
-        var button = /^(a|button|input)$/i.test(el.tagName) || el.getAttribute("role") == "button";
-        if (!waiting.length) mo.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeOldValue: true, characterData: true });
-        waiting.push(c);
-        if (!b || b.el != el || now - b.t > 1000 || Math.abs(ev.clientX - b.x) > 30 || Math.abs(ev.clientY - b.y) > 30) {
-          b = burst = { el: el, x: ev.clientX, y: ev.clientY, ts: [], first: c };
-          setTimeout(() => {
-            settled(c);
-            if (!c.changed && b.ts.length < 3 && button && consented && document.body.contains(el) && !el.closest("[target=_blank],[download],[href^='mailto:'],[href^='tel:']")) push({ kind: "dead_click", target: targetOf(el, button) });
-          }, 2500);
-        } else setTimeout(() => settled(c), 2500);
-        b.t = now;
-        b.last = c;
-        var n = b.ts.push(now);
-        if (n < 3 || now - b.ts[n - 3] > 1000) return;
-        clearTimeout(b.timer);
-        b.timer = setTimeout(() => {
-          // A triple click that selected text isn't frustration.
-          if (burst != b || b.first.changed || b.last.changed || !consented || !button && String(getSelection())) return;
-          push({ kind: "rage_click", target: targetOf(el, button), count: b.ts.length });
-        }, 1000);
-      }, true);
+      // S-02 rage clicks and D-107 dead clicks: widget-clicks.js (D-149), loaded below with J._c.
 
       // S-13 stuck on a form: on this page for 3+ visible minutes (hidden tab time doesn't count)
       // after a real problem, with no successful submit since. A plain timer would be the cut timed pop-up (N-02).
@@ -423,7 +368,7 @@
     if (!frame.src) frame.src = origin + "/widget?key=" + encodeURIComponent(key) + (consented ? "" : "&persist=0");
   }
   // Lazy chunks, each loaded once (added scripts run async): widget-actions.js (below),
-  // widget-button.js, widget-island.js and widget-page-control.js (AI-32).
+  // widget-button.js, widget-island.js, widget-page-control.js (AI-32), widget-clicks.js and widget-identify.js.
   var actionQueue = [];
   function chunk(name) {
     if (chunks[name]) return;
@@ -436,6 +381,7 @@
   // widget-actions.js, loaded on first use; until then registrations queue here. Without native
   // WebMCP, a small shim takes document.modelContext.registerTool calls so early page code works.
   if (document.modelContext) chunk("actions");
+  if (capture) chunk("clicks");
   else document.modelContext = {
     jun: 1, q: [],
     registerTool: function (t, o) { this.q.push([t, o]); chunk("actions"); },
@@ -563,6 +509,7 @@
     // (pages, key, element, context, available, undo, risk); see widget-actions.js. Returns a remover.
     _q: actionQueue,
     _b: b, // for widget-button.js
+    _c: { push: push, redact: redact, ok: () => consented, set: (f) => { reacted = f; } }, // for widget-clicks.js
     _id: () => userToken, // for widget-identify.js: a signed user is never relabelled
     onWidgetAction: (fn) => {
       var h = (e) => fn(e.detail);

@@ -232,6 +232,7 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
               <dd>
                 {details.linked.length === 1 ? "1 other browser" : `${details.linked.length} other browsers`}, matched by email or user ID
                 {!(details.verified || details.linked.some((l) => l.verified)) && " (not verified)"}
+                {" · "}<a href={deskHref(`/contacts/${contact.id}`)} onClick={(e) => { e.preventDefault(); navigate(`/contacts/${contact.id}`); }}>Manage</a>
               </dd>
             </>
           )}

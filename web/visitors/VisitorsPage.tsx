@@ -163,12 +163,31 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
   const [inviting, setInviting] = useState<string | null>(null);
   const [invited, setInvited] = useState<Set<string>>(new Set());
   const [hovered, setHovered] = useState<string | null>(null);
+  // V-18: which person each known contact is, so one person's browsers sit together with a "Same person" tag.
+  const [persons, setPersons] = useState<Record<string, string>>({});
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const sorted = [...visitors].sort((a, b) => Number(Boolean(b.contact?.verified)) - Number(Boolean(a.contact?.verified)) || a.startedAt - b.startedAt);
+  const contactIds = [...new Set(visitors.map((v) => v.contact?.id).filter((id): id is string => Boolean(id)))].sort().join(",");
+  useEffect(() => {
+    if (!contactIds) return;
+    api<{ persons: Record<string, string> }>(`/workspaces/${workspaceId}/contacts/persons?ids=${contactIds}`).then((r) => setPersons(r.persons), () => setPersons({}));
+  }, [workspaceId, contactIds]);
+  const personOf = (v: LiveVisitor) => (v.contact ? persons[v.contact.id] ?? v.contact.id : `s:${v.sessionId}`);
+  const browsers = new Map<string, number>();
+  for (const v of visitors) browsers.set(personOf(v), (browsers.get(personOf(v)) ?? 0) + 1);
+  // A person's group starts where their earliest session would be, signed-in people first.
+  const firstOf = new Map<string, LiveVisitor>();
+  for (const v of visitors) {
+    const k = personOf(v), f = firstOf.get(k);
+    if (!f || v.startedAt < f.startedAt) firstOf.set(k, v);
+  }
+  const rank = (v: LiveVisitor) => firstOf.get(personOf(v))!;
+  const sorted = [...visitors].sort((a, b) => {
+    const ra = rank(a), rb = rank(b);
+    return Number(Boolean(rb.contact?.verified)) - Number(Boolean(ra.contact?.verified)) || ra.startedAt - rb.startedAt || personOf(a).localeCompare(personOf(b)) || a.startedAt - b.startedAt;
+  });
   const spots = useMemo(() => globeSpots(visitors, (v) => (v.contact ? visitorName(v) : v.city ?? (v.country ? countryName(v.country) : sessionLabel(v.sessionId)))), [visitors]);
   const countries = useMemo(() => tally(visitors, (v) => v.country), [visitors]);
   const pages = useMemo(() => tally(visitors, (v) => pathOf(v.page.url)), [visitors]);
@@ -255,6 +274,7 @@ export function VisitorsPage({ workspaceId, visitors: live }: { workspaceId: str
                   <div className="visitor-name">
                     {visitorName(v)}
                     {v.contact?.verified && <span className="verified" title="Identity verified by your site">✓</span>}
+                    {(browsers.get(personOf(v)) ?? 1) > 1 && <span className="dash-row-tag" title="The same email or user ID on several browsers">Same person · {browsers.get(personOf(v))} browsers</span>}
                     {v.inChat && <span className="dash-row-tag">In a chat</span>}
                   </div>
                   <div className="muted small">

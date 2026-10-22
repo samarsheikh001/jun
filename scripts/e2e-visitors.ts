@@ -121,6 +121,72 @@ await step("V-11: people of one company are grouped; agents see the company and 
   assert.equal(company.conversations[0].contactName, "Grace Hopper");
 });
 
+// V-18 (D-147, D-148): browsers sharing an email or user id are one person on the desk, never in the widget.
+const profile = (token: string, body: Record<string, unknown>) =>
+  new Client().call(`/widget/${widgetKey}/profile`, { body, headers: { "X-Visitor-Token": token } });
+const contactOf = async (conversationId: string) => (await agent.call(`/conversations/${conversationId}`)).json.conversation.contact.id as string;
+const contact = async (id: string) => (await agent.call(`/workspaces/${workspaceId}/contacts/${id}`)).json.contact as { verified: boolean; linked: { id: string; verified: boolean }[] };
+const personChats = async (id: string) => (await agent.call(`/workspaces/${workspaceId}/contacts/${id}/conversations`)).json.conversations as { id: string; contactId: string }[];
+const SAM = `sam-${RUN}@example.test`;
+let samFirst = "";
+let samSecond = "";
+let samSecondToken = "";
+
+await step("V-18: two browsers with one email are one person for agents; each widget sees only its own chats", async () => {
+  const first = await newVisitor();
+  const second = await newVisitor();
+  samSecondToken = second.token;
+  assert.equal((await profile(first.token, { name: "Sam", email: SAM })).json.verified, false);
+  const chat = await startConversation(first.token, "Where is my invoice?");
+  assert.equal((await profile(second.token, { email: SAM.toUpperCase() })).status, 200);
+  samFirst = await contactOf(chat.id);
+  assert.deepEqual(await listConversations(second.token), [], "the second browser never sees the first one's chat");
+  const linked = (await contact(samFirst)).linked;
+  assert.equal(linked.length, 1);
+  samSecond = linked[0]!.id;
+  assert.deepEqual((await personChats(samSecond)).map((c) => [c.id, c.contactId]), [[chat.id, samFirst]], "agents see the person's chats from either browser");
+  const people = (await agent.call(`/workspaces/${workspaceId}/people?q=${encodeURIComponent(SAM)}`)).json.people as { id: string; linked?: number; conversations: number }[];
+  assert.equal(people.length, 1, "one row per person");
+  assert.equal(people[0]!.linked, 1);
+  assert.equal(people[0]!.conversations, 1);
+});
+
+await step("V-18: a user id links browsers too, and a browser with both joins the two groups", async () => {
+  const byId = await newVisitor();
+  const both = await newVisitor();
+  await profile(byId.token, { id: `u-${RUN}` });
+  await profile(both.token, { id: `u-${RUN}`, email: SAM });
+  assert.equal((await contact(samFirst)).linked.length, 3);
+  // Malformed fields are dropped, never stored.
+  assert.equal((await profile(byId.token, { id: "a\nb", email: "not-an-email" })).status, 200);
+  assert.equal((await contact(samFirst)).linked.length, 3);
+});
+
+await step("V-18: an anonymous browser with a verified user's email joins them for agents, but stays unverified and sees nothing of theirs", async () => {
+  const { token } = await newVisitor();
+  await profile(token, { email: "ada@acme.test" });
+  assert.deepEqual(await listConversations(token), []);
+  const adaContact = await contactOf((await listConversations(ada))[0]!.id);
+  const adaPerson = await contact(adaContact);
+  assert.equal(adaPerson.verified, true);
+  assert.equal(adaPerson.linked.length, 1);
+  assert.equal(adaPerson.linked[0]!.verified, false);
+});
+
+await step("D-148: agents unlink a browser (matching then leaves it alone) and can't link two signed-in users", async () => {
+  assert.equal((await agent.call(`/workspaces/${workspaceId}/contacts/${samSecond}/unlink`, { body: {} })).status, 200);
+  assert.equal((await contact(samFirst)).linked.length, 2);
+  await profile(samSecondToken, { email: SAM, name: "Sam again" });
+  assert.equal((await contact(samSecond)).linked.length, 0, "the agent's unlink wins over the matching email");
+  assert.equal((await agent.call(`/workspaces/${workspaceId}/contacts/${samSecond}/link`, { body: { with: samFirst } })).status, 200);
+  assert.equal((await contact(samFirst)).linked.length, 3);
+  const adaContact = await contactOf((await listConversations(ada))[0]!.id);
+  const grace = (await agent.call(`/workspaces/${workspaceId}/people?q=${encodeURIComponent("Grace Hopper")}`)).json.people[0].id as string;
+  const refused = await agent.call(`/workspaces/${workspaceId}/contacts/${adaContact}/link`, { body: { with: grace } });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.json.error.code, "both_verified");
+});
+
 let agentHub: TestSocket;
 let live: TestSocket;
 const SESSION = `e2e${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;

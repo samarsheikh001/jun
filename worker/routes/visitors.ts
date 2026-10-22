@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { requireUser } from "../auth/session.ts";
 import { newId, randomToken } from "../lib/crypto.ts";
-import { loadIdentitySecret, personContactIds, relinkPerson, setIdentitySecret } from "../lib/contacts.ts";
+import { linkByHand, loadIdentitySecret, personContactIds, relinkPerson, setIdentitySecret, unlinkByHand } from "../lib/contacts.ts";
 import { notifyConversationChanged } from "../lib/realtime.ts";
 import { readJson, text } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
@@ -144,6 +144,39 @@ visitors.patch("/workspaces/:id/contacts/:contactId", async (c) => {
   // Inbox lists show the contact's name: refresh this contact's conversations everywhere.
   const convs = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? LIMIT 50").bind(contact.id).all<{ id: string }>();
   c.executionCtx.waitUntil(Promise.all(convs.results.map((r) => notifyConversationChanged(c.env, { conversationId: r.id, workspaceId }))));
+  return c.json({ ok: true });
+});
+
+// V-18: which person each contact is (`?ids=ct_a,ct_b`, up to 100): the Visitors list puts a person's
+// browsers together. Contacts that stand alone map to themselves.
+visitors.get("/workspaces/:id/contacts/persons", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  const ids = [...new Set((c.req.query("ids") ?? "").split(",").filter((id) => /^ct_[A-Za-z0-9_-]{1,40}$/.test(id)))].slice(0, 100);
+  if (ids.length === 0) return c.json({ persons: {} });
+  const rows = await c.env.DB.prepare(`SELECT id, COALESCE(person_id, id) AS person FROM contacts WHERE workspace_id = ? AND id IN (${ids.map(() => "?").join(", ")})`)
+    .bind(workspaceId, ...ids)
+    .all<{ id: string; person: string }>();
+  return c.json({ persons: Object.fromEntries(rows.results.map((r) => [r.id, r.person])) });
+});
+
+// V-18 (D-148): an agent links two contacts as the same person, or takes one out of its person. Either way
+// automatic matching by email or user id leaves those contacts where the agent put them.
+visitors.post("/workspaces/:id/contacts/:contactId/link", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  const other = (await readJson(c.req)).with;
+  if (typeof other !== "string" || !/^ct_[A-Za-z0-9_-]{1,40}$/.test(other) || other === c.req.param("contactId")) throw new HttpError(400, "invalid_field", "Pick another contact to link.");
+  const result = await linkByHand(c.env.DB, workspaceId, c.req.param("contactId"), other);
+  if (result === "not_found") throw new HttpError(404, "not_found", "Contact not found.");
+  if (result === "both_verified") throw new HttpError(409, "both_verified", "Both are signed-in users of your app, so they're different people.");
+  return c.json({ ok: true });
+});
+
+visitors.post("/workspaces/:id/contacts/:contactId/unlink", async (c) => {
+  const workspaceId = c.req.param("id");
+  await memberRole(c, workspaceId);
+  if (!(await unlinkByHand(c.env.DB, workspaceId, c.req.param("contactId")))) throw new HttpError(404, "not_found", "Contact not found.");
   return c.json({ ok: true });
 });
 

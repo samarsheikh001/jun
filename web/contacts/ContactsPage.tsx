@@ -7,12 +7,15 @@ import {
 import { Pager, TabStrip } from "../inbox/ConversationTable.tsx";
 import { formatTime } from "../lib/thread.ts";
 import { deskHref, navigate } from "../lib/router.ts";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 
 // V-16 (D-118): every person and company the desk knows. A daily page like Visitors and Reports
 // (large title); People and Companies as the inbox's tab strip, search and table; a person's and a
-// company's own page. Read-only: what the inbox's side panel already shows agents.
+// company's own page. Read-only (what the inbox's side panel already shows agents), except a person's
+// Link / Unlink (V-18, D-148).
 
 type Tab = "people" | "companies";
 
@@ -349,17 +352,93 @@ function DetailSkeleton() {
   );
 }
 
+/**
+ * V-18 (D-148): the other browsers that are this person, each with Unlink, and Link to add another contact
+ * (search by name or email). What an agent decides here, matching by email or user id leaves alone.
+ */
+function SamePerson({ workspaceId, details, onChange }: { workspaceId: string; details: ContactDetails; onChange: () => void }) {
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<PersonRow[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const linked = details.linked ?? [];
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) {
+      setFound(null);
+      return;
+    }
+    const mine = new Set([details.id, ...(details.linked ?? []).map((l) => l.id)]);
+    const timer = window.setTimeout(() => {
+      api<{ people: PersonRow[] }>(`/workspaces/${workspaceId}/people?q=${encodeURIComponent(term)}`).then(
+        (r) => setFound(r.people.filter((p) => !mine.has(p.id)).slice(0, 6)),
+        () => setFound([]),
+      );
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [q, workspaceId, details]);
+  const act = async (id: string, path: string, body: Record<string, unknown>) => {
+    setBusy(id);
+    setError(null);
+    try {
+      await api(`/workspaces/${workspaceId}/contacts/${path}`, { method: "POST", body });
+      setQ("");
+      onChange();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const row = (p: { id: string; name: string | null; email: string | null; verified: boolean; lastSeenAt: number }, name: ReactNode, action: ReactNode) => (
+    <li key={p.id}>
+      {name}
+      {p.verified && <span className="verified" title="Identity verified by your site">✓</span>}
+      <span className="muted small">{p.name && p.email ? `${p.email} · ` : ""}last seen {day(p.lastSeenAt)}</span>
+      {action}
+    </li>
+  );
+  return (
+    <section className="dash-card contacts-same">
+      <div className="dash-card-head">
+        <h2>Same person</h2>
+        <span className="dash-caption">{linked.length === 0 ? "Just this one" : `${linked.length + 1} browsers`}</span>
+      </div>
+      <p className="muted small">Browsers with the same email or user ID are linked by themselves. Link or unlink one here when that's wrong; each browser's chat still shows only its own conversations.</p>
+      {linked.length > 0 && (
+        <ul className="contacts-same-list">
+          {linked.map((l) => row(l, <DeskLink to={`/contacts/${l.id}`}>{personLabel(l)}</DeskLink>,
+            <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void act(l.id, `${encodeURIComponent(l.id)}/unlink`, {})}>{busy === l.id ? "Unlinking…" : "Unlink"}</Button>))}
+        </ul>
+      )}
+      <div className="contacts-same-add">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Link another contact: search a name or email" aria-label="Search contacts to link" maxLength={120} />
+        {found && (found.length === 0 ? (
+          <p className="muted small">No other contacts match.</p>
+        ) : (
+          <ul className="contacts-same-list">
+            {found.map((p) => row(p, <span>{personLabel(p)}</span>,
+              <Button size="sm" disabled={busy !== null} onClick={() => void act(p.id, `${encodeURIComponent(details.id)}/link`, { with: p.id })}>{busy === p.id ? "Linking…" : "Link"}</Button>))}
+          </ul>
+        ))}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </section>
+  );
+}
+
 function PersonPage({ workspaceId, contactId }: { workspaceId: string; contactId: string }) {
   const [details, setDetails] = useState<ContactDetails | null>(null);
   const [conversations, setConversations] = useState<ConversationItem[] | null>(null);
   const [trail, setTrail] = useState<Trail | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0); // bumped after a Link / Unlink
   useEffect(() => {
     const base = `/workspaces/${workspaceId}/contacts/${encodeURIComponent(contactId)}`;
     api<{ contact: ContactDetails }>(base).then((r) => setDetails(r.contact), (err) => setError(describeError(err)));
     api<{ conversations: ConversationItem[] }>(`${base}/conversations`).then((r) => setConversations(r.conversations), () => setConversations([]));
     api<{ trail: Trail | null }>(`/workspaces/${workspaceId}/people/${encodeURIComponent(contactId)}/trail`).then((r) => setTrail(r.trail), () => setTrail(null));
-  }, [workspaceId, contactId]);
+  }, [workspaceId, contactId, version]);
 
   const label = details ? personLabel(details) : null;
   const open = conversations?.filter((c) => c.status !== "resolved").length ?? 0;
@@ -415,6 +494,7 @@ function PersonPage({ workspaceId, contactId }: { workspaceId: string; contactId
               )}
             </section>
           </div>
+          <SamePerson workspaceId={workspaceId} details={details} onChange={() => setVersion((v) => v + 1)} />
           <div className="dash-grid">
             <section className="dash-card">
               <div className="dash-card-head">

@@ -164,16 +164,17 @@ const linkRow = (r: LinkSqlRow): LinkRow => ({ ...r, verified: r.verified === 1 
 /** Links a contact to the contacts sharing its email or user id (after any of those changed). */
 export async function linkPerson(db: D1Database, workspaceId: string, contactId: string): Promise<void> {
   const self = await db
-    .prepare(`SELECT ${LINK_COLUMNS}, email, claimed_id AS claimedId FROM contacts WHERE id = ? AND workspace_id = ?`)
+    .prepare(`SELECT ${LINK_COLUMNS}, email, claimed_id AS claimedId, person_locked AS locked FROM contacts WHERE id = ? AND workspace_id = ?`)
     .bind(contactId, workspaceId)
-    .first<LinkSqlRow & { email: string | null; claimedId: string | null }>();
-  if (!self) return;
+    .first<LinkSqlRow & { email: string | null; claimedId: string | null; locked: number }>();
+  // D-148: an agent's Link / Unlink wins over matching.
+  if (!self || self.locked) return;
   const ids = [self.claimedId, self.externalId].filter((v): v is string => v !== null);
   if (!self.email && ids.length === 0) return;
   const idList = ids.map(() => "?").join(", ");
   const matches = await db
     .prepare(
-      `SELECT DISTINCT COALESCE(person_id, id) AS root FROM contacts WHERE workspace_id = ? AND id != ? AND (
+      `SELECT DISTINCT COALESCE(person_id, id) AS root FROM contacts WHERE workspace_id = ? AND id != ? AND NOT (person_locked = 1 AND person_id IS NULL) AND (
          (?3 IS NOT NULL AND email = ?3)${ids.length ? ` OR claimed_id IN (${idList}) OR external_id IN (${idList})` : ""}) LIMIT 50`,
     )
     .bind(workspaceId, contactId, self.email, ...ids, ...ids)
@@ -210,6 +211,8 @@ export async function unlinkPerson(db: D1Database, contactId: string): Promise<v
 
 /** After a contact's email or user id changed: out of its old person, into the one it matches now. */
 export async function relinkPerson(db: D1Database, workspaceId: string, contactId: string): Promise<void> {
+  const row = await db.prepare("SELECT person_locked FROM contacts WHERE id = ?").bind(contactId).first<{ person_locked: number }>();
+  if (row?.person_locked) return; // D-148: placed by an agent
   await unlinkPerson(db, contactId);
   await linkPerson(db, workspaceId, contactId);
 }
@@ -223,4 +226,34 @@ export async function personContactIds(db: D1Database, workspaceId: string, cont
     .bind(workspaceId, contactId)
     .all<{ id: string }>();
   return rows.results.length ? rows.results.map((r) => r.id) : [contactId];
+}
+
+/** D-148: an agent says two contacts are the same person. Refused when both groups have a verified contact. */
+export async function linkByHand(db: D1Database, workspaceId: string, contactId: string, otherId: string): Promise<"linked" | "both_verified" | "not_found"> {
+  const [a, b] = await Promise.all([personContactIds(db, workspaceId, contactId), personContactIds(db, workspaceId, otherId)]);
+  const ids = [...new Set([...a, ...b])];
+  const rows = await db
+    .prepare(`SELECT ${LINK_COLUMNS} FROM contacts WHERE workspace_id = ? AND id IN (${ids.map(() => "?").join(", ")})`)
+    .bind(workspaceId, ...ids)
+    .all<LinkSqlRow>();
+  const all = rows.results.map(linkRow);
+  if (!all.some((r) => r.id === contactId) || !all.some((r) => r.id === otherId)) return "not_found";
+  const verified = (group: string[]) => all.find((r) => r.verified && group.includes(r.id)) ?? null;
+  const va = verified(a), vb = verified(b);
+  if (va && vb && va.id !== vb.id) return "both_verified";
+  const root = va ?? vb ?? [...all].sort((x, y) => x.createdAt - y.createdAt || (x.id < y.id ? -1 : 1))[0]!;
+  await db.batch([
+    db.prepare(`UPDATE contacts SET person_id = ? WHERE workspace_id = ? AND id IN (${ids.map(() => "?").join(", ")})`).bind(root.id, workspaceId, ...ids),
+    db.prepare("UPDATE contacts SET person_locked = 1 WHERE workspace_id = ? AND id IN (?, ?)").bind(workspaceId, contactId, otherId),
+  ]);
+  return "linked";
+}
+
+/** D-148: an agent says this contact isn't the person it was linked to; matching won't link it again. */
+export async function unlinkByHand(db: D1Database, workspaceId: string, contactId: string): Promise<boolean> {
+  const row = await db.prepare("SELECT id FROM contacts WHERE id = ? AND workspace_id = ?").bind(contactId, workspaceId).first<{ id: string }>();
+  if (!row) return false;
+  await unlinkPerson(db, contactId);
+  await db.prepare("UPDATE contacts SET person_locked = 1 WHERE id = ?").bind(contactId).run();
+  return true;
 }
