@@ -2117,8 +2117,10 @@ form.topic-rename { display: flex; align-items: center; gap: 8px; flex: 1; min-w
 
 /* ---------- settings dialog: Town's (measured 2026-10, see SettingsDialog.tsx) ---------- */
 /* 924×720 (or the viewport less 2rem / 4rem), 16px radius, shadow-lg; the overlay is the sidebar
-   colour at 70% with an 8px blur. Opens with a 200ms fade + zoom from 95%. */
-[data-slot="dialog-portal"]:has(> .settings-dialog) > [data-slot="dialog-overlay"] { background: color-mix(in oklch, var(--sidebar) 70%, transparent); backdrop-filter: blur(8px); --tw-duration: 150ms; animation-duration: 150ms; }
+   colour at 70% with an 8px blur. Opens with a 200ms fade + zoom from 95%. Above the inbox's
+   conversation drawer (z 51), which stays open behind it; menus inside stay above at z 70. */
+[data-slot="dialog-portal"]:has(> .settings-dialog) > [data-slot="dialog-overlay"] { z-index: 60; background: color-mix(in oklch, var(--sidebar) 70%, transparent); backdrop-filter: blur(8px); --tw-duration: 150ms; animation-duration: 150ms; }
+.settings-dialog { z-index: 60; }
 .settings-dialog {
   display: flex; gap: 0; padding: 0; overflow: hidden;
   width: min(924px, calc(100vw - 2rem)); max-width: none; height: min(720px, calc(100dvh - 4rem)); min-height: 420px;
