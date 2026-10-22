@@ -78,8 +78,6 @@ const HUG_MAX = 480;
 const GLOW = 32;
 /** The island's distance from the bottom of the viewport (matches `.i-root`'s padding). */
 const edge = (width: number) => (width < 640 ? 12 : 24);
-/** The frame's spring: a slight overshoot, about 0.65s (the proposal's stiffness 380 / damping 30). */
-export const SPRING = "cubic-bezier(.34, 1.25, .5, 1)";
 /** W-34: one JunDesk.highlight() call: `n` counts the calls (each plays it again), `sound` if it asked for one. */
 export interface Highlight {
   n: number;
@@ -103,26 +101,54 @@ const THROW_MS = 180;
 /** Narrower frames (phones) keep the island in the centre. */
 const SPOTS_MIN_W = 640;
 
+/** How long the island's spring (or a live answer's quicker growth) takes to settle, plus a little. */
+const SETTLE_MS = 720;
+const LIVE_SETTLE_MS = 300;
+type FrameBox = { x: number; w: number; h: number };
+
 /**
  * Sizes the frame: a fixed transparent box at the bottom centre (up to 720×680), clipped to the
- * island's box plus its shadow so the rest of the frame doesn't take the page's clicks. The clip
- * animates with the same curve as the island, so the two stay together.
+ * island's box plus its shadow so the rest of the frame doesn't take the page's clicks. The clip never
+ * animates: the host page would run its transition apart from the island's spring (another document,
+ * a message later, retargeted at other moments), and the island showed a straight, cut-off edge while it
+ * grew. Instead a change widens the clip at once to the old and new boxes together, with room for the
+ * spring's overshoot, and tightens it to the new box once the motion has settled.
  */
-function useIslandFrame(box: { x: number; w: number; h: number }, live: boolean, away = false, dragging = false): void {
+function useIslandFrame(box: FrameBox, live: boolean, away = false, dragging = false): void {
+  const shown = useRef<FrameBox | null>(null);
   useLayoutEffect(() => {
-    const motion = reducedMotion() || dragging ? "" : `transition:clip-path ${live ? ".25s ease-out" : `.65s ${SPRING}`};`;
     const bottom = edge(window.innerWidth);
-    postToHost({
-      type: "jun:css",
-      css:
-        // The page's width, so the island can sit at either side (IslandSpot), and room for the tallest
-        // answer (720px) plus its edge and glow; the clip-path leaves the rest of the page clickable.
-        // Inside, innerWidth is the page's and innerHeight its height up to 840px.
-        "display:block;top:auto;bottom:0;left:0;right:0;margin:0;width:100%;height:min(840px,100%);" +
-        `border:0;border-radius:0;background:none;box-shadow:none;color-scheme:normal;${motion}` +
-        // Away: nothing of the frame is left to take the page's clicks.
-        `clip-path:inset(${away ? "100%" : `calc(100% - ${box.h + bottom + GLOW}px)`} calc(100% - ${Math.round(box.x + box.w + GLOW)}px) ${Math.max(0, bottom - GLOW)}px ${Math.max(0, Math.round(box.x - GLOW))}px)`,
-    });
+    const send = (b: FrameBox, hide: boolean) =>
+      postToHost({
+        type: "jun:css",
+        css:
+          // The page's width, so the island can sit at either side (IslandSpot), and room for the tallest
+          // answer (720px) plus its edge and glow; the clip-path leaves the rest of the page clickable.
+          // Inside, innerWidth is the page's and innerHeight its height up to 840px.
+          "display:block;top:auto;bottom:0;left:0;right:0;margin:0;width:100%;height:min(840px,100%);" +
+          "border:0;border-radius:0;background:none;box-shadow:none;color-scheme:normal;" +
+          // Away: nothing of the frame is left to take the page's clicks.
+          `clip-path:inset(${hide ? "100%" : `calc(100% - ${Math.round(b.h + bottom + GLOW)}px)`} calc(100% - ${Math.round(b.x + b.w + GLOW)}px) ${Math.max(0, bottom - GLOW)}px ${Math.max(0, Math.round(b.x - GLOW))}px)`,
+      });
+    const prev = shown.current;
+    if (!prev || dragging || reducedMotion()) {
+      shown.current = box;
+      send(box, away);
+      return;
+    }
+    // Growth on each side, plus a tenth of it for the spring's overshoot (beyond the GLOW room).
+    const over = (d: number) => (d > 0 ? d * 0.1 : 0);
+    const left = Math.min(prev.x, box.x - over(prev.x - box.x));
+    const right = Math.max(prev.x + prev.w, box.x + box.w + over(box.x + box.w - prev.x - prev.w));
+    const union = { x: left, w: right - left, h: Math.max(prev.h, box.h + over(box.h - prev.h)) };
+    shown.current = union;
+    // Sliding away: keep the island visible while it slides out, then let the page have the clicks.
+    send(union, false);
+    const settle = setTimeout(() => {
+      shown.current = box;
+      send(box, away);
+    }, live ? LIVE_SETTLE_MS : SETTLE_MS);
+    return () => clearTimeout(settle);
   }, [box.x, box.w, box.h, live, away, dragging]);
   // widget-island.js reads the page's colour under the island's middle (D-99).
   useEffect(() => {
