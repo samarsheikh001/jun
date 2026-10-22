@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { requireUser } from "../auth/session.ts";
 import { newId, randomToken } from "../lib/crypto.ts";
-import { loadIdentitySecret, setIdentitySecret } from "../lib/contacts.ts";
+import { loadIdentitySecret, personContactIds, relinkPerson, setIdentitySecret } from "../lib/contacts.ts";
 import { notifyConversationChanged } from "../lib/realtime.ts";
 import { readJson, text } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv, type Role } from "../types.ts";
@@ -108,15 +108,17 @@ visitors.post("/workspaces/:id/visitors/:sid/invite", async (c) => {
   return c.json({ id });
 });
 
-// I-08: the contact's other conversations, for the sidebar.
+// I-08: the contact's other conversations, for the sidebar. V-18: the whole person's (contacts linked by
+// email or user id); `contactId` says which contact each came from.
 visitors.get("/workspaces/:id/contacts/:contactId/conversations", async (c) => {
   const workspaceId = c.req.param("id");
   await memberRole(c, workspaceId);
+  const ids = await personContactIds(c.env.DB, workspaceId, c.req.param("contactId"));
   const rows = await c.env.DB.prepare(
-    `SELECT id, status, last_message_at AS lastMessageAt, last_message_preview AS preview, created_at AS createdAt
-     FROM conversations WHERE contact_id = ? AND workspace_id = ? ORDER BY last_message_at DESC LIMIT 50`,
+    `SELECT id, status, last_message_at AS lastMessageAt, last_message_preview AS preview, created_at AS createdAt, contact_id AS contactId
+     FROM conversations WHERE contact_id IN (${ids.map(() => "?").join(", ")}) AND workspace_id = ? ORDER BY last_message_at DESC LIMIT 50`,
   )
-    .bind(c.req.param("contactId"), workspaceId)
+    .bind(...ids, workspaceId)
     .all();
   return c.json({ conversations: rows.results });
 });
@@ -138,6 +140,7 @@ visitors.patch("/workspaces/:id/contacts/:contactId", async (c) => {
   await c.env.DB.prepare("UPDATE contacts SET name = CASE WHEN ?1 THEN ?2 ELSE name END, email = CASE WHEN ?3 THEN ?4 ELSE email END WHERE id = ?5")
     .bind(name !== undefined ? 1 : 0, name ?? null, email !== undefined ? 1 : 0, email ?? null, contact.id)
     .run();
+  if (email !== undefined) await relinkPerson(c.env.DB, workspaceId, contact.id); // V-18: same email, same person
   // Inbox lists show the contact's name: refresh this contact's conversations everywhere.
   const convs = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? LIMIT 50").bind(contact.id).all<{ id: string }>();
   c.executionCtx.waitUntil(Promise.all(convs.results.map((r) => notifyConversationChanged(c.env, { conversationId: r.id, workspaceId }))));
@@ -178,6 +181,16 @@ visitors.get("/workspaces/:id/contacts/:contactId", async (c) => {
         conversations: chats!.results,
       };
   }
+  // V-18: the other contacts that are the same person (other browsers, linked by email or user id).
+  const ids = await personContactIds(c.env.DB, workspaceId, row.id);
+  const linked = ids.length > 1
+    ? await c.env.DB.prepare(
+        `SELECT id, name, email, verified_at IS NOT NULL AS verified, last_seen_at AS lastSeenAt FROM contacts
+         WHERE id IN (${ids.map(() => "?").join(", ")}) AND id != ? ORDER BY last_seen_at DESC LIMIT 20`,
+      )
+        .bind(...ids, row.id)
+        .all<{ id: string; name: string | null; email: string | null; verified: number; lastSeenAt: number }>()
+    : null;
   return c.json({
     contact: {
       id: row.id,
@@ -190,6 +203,7 @@ visitors.get("/workspaces/:id/contacts/:contactId", async (c) => {
       createdAt: row.created_at,
       lastSeenAt: row.last_seen_at,
       company,
+      linked: (linked?.results ?? []).map((r) => ({ ...r, verified: r.verified === 1 })),
     },
   });
 });

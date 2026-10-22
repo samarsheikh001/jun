@@ -1,3 +1,4 @@
+import { type LinkRow, planPersonLink } from "../../shared/contacts.ts";
 import { newId, randomToken, sha256 } from "./crypto.ts";
 import type { VerifiedIdentity } from "./identity.ts";
 
@@ -118,10 +119,13 @@ export async function identify(db: D1Database, workspaceId: string, identity: Ve
 
   if (current?.externalId === identity.id) {
     await profileUpdate(db, current.contactId, identity, await upsertCompany(db, workspaceId, identity.company)).run();
+    await linkPerson(db, workspaceId, current.contactId);
     return { contactId: current.contactId, token: currentToken!, movedConversations: [] };
   }
 
   if (current && current.externalId === null) {
+    // V-18: whoever it was linked to by an unverified email, it's now this user (or goes away).
+    await unlinkPerson(db, current.contactId);
     const companyId = await upsertCompany(db, workspaceId, identity.company);
     const existing = await db.prepare("SELECT id FROM contacts WHERE workspace_id = ? AND external_id = ?").bind(workspaceId, identity.id).first<{ id: string }>();
     if (!existing) {
@@ -130,6 +134,7 @@ export async function identify(db: D1Database, workspaceId: string, identity: Ve
         db.prepare("UPDATE contacts SET external_id = ? WHERE id = ?").bind(identity.id, current.contactId),
         profileUpdate(db, current.contactId, identity, companyId),
       ]);
+      await linkPerson(db, workspaceId, current.contactId);
       return { contactId: current.contactId, token: currentToken!, movedConversations: [] };
     }
     const moved = await db.prepare("SELECT id FROM conversations WHERE contact_id = ?").bind(current.contactId).all<{ id: string }>();
@@ -139,9 +144,83 @@ export async function identify(db: D1Database, workspaceId: string, identity: Ve
       db.prepare("DELETE FROM contacts WHERE id = ?").bind(current.contactId),
       profileUpdate(db, existing.id, identity, companyId),
     ]);
+    await linkPerson(db, workspaceId, existing.id);
     return { contactId: existing.id, token: currentToken!, movedConversations: moved.results.map((r) => r.id) };
   }
 
   const contactId = await upsertIdentified(db, workspaceId, identity);
+  await linkPerson(db, workspaceId, contactId);
   return { contactId, token: await issueToken(db, contactId), movedConversations: [] };
+}
+
+// V-18 (D-147): contacts that are the same person. Each browser keeps its own contact, so the widget only
+// ever shows a browser its own chats; contacts sharing an email or a user id get one `person_id` (the
+// group's main contact), and the desk shows them as one person. Rules: shared/contacts.ts planPersonLink.
+
+const LINK_COLUMNS = "id, person_id AS personId, verified_at IS NOT NULL AS verified, external_id AS externalId, created_at AS createdAt, last_seen_at AS lastSeenAt";
+type LinkSqlRow = Omit<LinkRow, "verified"> & { verified: number };
+const linkRow = (r: LinkSqlRow): LinkRow => ({ ...r, verified: r.verified === 1 });
+
+/** Links a contact to the contacts sharing its email or user id (after any of those changed). */
+export async function linkPerson(db: D1Database, workspaceId: string, contactId: string): Promise<void> {
+  const self = await db
+    .prepare(`SELECT ${LINK_COLUMNS}, email, claimed_id AS claimedId FROM contacts WHERE id = ? AND workspace_id = ?`)
+    .bind(contactId, workspaceId)
+    .first<LinkSqlRow & { email: string | null; claimedId: string | null }>();
+  if (!self) return;
+  const ids = [self.claimedId, self.externalId].filter((v): v is string => v !== null);
+  if (!self.email && ids.length === 0) return;
+  const idList = ids.map(() => "?").join(", ");
+  const matches = await db
+    .prepare(
+      `SELECT DISTINCT COALESCE(person_id, id) AS root FROM contacts WHERE workspace_id = ? AND id != ? AND (
+         (?3 IS NOT NULL AND email = ?3)${ids.length ? ` OR claimed_id IN (${idList}) OR external_id IN (${idList})` : ""}) LIMIT 50`,
+    )
+    .bind(workspaceId, contactId, self.email, ...ids, ...ids)
+    .all<{ root: string }>();
+  if (matches.results.length === 0) return;
+  const roots = [...new Set([...matches.results.map((r) => r.root), self.personId ?? self.id])];
+  const rows = await db
+    .prepare(`SELECT ${LINK_COLUMNS} FROM contacts WHERE workspace_id = ? AND (id IN (${roots.map(() => "?").join(", ")}) OR person_id IN (${roots.map(() => "?").join(", ")})) LIMIT 500`)
+    .bind(workspaceId, ...roots, ...roots)
+    .all<LinkSqlRow>();
+  const plan = planPersonLink(linkRow(self), rows.results.map(linkRow), self.claimedId);
+  if (!plan) return;
+  const list = plan.members.map(() => "?").join(", ");
+  await db.prepare(`UPDATE contacts SET person_id = ? WHERE workspace_id = ? AND id IN (${list})`).bind(plan.root, workspaceId, ...plan.members).run();
+}
+
+/** Takes a contact out of its person; the others stay together under their oldest (or verified) contact. */
+export async function unlinkPerson(db: D1Database, contactId: string): Promise<void> {
+  const self = await db.prepare("SELECT person_id FROM contacts WHERE id = ?").bind(contactId).first<{ person_id: string | null }>();
+  if (!self?.person_id) return;
+  await db.prepare("UPDATE contacts SET person_id = NULL WHERE id = ?").bind(contactId).run();
+  if (self.person_id !== contactId) {
+    // The main contact alone again: no group left.
+    await db.prepare("UPDATE contacts SET person_id = NULL WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM contacts WHERE person_id = ?1 AND id != ?1)").bind(self.person_id).run();
+    return;
+  }
+  const rest = await db
+    .prepare("SELECT id FROM contacts WHERE person_id = ? ORDER BY verified_at IS NULL, created_at, id")
+    .bind(contactId)
+    .all<{ id: string }>();
+  const root = rest.results.length > 1 ? rest.results[0]!.id : null;
+  await db.prepare("UPDATE contacts SET person_id = ? WHERE person_id = ?").bind(root, contactId).run();
+}
+
+/** After a contact's email or user id changed: out of its old person, into the one it matches now. */
+export async function relinkPerson(db: D1Database, workspaceId: string, contactId: string): Promise<void> {
+  await unlinkPerson(db, contactId);
+  await linkPerson(db, workspaceId, contactId);
+}
+
+/** The ids of every contact in this contact's person (itself only when it stands alone). */
+export async function personContactIds(db: D1Database, workspaceId: string, contactId: string): Promise<string[]> {
+  const rows = await db
+    .prepare(
+      `SELECT id FROM contacts WHERE workspace_id = ?1 AND (id = ?2 OR person_id = (SELECT person_id FROM contacts WHERE id = ?2 AND workspace_id = ?1)) LIMIT 200`,
+    )
+    .bind(workspaceId, contactId)
+    .all<{ id: string }>();
+  return rows.results.length ? rows.results.map((r) => r.id) : [contactId];
 }

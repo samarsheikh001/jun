@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireUser } from "../auth/session.ts";
 import { requireMember } from "./conversations.ts";
 import { loadDebugContext } from "../lib/conversations.ts";
+import { personContactIds } from "../lib/contacts.ts";
 import {
   CONTACTS_PAGE_SIZE, likePattern, pageTrail, readCompanyQuery, readPeopleQuery,
   type Attributes, type CompanyRow, type PersonRow,
@@ -24,6 +25,16 @@ export const PERSON_COLUMNS = `ct.id, ct.name, ct.email, ct.external_id, ct.veri
   (SELECT COUNT(*) FROM conversations cv WHERE cv.contact_id = ct.id) AS conversations,
   (SELECT COUNT(*) FROM conversations cv WHERE cv.contact_id = ct.id AND cv.status != 'resolved') AS open`;
 
+// V-18 (D-147): the People list has one row per person: a contact on its own, or the main contact of the ones
+// linked by email or user id (`person_id`), with the whole group's chats and latest visit.
+const GROUP = "(m.id = ct.id OR m.person_id = ct.id)";
+const PEOPLE_COLUMNS = `ct.id, ct.name, ct.email, ct.external_id, ct.verified_at,
+  (SELECT MAX(m.last_seen_at) FROM contacts m WHERE ${GROUP}) AS last_seen_at,
+  co.id AS company_id, co.name AS company_name, co.external_id AS company_external_id,
+  (SELECT COUNT(*) FROM conversations cv JOIN contacts m ON m.id = cv.contact_id WHERE ${GROUP}) AS conversations,
+  (SELECT COUNT(*) FROM conversations cv JOIN contacts m ON m.id = cv.contact_id WHERE ${GROUP} AND cv.status != 'resolved') AS open,
+  (SELECT COUNT(*) FROM contacts m WHERE m.person_id = ct.id AND m.id != ct.id) AS linked`;
+
 export interface PersonDbRow {
   id: string;
   name: string | null;
@@ -36,6 +47,7 @@ export interface PersonDbRow {
   company_external_id: string | null;
   conversations: number;
   open: number;
+  linked?: number;
 }
 
 export const personRow = (r: PersonDbRow): PersonRow => ({
@@ -48,6 +60,7 @@ export const personRow = (r: PersonDbRow): PersonRow => ({
   conversations: r.conversations,
   open: r.open,
   company: r.company_id ? { id: r.company_id, name: r.company_name, externalId: r.company_external_id ?? "" } : null,
+  ...(r.linked ? { linked: r.linked } : {}),
 });
 
 const parseAttributes = (json: string): Attributes => {
@@ -62,7 +75,7 @@ contacts.get("/workspaces/:id/people", async (c) => {
   const workspaceId = c.req.param("id");
   await requireMember(c, workspaceId);
   const query = readPeopleQuery({ get: (k) => c.req.query(k) });
-  const where = [`ct.workspace_id = ?`, KNOWN];
+  const where = [`ct.workspace_id = ?`, KNOWN, "(ct.person_id IS NULL OR ct.person_id = ct.id)"];
   const binds: unknown[] = [workspaceId];
   if (query.company) {
     where.push("ct.company_id = ?");
@@ -74,10 +87,10 @@ contacts.get("/workspaces/:id/people", async (c) => {
     binds.push(like, like, like, like);
   }
   const from = `FROM contacts ct LEFT JOIN companies co ON co.id = ct.company_id WHERE ${where.join(" AND ")}`;
-  const order = query.sort === "open" ? "open DESC, ct.last_seen_at DESC, ct.id" : "ct.last_seen_at DESC, ct.id";
+  const order = query.sort === "open" ? "open DESC, last_seen_at DESC, ct.id" : "last_seen_at DESC, ct.id";
   const db = c.env.DB;
   const [rows, total] = await db.batch([
-    db.prepare(`SELECT ${PERSON_COLUMNS} ${from} ORDER BY ${order} LIMIT ? OFFSET ?`).bind(...binds, CONTACTS_PAGE_SIZE, query.offset),
+    db.prepare(`SELECT ${PEOPLE_COLUMNS} ${from} ORDER BY ${order} LIMIT ? OFFSET ?`).bind(...binds, CONTACTS_PAGE_SIZE, query.offset),
     db.prepare(`SELECT COUNT(*) AS n ${from}`).bind(...binds),
   ]);
   return c.json({
@@ -93,11 +106,12 @@ contacts.get("/workspaces/:id/people", async (c) => {
 contacts.get("/workspaces/:id/people/:contactId/trail", async (c) => {
   const workspaceId = c.req.param("id");
   await requireMember(c, workspaceId);
+  const ids = await personContactIds(c.env.DB, workspaceId, c.req.param("contactId")); // V-18: any of their browsers
   const latest = await c.env.DB.prepare(
     `SELECT d.conversation_id FROM debug_snapshots d JOIN conversations cv ON cv.id = d.conversation_id
-     WHERE cv.contact_id = ? AND cv.workspace_id = ? ORDER BY d.created_at DESC LIMIT 1`,
+     WHERE cv.contact_id IN (${ids.map(() => "?").join(", ")}) AND cv.workspace_id = ? ORDER BY d.created_at DESC LIMIT 1`,
   )
-    .bind(c.req.param("contactId"), workspaceId)
+    .bind(...ids, workspaceId)
     .first<{ conversation_id: string }>();
   if (!latest) return c.json({ trail: null });
   const { context, events } = await loadDebugContext(c.env.DB, latest.conversation_id);

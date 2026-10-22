@@ -194,6 +194,8 @@ function PeopleTable({ rows, empty, showCompany = true }: { rows: PersonRow[] | 
                         <div className="cv-name">
                           <DeskLink to={`/contacts/${p.id}`}>{label}</DeskLink>
                           {p.verified && <span className="verified" title="Identity verified by your site"> ✓</span>}
+                          {/* V-18: other browsers with the same email or user ID, counted in this row. */}
+                          {p.linked ? <span className="muted small" title="Other browsers with the same email or user ID"> · {p.linked + 1} browsers</span> : null}
                         </div>
                         <div className="cv-email">{p.name && p.email ? p.email : p.externalId ? `ID ${p.externalId}` : p.verified ? "Signed in" : "Anonymous visitor"}</div>
                       </div>
@@ -326,6 +328,8 @@ interface ContactDetails {
   createdAt: number;
   lastSeenAt: number;
   company: { id: string; externalId: string; name: string | null; attributes: Attributes; people: number } | null;
+  /** V-18: other contacts that are the same person. */
+  linked?: { id: string; name: string | null; email: string | null; verified: boolean; lastSeenAt: number }[];
 }
 
 interface Trail { conversationId: string; capturedAt: number | null; page: { url: string; title: string } | null; steps: TrailStep[] }
@@ -386,6 +390,15 @@ function PersonPage({ workspaceId, contactId }: { workspaceId: string; contactId
                 <dt>First seen</dt><dd>{day(details.createdAt)}</dd>
                 <dt>Last seen</dt><dd>{day(details.lastSeenAt)} · {clock(details.lastSeenAt)}</dd>
                 {!details.verified && (<><dt /><dd className="muted">Not verified: {details.email || details.name ? "these details came from your website's page, the chat or an agent." : "an anonymous visitor."}</dd></>)}
+                {details.linked && details.linked.length > 0 && (
+                  <>
+                    <dt>Same person</dt>
+                    <dd>
+                      {details.linked.length === 1 ? "1 other browser" : `${details.linked.length} other browsers`}, matched by email or user ID
+                      {!(details.verified || details.linked.some((l) => l.verified)) && " (not verified)"}; their chats are listed here too.
+                    </dd>
+                  </>
+                )}
               </dl>
             </section>
             <section className="dash-card dash-hero">

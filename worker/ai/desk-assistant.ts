@@ -65,7 +65,7 @@ import { normalizeTag } from "../../shared/inbox.ts";
 import { addDays, formatDuration, startOfDay, type MetricsReport } from "../../shared/metrics.ts";
 import { contactLabel, readNotificationPrefs } from "../../shared/notifications.ts";
 import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
-import { loadIdentitySecret } from "../lib/contacts.ts";
+import { loadIdentitySecret, personContactIds } from "../lib/contacts.ts";
 import { newId } from "../lib/crypto.ts";
 import { canSendEmail, loadEmailSettings } from "../lib/email.ts";
 import { applyInboxPatch } from "../lib/inbox-settings.ts";
@@ -466,9 +466,10 @@ export function readTools(ctx: AssistantContext): ToolSet {
     inputSchema: obj({ id: s("The contact id (ct_…).") }, ["id"]),
     execute: run(async (raw) => {
       const { id } = readConversationId(raw);
+      const ids = await personContactIds(db, workspaceId, id); // V-18: chats from all their browsers
       const [person, chats] = await db.batch([
         db.prepare(`SELECT ${PERSON_COLUMNS}, ct.attributes FROM contacts ct LEFT JOIN companies co ON co.id = ct.company_id WHERE ct.id = ? AND ct.workspace_id = ?`).bind(id, workspaceId),
-        db.prepare("SELECT id, status, last_message_at AS lastMessageAt, last_message_preview AS preview FROM conversations WHERE contact_id = ? AND workspace_id = ? ORDER BY last_message_at DESC LIMIT 20").bind(id, workspaceId),
+        db.prepare(`SELECT id, status, last_message_at AS lastMessageAt, last_message_preview AS preview FROM conversations WHERE contact_id IN (${ids.map(() => "?").join(", ")}) AND workspace_id = ? ORDER BY last_message_at DESC LIMIT 20`).bind(...ids, workspaceId),
       ]);
       const row = person!.results[0] as (PersonDbRow & { attributes: string }) | undefined;
       if (!row) throw new AssistantInputError(`No contact ${id} in this workspace.`);

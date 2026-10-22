@@ -16,8 +16,8 @@ function minifyLoader(): Plugin {
     name: "jun:minify-loader",
     apply: "build",
     writeBundle(options) {
-      // The lazy chunks are minified the same way: AI-21's page actions, the island's (D-99) and D-138's plain button.
-      const titles: Record<string, string> = { "widget.js": "widget loader", "widget-actions.js": "page actions", "widget-island.js": "island", "widget-button.js": "chat button" };
+      // The lazy chunks are minified the same way: AI-21's page actions, the island's (D-99), D-138's plain button and V-18's identify bridge.
+      const titles: Record<string, string> = { "widget.js": "widget loader", "widget-actions.js": "page actions", "widget-island.js": "island", "widget-button.js": "chat button", "widget-identify.js": "identify bridge" };
       for (const name of Object.keys(titles)) {
         const file = join(options.dir ?? "", name);
         if (!existsSync(file)) continue;

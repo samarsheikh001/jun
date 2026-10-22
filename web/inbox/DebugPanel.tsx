@@ -145,6 +145,8 @@ interface ContactDetails {
     people: number;
     conversations: (PastConversation & { contactName: string | null; contactEmail: string | null })[];
   } | null;
+  /** V-18: other contacts that are the same person (other browsers sharing the email or user id). */
+  linked?: { id: string; name: string | null; email: string | null; verified: boolean; lastSeenAt: number }[];
 }
 
 interface PastConversation {
@@ -152,6 +154,8 @@ interface PastConversation {
   status: string;
   lastMessageAt: number;
   preview: string | null;
+  /** V-18: the contact (browser) the chat came from; another one when it's linked to this person. */
+  contactId?: string;
 }
 
 const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -221,6 +225,16 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
           {!details.verified && !details.name && !details.email && (<><dt /><dd className="muted">Anonymous visitor. Add a name or email if they tell you.</dd></>)}
           {/* V-17: a page's identify() without a token, the chat's email ask or an agent: a label, not proof. */}
           {!details.verified && (details.name || details.email) && (<><dt /><dd className="muted">Not verified: anyone could have typed these, so don't share account details on their strength.</dd></>)}
+          {/* V-18 (D-147): the same email or user id on other browsers: one person here, each browser's widget still its own. */}
+          {details.linked && details.linked.length > 0 && (
+            <>
+              <dt>Same person</dt>
+              <dd>
+                {details.linked.length === 1 ? "1 other browser" : `${details.linked.length} other browsers`}, matched by email or user ID
+                {!(details.verified || details.linked.some((l) => l.verified)) && " (not verified)"}
+              </dd>
+            </>
+          )}
         </dl>
       )}
       {details.company && <CompanyCard company={details.company} />}
@@ -232,7 +246,7 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
               <li key={h.id}>
                 <a href={deskHref(`/inbox/${h.id}`)} onClick={(e) => { e.preventDefault(); navigate(`/inbox/${h.id}`); }}>
                   <span className="small">{h.preview || "Conversation"}</span>
-                  <span className="muted small">{h.status === "resolved" ? "Resolved" : h.status === "open" ? "Open" : h.status} · {day(h.lastMessageAt)}</span>
+                  <span className="muted small">{h.status === "resolved" ? "Resolved" : h.status === "open" ? "Open" : h.status} · {day(h.lastMessageAt)}{h.contactId && h.contactId !== contact.id && " · other browser"}</span>
                 </a>
               </li>
             ))}

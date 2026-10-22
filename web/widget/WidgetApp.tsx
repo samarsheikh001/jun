@@ -270,19 +270,22 @@ class WidgetApi {
   }
 
   /**
-   * V-17: the page's unverified word for who its user is (identify without a token). Another email than the
-   * one this browser last labelled itself with means another person (a shared computer): a new contact, so
-   * the first one's chats never show under the second's name. True when the browser's contact changed.
+   * V-17: the page's unverified word for who its user is (identify without a token). Another user id or email
+   * than the ones this browser last labelled itself with means another person (a shared computer): a new
+   * contact, so the first one's chats never show under the second's name. True when the browser's contact changed.
    */
   async profile(who: ProfileHint, sessionId: string | null): Promise<boolean> {
     const whoKey = `jun:who:${this.key}`;
-    let last: string | null = null;
+    let last: { id?: string | null; email?: string | null } | null = null;
     try {
-      last = persist ? localStorage.getItem(whoKey) : null;
+      const raw = persist ? localStorage.getItem(whoKey) : null;
+      // Before V-18 the key held only the email.
+      last = raw ? (raw.startsWith("{") ? JSON.parse(raw) : { email: raw }) : null;
     } catch {
-      // storage blocked: no memory of an earlier person
+      // storage blocked or unreadable: no memory of an earlier person
     }
-    const switched = Boolean(this.token && last && who.email && last !== who.email);
+    const differs = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a !== b);
+    const switched = Boolean(this.token && last && (differs(who.id, last.id) || differs(who.email, last.email)));
     if (switched) {
       writeToken(this.key, null);
       this.token = null;
@@ -290,7 +293,7 @@ class WidgetApi {
     await this.ensureVisitor();
     await this.call("/profile", { body: { ...who, ...(sessionId ? { sessionId } : {}) } });
     try {
-      if (persist && who.email) localStorage.setItem(whoKey, who.email);
+      if (persist && (who.id || who.email)) localStorage.setItem(whoKey, JSON.stringify({ id: who.id ?? (switched ? null : last?.id) ?? null, email: who.email ?? (switched ? null : last?.email) ?? null }));
     } catch {
       // storage blocked
     }
@@ -669,8 +672,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       // V-17: identify({ name, email }) without a token: only a label, sent by the effect below.
       if ((data?.type === "jun:session" || data?.type === "jun:identify") && typeof data.userToken !== "string" && data.who && typeof data.who === "object") {
         const w = data.who as Record<string, unknown>;
-        const hint = { name: typeof w.name === "string" ? w.name : null, email: typeof w.email === "string" ? w.email : null };
-        setWho((old) => (old && old.name === hint.name && old.email === hint.email ? old : hint));
+        const id = typeof w.id === "string" || typeof w.id === "number" ? String(w.id) : null;
+        const hint = { id, name: typeof w.name === "string" ? w.name : null, email: typeof w.email === "string" ? w.email : null };
+        setWho((old) => (old && old.id === hint.id && old.name === hint.name && old.email === hint.email ? old : hint));
       } else if ((data?.type === "jun:session" && typeof data.userToken === "string") || data?.type === "jun:identify") {
         const userToken = typeof data.userToken === "string" ? data.userToken : null;
         setWho(null);
@@ -717,7 +721,7 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   // V-17: label this browser's contact with the page's name and email (again once the live session is known,
   // so the visitor list shows them too).
   useEffect(() => {
-    if (preview || !who || (!who.name && !who.email)) return;
+    if (preview || !who || (!who.id && !who.name && !who.email)) return;
     api.profile(who, sessionId).then(
       (switched) => switched && setIdentityVersion((n) => n + 1),
       (err: Error) => console.warn(`[Jun] identify failed: ${err.message}`),

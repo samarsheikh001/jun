@@ -25,7 +25,9 @@
  *   or the "jundesk:widget-action" window event (same object as event.detail).
  *      / .reportError({ message, code? }) / .track(name, props?). In island mode, "/" on the page opens it.
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too), or
- * (V-17) { name, email, token? }: without a token the name and email only label the visitor, as not verified.
+ * (V-17) { id, name, email, token? }: without a token they only label the visitor, as not verified; contacts
+ * sharing the id or email show as one person on the desk (V-18). data-identify-from="posthog" takes them from
+ * PostHog's identify() instead (widget-identify.js).
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
  * like everything else and kept with the errors above. track() records what the visitor did in your
  * app ("export_started", { format: "csv" }) in the same trail, for the AI and your team.
@@ -306,6 +308,8 @@
   function connect() {
     if (!consented || live) return;
     if (pageControl) chunk("page-control");
+    // V-18: data-identify-from="posthog" labels the visitor from PostHog's identify (widget-identify.js). After consent.
+    if (attr("identify-from")) chunk("identify");
     if (bot) return;
     sid = session().id;
     if (counted != sid) counted = sid, count(); // this page, once per session (not on reconnects)
@@ -502,11 +506,11 @@
       paintTheme();
       post({ type: "jun:theme", theme: theme });
     },
-    // Signed-in user: a JWT from your backend, or (V-17) { name, email, token? }: without a token only a label
+    // Signed-in user: a JWT from your backend, or (V-17) { id, name, email, token? }: without a token only a label
     // agents see as not verified. The chat and the visitor list then know who it is.
     identify: (t) => {
       var o = t && typeof t == "object";
-      who = o ? { name: t.name, email: t.email } : 0;
+      who = o ? { id: t.id, name: t.name, email: t.email } : 0;
       userToken = (o ? t.token : t) || null;
       if (userToken) liveSend({ t: "id", token: userToken });
       post({ type: "jun:identify", userToken: userToken, who: who });
@@ -559,6 +563,7 @@
     // (pages, key, element, context, available, undo, risk); see widget-actions.js. Returns a remover.
     _q: actionQueue,
     _b: b, // for widget-button.js
+    _id: () => userToken, // for widget-identify.js: a signed user is never relabelled
     onWidgetAction: (fn) => {
       var h = (e) => fn(e.detail);
       on(window, "jundesk:widget-action", h);

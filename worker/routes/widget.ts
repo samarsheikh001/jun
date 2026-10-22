@@ -5,7 +5,7 @@ import { SOCKET_PROTOCOL, type Attachment, type CsatRating } from "../../shared/
 import { parseRating } from "../../shared/inbox.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { forVisitor, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
-import { createVisitor, findVisitor, identify } from "../lib/contacts.ts";
+import { createVisitor, findVisitor, identify, relinkPerson } from "../lib/contacts.ts";
 import { newId, sha256 } from "../lib/crypto.ts";
 import { originAllowed } from "../lib/origins.ts";
 import { IdentityError, verifyIdentityToken } from "../lib/identity.ts";
@@ -288,20 +288,27 @@ widget.post("/widget/:key/identify", async (c) => {
   return c.json({ token: result.token, contactId: result.contactId });
 });
 
-// V-17 (D-146): the page's own word for who its user is (JunDesk.identify({ name, email }) without a token),
-// like PostHog's identify. Only a label on this browser's contact: never verified, never merged into another
-// contact, no {user.*} actions, history or company; a verified contact keeps its own details.
+// V-17 (D-146): the page's own word for who its user is (JunDesk.identify({ id, name, email }) without a token),
+// like PostHog's identify. Only a label on this browser's contact: never verified, no {user.*} actions,
+// history or company; a verified contact keeps its own details. V-18 (D-147): the email and user id link this
+// contact to others that are the same person, for the desk only (this browser still sees only its own chats).
 widget.post("/widget/:key/profile", async (c) => {
   const inbox = await widgetInbox(c);
   const { contactId } = await visitor(c, inbox);
   const body = await readJson(c.req);
   const hint = readProfileHint(body);
-  const row = await c.env.DB.prepare("SELECT name, email, verified_at FROM contacts WHERE id = ?").bind(contactId).first<{ name: string | null; email: string | null; verified_at: number | null }>();
+  const row = await c.env.DB.prepare("SELECT name, email, claimed_id, verified_at FROM contacts WHERE id = ?")
+    .bind(contactId)
+    .first<{ name: string | null; email: string | null; claimed_id: string | null; verified_at: number | null }>();
   if (!row || row.verified_at !== null) return c.json({ ok: true, verified: true });
   const name = hint.name ?? row.name;
   const email = hint.email ?? row.email;
-  if (name !== row.name || email !== row.email) {
-    await c.env.DB.prepare("UPDATE contacts SET name = ?, email = ?, last_seen_at = ? WHERE id = ? AND verified_at IS NULL").bind(name, email, Date.now(), contactId).run();
+  const claimed = hint.id ?? row.claimed_id;
+  if (name !== row.name || email !== row.email || claimed !== row.claimed_id) {
+    await c.env.DB.prepare("UPDATE contacts SET name = ?, email = ?, claimed_id = ?, last_seen_at = ? WHERE id = ? AND verified_at IS NULL")
+      .bind(name, email, claimed, Date.now(), contactId)
+      .run();
+    if (email !== row.email || claimed !== row.claimed_id) await relinkPerson(c.env.DB, inbox.workspaceId, contactId);
     // Inbox lists show the contact's name and email: refresh their conversations.
     const chats = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? LIMIT 50").bind(contactId).all<{ id: string }>();
     c.executionCtx.waitUntil(Promise.all(chats.results.map((r) => notifyConversationChanged(c.env, { conversationId: r.id, workspaceId: inbox.workspaceId }))));
@@ -520,6 +527,7 @@ widget.post("/widget/:key/conversations/:cid/email", async (c) => {
   if (email.length > 320 || !EMAIL_PATTERN.test(email)) throw new HttpError(400, "invalid_field", "That doesn't look like an email address.");
   const updated = await c.env.DB.prepare("UPDATE contacts SET email = ? WHERE id = ? AND verified_at IS NULL").bind(email, contactId).run();
   if (updated.meta.changes === 0) throw new HttpError(409, "verified", "Your email comes from your account.");
+  await relinkPerson(c.env.DB, inbox.workspaceId, contactId); // V-18
   await c.env.CONVERSATION.getByName(ref.conversationId).addNote(ref, `The customer left their email for a reply: ${email}`, `email:${await sha256(email)}`);
   // Inbox lists show the contact's email: refresh their other conversations too.
   const others = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? AND id != ? LIMIT 50").bind(contactId, ref.conversationId).all<{ id: string }>();

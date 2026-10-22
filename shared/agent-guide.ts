@@ -283,8 +283,9 @@ customer's id and act on their account.
 The app proves it instead. Its **server** signs a short-lived token (a JWT, HS256) with the desk's
 identity secret, and the page hands the token to the chat. The desk checks the signature and only then
 fills \`{user.*}\`. Agents see a verified name and email, and the customer's chats follow them across devices.
-(\`JunDesk.identify({ name, email })\` without a token only labels the visitor for agents, as not verified:
-none of this applies to it.)
+(\`JunDesk.identify({ id, name, email })\` without a token only labels the visitor for agents, as not verified,
+and browsers with the same email or id show as one person on the desk; none of this applies to it.
+\`data-identify-from="posthog"\` on the script tag takes the label from PostHog's identify() instead.)
 
 ## 1. Turn it on and keep the secret on the server
 

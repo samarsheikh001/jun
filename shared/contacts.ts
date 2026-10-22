@@ -32,6 +32,8 @@ export interface PersonRow {
   conversations: number;
   open: number;
   company: { id: string; name: string | null; externalId: string } | null;
+  /** V-18: other contacts that are the same person (linked by email or user id), counted in this row. */
+  linked?: number;
 }
 
 /** One row of the Companies list. */
@@ -131,8 +133,10 @@ export function pageTrail(events: DebugEvent[]): TrailStep[] {
   return steps.slice(-MAX_TRAIL);
 }
 
-/** V-17 (D-146): the page's unverified word for who its user is. */
+/** V-17 (D-146): the page's unverified word for who its user is; V-18 (D-147) added its user id. */
 export interface ProfileHint {
+  /** The site's own user id, not verified: only used to link contacts that are the same person. */
+  id: string | null;
   name: string | null;
   email: string | null;
 }
@@ -140,12 +144,59 @@ export interface ProfileHint {
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * `JunDesk.identify({ name, email })` without a token, cleaned: a name of at most 120 characters on one line,
- * a lowercase email of at most 320. Anything missing or malformed is null (the contact keeps what it had):
+ * `JunDesk.identify({ id, name, email })` without a token, cleaned: a user id of at most 200 characters (a
+ * number becomes text), a name of at most 120 characters on one line, a lowercase email of at most 320. Anything missing or malformed is null (the contact keeps what it had):
  * it's page code, so a bad field is dropped rather than refused.
  */
 export function readProfileHint(body: Record<string, unknown>): ProfileHint {
+  const rawId = typeof body.id === "number" && Number.isFinite(body.id) ? String(body.id) : body.id;
+  const id = typeof rawId === "string" ? rawId.trim() : "";
   const name = typeof body.name === "string" ? body.name.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  return { name: name || null, email: email.length <= 320 && EMAIL_PATTERN.test(email) ? email : null };
+  return { id: id && id.length <= 200 && !/[\u0000-\u001f\u007f]/.test(id) ? id : null, name: name || null, email: email.length <= 320 && EMAIL_PATTERN.test(email) ? email : null };
+}
+
+/** V-18 (D-147): one contact as the person-linking rules see it. */
+export interface LinkRow {
+  id: string;
+  /** The group's main contact, or null when the contact stands alone. */
+  personId: string | null;
+  verified: boolean;
+  /** A verified contact's user id (the JWT's `sub`). */
+  externalId: string | null;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+/**
+ * V-18 (D-147): which contacts become one person with `self`, given `self` and every contact in the groups
+ * of the contacts that share its email or user id (`self`'s own group included). Contacts stay separate
+ * rows (each browser sees only its own chats); this only sets `person_id` so the desk shows one person.
+ * - Two verified contacts are never the same person: their app says they're different users. So a group
+ *   holds at most one verified contact, which is its main contact; without one, the oldest contact is.
+ * - An unverified `self` matching several verified people joins the one whose user id it claimed, else
+ *   the most recently seen; the other verified groups stay apart.
+ * Returns the main contact and the contacts to point at it, or null when `self` stays alone.
+ */
+export function planPersonLink(self: LinkRow, rows: LinkRow[], claimedId: string | null = null): { root: string; members: string[] } | null {
+  const groups = new Map<string, LinkRow[]>();
+  for (const r of [self, ...rows.filter((r) => r.id !== self.id)]) {
+    const key = r.id === self.id ? "self" : (r.personId ?? r.id) === (self.personId ?? self.id) ? "self" : r.personId ?? r.id;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const verifiedOf = (g: LinkRow[]) => g.find((r) => r.verified) ?? null;
+  const own = verifiedOf(groups.get("self")!);
+  let keep: LinkRow | null = own;
+  if (!keep) {
+    const choices = [...groups.entries()].filter(([k]) => k !== "self").map(([, g]) => verifiedOf(g)).filter((r): r is LinkRow => r !== null);
+    keep = choices.find((r) => claimedId !== null && r.externalId === claimedId) ?? choices.sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0] ?? null;
+  }
+  const members: LinkRow[] = [];
+  for (const [k, g] of groups) {
+    const v = verifiedOf(g);
+    if (k === "self" || !v || v.id === keep?.id) members.push(...g);
+  }
+  if (members.length < 2) return null;
+  const root = keep ?? [...members].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))[0]!;
+  return { root: root.id, members: members.map((r) => r.id) };
 }

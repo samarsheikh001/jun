@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { attributeText, companyLabel, contactsView, likePattern, listQueryString, pageTrail, personLabel, readCompanyQuery, readPeopleQuery, readProfileHint } from "./contacts.ts";
+import { attributeText, companyLabel, contactsView, likePattern, listQueryString, pageTrail, personLabel, readCompanyQuery, planPersonLink, readPeopleQuery, readProfileHint } from "./contacts.ts";
+import type { LinkRow } from "./contacts.ts";
 import type { DebugEvent } from "./debug.ts";
 
 test("readPeopleQuery: defaults, clamps and drops what isn't safe", () => {
@@ -77,9 +78,34 @@ test("pageTrail: navigation only, oldest first, repeats in a row once (reloads k
 });
 
 test("readProfileHint: cleans the page's name and email, drops what's malformed", () => {
-  assert.deepEqual(readProfileHint({ name: "  Sam\n  Lee ", email: " Sam@Acme.COM " }), { name: "Sam Lee", email: "sam@acme.com" });
-  assert.deepEqual(readProfileHint({ name: 42, email: "not an email" }), { name: null, email: null });
-  assert.deepEqual(readProfileHint({}), { name: null, email: null });
+  assert.deepEqual(readProfileHint({ name: "  Sam\n  Lee ", email: " Sam@Acme.COM " }), { id: null, name: "Sam Lee", email: "sam@acme.com" });
+  assert.deepEqual(readProfileHint({ name: 42, email: "not an email" }), { id: null, name: null, email: null });
+  assert.deepEqual(readProfileHint({}), { id: null, name: null, email: null });
+  assert.equal(readProfileHint({ id: " u_42 " }).id, "u_42");
+  assert.equal(readProfileHint({ id: 42 }).id, "42");
+  assert.equal(readProfileHint({ id: "a\nb" }).id, null);
+  assert.equal(readProfileHint({ id: "x".repeat(201) }).id, null);
   assert.equal(readProfileHint({ name: "x".repeat(300) }).name?.length, 120);
   assert.equal(readProfileHint({ email: `${"a".repeat(320)}@b.co` }).email, null);
+});
+
+test("planPersonLink: links by email or id, one verified contact per person", () => {
+  const row = (id: string, o: Partial<LinkRow> = {}): LinkRow => ({ id, personId: null, verified: false, externalId: null, createdAt: 10, lastSeenAt: 10, ...o });
+  // Alone: nothing to do.
+  assert.equal(planPersonLink(row("a"), []), null);
+  // Two anonymous browsers with one email: the older is the main contact.
+  assert.deepEqual(planPersonLink(row("b", { createdAt: 20 }), [row("a", { createdAt: 5 })]), { root: "a", members: ["b", "a"] });
+  // A verified contact is always the main one.
+  assert.deepEqual(planPersonLink(row("b", { createdAt: 1 }), [row("v", { verified: true, externalId: "u1", createdAt: 9 })]), { root: "v", members: ["b", "v"] });
+  // A whole group comes along.
+  assert.deepEqual(planPersonLink(row("c"), [row("a", { personId: "a" }), row("b", { personId: "a" })]), { root: "a", members: ["c", "a", "b"] });
+  // Two verified people are never one: a verified self skips the other's group.
+  assert.equal(planPersonLink(row("v1", { verified: true }), [row("v2", { verified: true })]), null);
+  assert.deepEqual(planPersonLink(row("v1", { verified: true }), [row("v2", { verified: true }), row("x", { createdAt: 1 })]), { root: "v1", members: ["v1", "x"] });
+  // Unverified self matching two verified people: the claimed id wins, else the latest seen.
+  const two = [row("v1", { verified: true, externalId: "u1", lastSeenAt: 50 }), row("v2", { verified: true, externalId: "u2", lastSeenAt: 99 })];
+  assert.deepEqual(planPersonLink(row("a"), two, "u1"), { root: "v1", members: ["a", "v1"] });
+  assert.deepEqual(planPersonLink(row("a"), two), { root: "v2", members: ["a", "v2"] });
+  // Already in a verified person's group: stays there.
+  assert.deepEqual(planPersonLink(row("a", { personId: "v1" }), two), { root: "v1", members: ["a", "v1"] });
 });

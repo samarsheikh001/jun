@@ -63,7 +63,7 @@ Copy the snippet from **Playground → Install** into `<head>`, before your own 
 
 | Option | What it does |
 |---|---|
-| `data-user-token="<jwt>"` or `JunDesk.identify(jwt)` | Says who the signed-in customer is (see below). `JunDesk.identify({ name, email })` without a token only labels them, as not verified. `JunDesk.logout()` on sign-out |
+| `data-user-token="<jwt>"` or `JunDesk.identify(jwt)` | Says who the signed-in customer is (see below). `JunDesk.identify({ id, name, email })` without a token only labels them, as not verified; browsers sharing the email or id show as one person on the desk. `data-identify-from="posthog"` takes that label from PostHog's `identify()`. `JunDesk.logout()` on sign-out |
 | `data-consent="required"` | Stores nothing and stays off your visitor list until `JunDesk.consent(true)` (for cookie banners) |
 | `data-capture="off"` | Turns off error and request capture |
 | `data-color="#0f766e"` | Overrides the brand colour from Settings |
