@@ -4,6 +4,7 @@ import { api, describeError } from "../api.ts";
 import type { Hub } from "../Shell.tsx";
 import { ArrowRightIcon, AsteriskIcon, ChatIcon, CheckIcon, ChevronDownIcon, CoffeeIcon, EditIcon, HandoffIcon, RefreshIcon, SettingsIcon, SparkleIcon } from "../components/icons.tsx";
 import { deskHref, navigate } from "../lib/router.ts";
+import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { AskChat, askDesk, AskThreads, newAskChat, useAskStarted } from "./AskChat.tsx";
 
@@ -178,6 +179,11 @@ function DigestHead({ day, refresh }: { day: string; refresh?: ReactNode }) {
   );
 }
 
+/** The sheet under the header bar. On wide screens it scrolls on its own, with the desk's thin bar. */
+function DigestSheet({ children }: { children: ReactNode }) {
+  return <ScrollArea className="digest-pane" contentClassName="digest-sheet">{children}</ScrollArea>;
+}
+
 /** A row of "What needs you" / "What's unusual": the sentence (the whole row opens its link), its pill, then its chats. */
 function DigestRow({ p, names, contacts, onAsk, onDone }: { p: Point; names: Record<string, string> | undefined; contacts: Record<string, string> | undefined; onAsk: ((question: string) => void) | null; onDone: (() => void) | null }) {
   const tag = tagOf(p);
@@ -266,7 +272,7 @@ function BriefView({ data, needs, workspaceId, me, writing, refreshing, onRefres
           </button>
         }
       />
-      <div className="digest-sheet">
+      <DigestSheet>
         <div className="digest-meta">
           <span id="brief-title">{greeting(me)}</span>
           <span title={brief.source === "ai" ? "Written by the AI from your desk's numbers" : "From your desk's numbers"}>{writing ? "writing…" : `as of ${time}`}</span>
@@ -284,7 +290,7 @@ function BriefView({ data, needs, workspaceId, me, writing, refreshing, onRefres
             })}
           </ul>
         )}
-      </div>
+      </DigestSheet>
     </section>
   );
 }
@@ -293,13 +299,13 @@ function BriefSkeleton({ me }: { me: string }) {
   return (
     <section className="digest" aria-hidden="true">
       <DigestHead day={dayLabel(today())} />
-      <div className="digest-sheet">
+      <DigestSheet>
         <div className="digest-meta"><span>{greeting(me)}</span><span><SkelText width={70} /></span></div>
         <p className="digest-headline"><SkelText width="90%" /><br /><SkelText width="50%" /></p>
         <DigestGroup label="What needs you">
           {[0, 1].map((i) => <li key={i} className="digest-row"><div className="digest-row-main"><span className="digest-row-text"><SkelText width="80%" /></span></div></li>)}
         </DigestGroup>
-      </div>
+      </DigestSheet>
     </section>
   );
 }
@@ -369,7 +375,7 @@ export function HomePage({ workspaceId, me, role, hub }: { workspaceId: string; 
     <div className="content wide home">
       {/* The brief on the left, the assistant docked on the right (stacked under it on narrow screens). */}
       <div className="home-main-col">
-        {data ? <BriefView data={data} needs={needs} workspaceId={workspaceId} me={me.name} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="digest"><DigestHead day={dayLabel(today())} /><div className="digest-sheet"><p className="error">{error}</p></div></section> : <BriefSkeleton me={me.name} />}
+        {data ? <BriefView data={data} needs={needs} workspaceId={workspaceId} me={me.name} writing={writing} refreshing={refreshing} onRefresh={refresh} error={error} onAsk={off ? null : askAbout} /> : error ? <section className="digest"><DigestHead day={dayLabel(today())} /><DigestSheet><p className="error">{error}</p></DigestSheet></section> : <BriefSkeleton me={me.name} />}
       </div>
       <section className="dash-card home-ask" aria-labelledby="ask-title">
         <div className="home-ask-head">

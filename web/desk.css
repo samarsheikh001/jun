@@ -2492,7 +2492,9 @@ a.ws-card:hover .ws-card-site { transform: translateY(-4px); }
 .digest-head h1 { display: inline-flex; align-items: center; gap: 10px; min-width: 0; margin: 0; font-size: 17px; line-height: 24px; font-weight: 525; letter-spacing: -0.01em; white-space: nowrap; }
 .digest-head h1 > svg { flex: none; width: 20px; height: 20px; }
 .digest-day { color: var(--muted-foreground); font-weight: 405; overflow: hidden; text-overflow: ellipsis; }
-.digest-sheet { display: grid; gap: 20px; padding: 22px 26px 24px; border-top: 1px solid var(--border); border-radius: 22px 22px 0 0; background: var(--background); }
+/* The sheet's frame is the ScrollArea's root (`.digest-pane`), its layout the content inside the viewport. */
+.digest-pane { border-top: 1px solid var(--border); border-radius: 22px 22px 0 0; background: var(--background); }
+.digest-sheet { display: grid; gap: 20px; padding: 22px 26px 24px; }
 .digest-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--muted-foreground); font-size: 14px; line-height: 20px; }
 .digest-meta > span:last-child { font-size: 12.5px; white-space: nowrap; }
 .digest-headline { margin: -8px 0 0; padding-bottom: 22px; border-bottom: 1px solid var(--border); font-size: 21px; line-height: 38px; font-weight: 405; letter-spacing: -0.01em; text-wrap: pretty; }
@@ -2577,7 +2579,7 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
   /* The digest is the pane itself, like the assistant beside it: its header bar on top, the sheet scrolling under it. */
   .home-main-col { display: flex; overflow: hidden; padding: 0; }
   .home-main-col > .digest { display: flex; flex-direction: column; max-width: none; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
-  .home-main-col .digest-sheet { flex: 1; min-height: 0; overflow: auto; align-content: start; border-radius: 18px 18px 0 0; }
+  .home-main-col .digest-pane { flex: 1; min-height: 0; border-radius: 18px 18px 0 0; }
   .home-ask { display: flex; flex-direction: column; margin: 0; padding: 0; overflow: hidden; }
   .home-ask .home-chat, .home-ask .home-chat.empty { flex: 1; height: auto; min-height: 0; margin: 0; border: 0; border-radius: 0; background: transparent; }
   /* An empty thread keeps its starters and composer at the bottom, where the conversation will be. */
@@ -2918,7 +2920,8 @@ a.ask-chip:hover { background: var(--muted); }
 .ask-chip.add .ask-chip-icon, .ask-chip.remove .ask-chip-icon { color: inherit; }
 @media (max-width: 640px) {
   .digest { border-radius: 18px; }
-  .digest-sheet { padding: 18px 16px 20px; border-radius: 16px 16px 0 0; }
+  .digest-pane { border-radius: 16px 16px 0 0; }
+  .digest-sheet { padding: 18px 16px 20px; }
   .digest-headline { font-size: 18px; line-height: 32px; }
   .digest-chip { line-height: 28px; }
   .digest-row-main { flex-direction: column; gap: 6px; }
