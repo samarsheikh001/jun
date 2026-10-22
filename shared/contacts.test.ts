@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { attributeText, companyLabel, contactsView, likePattern, listQueryString, pageTrail, personLabel, readCompanyQuery, readPeopleQuery } from "./contacts.ts";
+import { attributeText, companyLabel, contactsView, likePattern, listQueryString, pageTrail, personLabel, readCompanyQuery, readPeopleQuery, readProfileHint } from "./contacts.ts";
 import type { DebugEvent } from "./debug.ts";
 
 test("readPeopleQuery: defaults, clamps and drops what isn't safe", () => {
@@ -74,4 +74,12 @@ test("pageTrail: navigation only, oldest first, repeats in a row once (reloads k
   const trail = pageTrail(many);
   assert.equal(trail.length, 30);
   assert.equal(trail[0]!.url, "/p10");
+});
+
+test("readProfileHint: cleans the page's name and email, drops what's malformed", () => {
+  assert.deepEqual(readProfileHint({ name: "  Sam\n  Lee ", email: " Sam@Acme.COM " }), { name: "Sam Lee", email: "sam@acme.com" });
+  assert.deepEqual(readProfileHint({ name: 42, email: "not an email" }), { name: null, email: null });
+  assert.deepEqual(readProfileHint({}), { name: null, email: null });
+  assert.equal(readProfileHint({ name: "x".repeat(300) }).name?.length, 120);
+  assert.equal(readProfileHint({ email: `${"a".repeat(320)}@b.co` }).email, null);
 });

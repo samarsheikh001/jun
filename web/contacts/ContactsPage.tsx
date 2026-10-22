@@ -385,7 +385,7 @@ function PersonPage({ workspaceId, contactId }: { workspaceId: string; contactId
                 <Attrs attributes={details.attributes} />
                 <dt>First seen</dt><dd>{day(details.createdAt)}</dd>
                 <dt>Last seen</dt><dd>{day(details.lastSeenAt)} · {clock(details.lastSeenAt)}</dd>
-                {!details.verified && (<><dt /><dd className="muted">Not verified: {details.email || details.name ? "these details were typed in the chat or by an agent." : "an anonymous visitor."}</dd></>)}
+                {!details.verified && (<><dt /><dd className="muted">Not verified: {details.email || details.name ? "these details came from your website's page, the chat or an agent." : "an anonymous visitor."}</dd></>)}
               </dl>
             </section>
             <section className="dash-card dash-hero">

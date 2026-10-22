@@ -14,7 +14,7 @@
  * Page control (AI-32): with "Let the AI use your website" on (desk: Chat widget → Behaviour) the AI may read
  * this page and click, type and choose on it, with the
  * visitor's Confirm for changes; never inside [data-jun-private] or password/card fields (widget-page-control.js).
- * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt) / .logout() / .consent(bool) / .registerAction(tool)
+ * API: window.JunDesk.open() / .close() / .toggle() / .identify(jwt | { name, email, token? }) / .logout() / .consent(bool) / .registerAction(tool)
  *      / .setTheme("light" | "dark" | "auto" | null): follow the site's own dark mode (D-92); null goes back to
  *      the desk's setting. data-theme="dark" on this tag sets it from the first paint.
  *      / .highlight({ sound? }): the island lifts and glows once, to point at it from your own "Ask our AI"
@@ -24,7 +24,8 @@
  *   JunDesk.onWidgetAction(function (a) { a.type; a.payload; a.values; a.widget; }) (returns a remover),
  *   or the "jundesk:widget-action" window event (same object as event.detail).
  *      / .reportError({ message, code? }) / .track(name, props?). In island mode, "/" on the page opens it.
- * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too).
+ * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too), or
+ * (V-17) { name, email, token? }: without a token the name and email only label the visitor, as not verified.
  * reportError() tells support what failed in your app's own words ("Row 42: missing email"); masked
  * like everything else and kept with the errors above. track() records what the visitor did in your
  * app ("export_started", { format: "csv" }) in the same trail, for the AI and your team.
@@ -55,9 +56,8 @@
   // ---------- debug capture (P1). Same masking rules as shared/debug.ts. ----------
   var events = [], reacted = () => {}; // reacted: the page answered pending clicks (set below)
   var capture = attr("capture") != "off";
-  // S-13 state for the current page (path). Tests on localhost can shorten the 3 minutes with ?jun_stuck_ms=.
+  // S-13 state for the current page (path).
   var pagePath = location.pathname, pageIssue, seen = 0, stuckSent, stuckMs = 180000;
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) stuckMs = +(/[?&]jun_stuck_ms=(\d+)/.exec(location.search) || [])[1] || stuckMs;
   var nativeFetch = window.fetch;
 
   function redact(s, max) {
@@ -255,7 +255,7 @@
   // ---------- live visitor (V-01), identity (V-03), consent (V-06) ----------
   // data-consent="required": store nothing and stay off the visitor list until JunDesk.consent(true).
   var consented = attr("consent") != "required";
-  var userToken = attr("user-token") || null;
+  var userToken = attr("user-token") || null, who;
   var sid, sess, counted, live, liveTries = 0;
   // sessionStorage, or localStorage with `local`; nothing before consent.
   function store(k, v, local) { try { if (!consented) return null; var s = local ? localStorage : sessionStorage; if (v === 0) s.removeItem(k); else if (v != null) s.setItem(k, v); return s.getItem(k); } catch (e) { return null; } }
@@ -315,7 +315,7 @@
     ws.onmessage = (e) => {
       var m; try { m = JSON.parse(e.data); } catch (x) { return; }
       // V-07: a teammate started a chat from the desk's visitor list.
-      if (m.t == "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from });
+      if (m.t == "invite" && !open) showCard({ text: String(m.body).slice(0, 1000), inviteId: m.id, from: m.from }), post({ type: "jun:invite" });
       // D-128: a reply in one of this browser's chats (just its id): the frame refetches its list.
       // D-138: with the plain button the chat may not be loaded on this page yet: load it (hidden),
       // so it counts what's unread (jun:unread, the button's badge) and shows the reply when opened.
@@ -453,7 +453,7 @@
     var type = e.data.type;
     // The frame says when it's listening; tell it whether it's currently shown.
     if (type == "jun:ready") {
-      post({ type: "jun:session", sessionId: sid || null, userToken: userToken, persist: consented, theme: theme });
+      post({ type: "jun:session", sessionId: sid || null, userToken: userToken, who: who, persist: consented, theme: theme });
       post({ type: open ? "jun:open" : "jun:close" });
       if (pendingOpener) proactive();
       var bd = J._bd;
@@ -502,15 +502,18 @@
       paintTheme();
       post({ type: "jun:theme", theme: theme });
     },
-    // Signed-in user: a JWT from your backend. The chat and the visitor list then know who it is.
-    identify: (token) => {
-      userToken = token || null;
+    // Signed-in user: a JWT from your backend, or (V-17) { name, email, token? }: without a token only a label
+    // agents see as not verified. The chat and the visitor list then know who it is.
+    identify: (t) => {
+      var o = t && typeof t == "object";
+      who = o ? { name: t.name, email: t.email } : 0;
+      userToken = (o ? t.token : t) || null;
       if (userToken) liveSend({ t: "id", token: userToken });
-      post({ type: "jun:identify", userToken: userToken });
+      post({ type: "jun:identify", userToken: userToken, who: who });
     },
     // On sign-out: forget this browser's chat identity so the next person starts fresh.
     logout: () => {
-      userToken = null;
+      userToken = who = null;
       post({ type: "jun:identify", userToken: null });
       disconnect();
       sid = null;

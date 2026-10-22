@@ -219,6 +219,8 @@ function ContactCard({ workspaceId, contact, conversationId, refreshKey }: { wor
           ))}
           <dt>First seen</dt><dd>{day(details.createdAt)}</dd>
           {!details.verified && !details.name && !details.email && (<><dt /><dd className="muted">Anonymous visitor. Add a name or email if they tell you.</dd></>)}
+          {/* V-17: a page's identify() without a token, the chat's email ask or an agent: a label, not proof. */}
+          {!details.verified && (details.name || details.email) && (<><dt /><dd className="muted">Not verified: anyone could have typed these, so don't share account details on their strength.</dd></>)}
         </dl>
       )}
       {details.company && <CompanyCard company={details.company} />}

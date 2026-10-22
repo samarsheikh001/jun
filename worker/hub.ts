@@ -480,6 +480,21 @@ export class WorkspaceHub extends DurableObject<Env> {
     if (changed) await this.#rememberContact(sessionId, contactId);
   }
 
+  /**
+   * RPC (V-17): the page named its user without a token: the visitor list shows them, as not verified.
+   * Sockets that verified someone (a token) keep that.
+   */
+  async nameSession(sessionId: string, contact: { id: string; name: string | null; email: string | null; verified: false }): Promise<void> {
+    for (const [ws, a] of this.#live<VisitorAttachment>(`s:${sessionId}`)) {
+      if (a.visitor.contact?.verified) continue;
+      a.visitor.contact = contact;
+      a.cid = contact.id;
+      ws.serializeAttachment(a);
+      if (a.visitor.pages > 0) this.#broadcast(JSON.stringify({ type: "visitor", visitor: a.visitor } satisfies HubEvent));
+    }
+    await this.#rememberContact(sessionId, contact.id);
+  }
+
   /** D-138: this session's next pages (their own sockets) start linked, before any frame loads. */
   async #rememberContact(sessionId: string, contactId: string): Promise<void> {
     await this.ctx.storage.put(SESSION_CONTACT + sessionId, { cid: contactId, at: Date.now() });

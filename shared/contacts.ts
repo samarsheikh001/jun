@@ -130,3 +130,22 @@ export function pageTrail(events: DebugEvent[]): TrailStep[] {
   }
   return steps.slice(-MAX_TRAIL);
 }
+
+/** V-17 (D-146): the page's unverified word for who its user is. */
+export interface ProfileHint {
+  name: string | null;
+  email: string | null;
+}
+
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * `JunDesk.identify({ name, email })` without a token, cleaned: a name of at most 120 characters on one line,
+ * a lowercase email of at most 320. Anything missing or malformed is null (the contact keeps what it had):
+ * it's page code, so a bad field is dropped rather than refused.
+ */
+export function readProfileHint(body: Record<string, unknown>): ProfileHint {
+  const name = typeof body.name === "string" ? body.name.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : "";
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  return { name: name || null, email: email.length <= 320 && EMAIL_PATTERN.test(email) ? email : null };
+}

@@ -63,7 +63,7 @@ Copy the snippet from **Playground → Install** into `<head>`, before your own 
 
 | Option | What it does |
 |---|---|
-| `data-user-token="<jwt>"` or `JunDesk.identify(jwt)` | Says who the signed-in customer is (see below). `JunDesk.logout()` on sign-out |
+| `data-user-token="<jwt>"` or `JunDesk.identify(jwt)` | Says who the signed-in customer is (see below). `JunDesk.identify({ name, email })` without a token only labels them, as not verified. `JunDesk.logout()` on sign-out |
 | `data-consent="required"` | Stores nothing and stays off your visitor list until `JunDesk.consent(true)` (for cookie banners) |
 | `data-capture="off"` | Turns off error and request capture |
 | `data-color="#0f766e"` | Overrides the brand colour from Settings |
@@ -101,7 +101,7 @@ In React, `useJunAction({ … }, [product.id])` from `@jun/widget-react` (in `pa
 
 Agents see every run in the conversation's AI actions; `tests/*.yaml` cases take an `actions:` list, a `page:` path, and can `expect: { action: { name, input } }`, so `jun eval` covers what the AI chooses.
 
-**Signed-in customers:** create an identity secret in Playground → Behaviour. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. If your API only accepts the user's own key, add a `secrets` claim (`{ API_TOKEN: "…" }`) and write `{user.secrets.API_TOKEN}` in an action's headers: it's kept only until the token expires (or `JunDesk.logout()`), never shown to agents or the AI. Without a valid token, visitors stay anonymous.
+**Signed-in customers:** create an identity secret in Playground → Behaviour. Your backend signs a short-lived HS256 JWT with `sub` (the user's id) and `exp`, plus `email`, `name` and `attributes` if you like (`{ plan: "pro", seats: 12 }`). Agents then see a verified customer, chats follow them across devices, and the AI's tools can look up their own account with `{user.id}`. If your API only accepts the user's own key, add a `secrets` claim (`{ API_TOKEN: "…" }`) and write `{user.secrets.API_TOKEN}` in an action's headers: it's kept only until the token expires (or `JunDesk.logout()`), never shown to agents or the AI. Without a token, `JunDesk.identify({ name, email })` only labels the visitor: agents see the name and email as not verified, and none of the above applies (no history across devices, no merging, no `{user.*}`).
 
 ## The AI
 

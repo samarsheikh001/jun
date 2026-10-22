@@ -3,6 +3,7 @@ import { mergeConversations } from "../lib/conversation-list.ts";
 import { MAX_CSAT_COMMENT, replySignalId, type Attachment, type ConversationSummary, type CsatRating, type Message } from "../../shared/protocol.ts";
 import { offersRating } from "../../shared/inbox.ts";
 import { isIntentName, type IntentSpec } from "../../shared/intents.ts";
+import type { ProfileHint } from "../../shared/contacts.ts";
 import { islandPalette, logoFor, radiusVars, textOn, type WidgetLook, type WidgetTheme } from "../../shared/appearance.ts";
 import { ACTION_ONLY_BODY, type MessageAction } from "../../shared/actions.ts";
 import { allowedToRun, answersSeq, isPageControl, pointOf, reloadedResult } from "../../shared/page-control.ts";
@@ -11,7 +12,7 @@ import { pickOpenWidget, WIDGET_ONLY_BODY, widgetWaiting, widgetSummary, type Me
 import { Composer } from "../components/Composer.tsx";
 import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
-import { bindSounds, cue, playChime, setSoundOn, unlockSoundOnInteraction } from "../lib/sound.ts";
+import { bindSounds, cue, playChime, playNow, setSoundOn, unlockSoundOnInteraction } from "../lib/sound.ts";
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
 import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
 import { Badge, MiniCard, morph, useCardFrame, usePhoneFrame } from "./card.tsx";
@@ -268,12 +269,45 @@ class WidgetApi {
     this.token = token;
   }
 
+  /**
+   * V-17: the page's unverified word for who its user is (identify without a token). Another email than the
+   * one this browser last labelled itself with means another person (a shared computer): a new contact, so
+   * the first one's chats never show under the second's name. True when the browser's contact changed.
+   */
+  async profile(who: ProfileHint, sessionId: string | null): Promise<boolean> {
+    const whoKey = `jun:who:${this.key}`;
+    let last: string | null = null;
+    try {
+      last = persist ? localStorage.getItem(whoKey) : null;
+    } catch {
+      // storage blocked: no memory of an earlier person
+    }
+    const switched = Boolean(this.token && last && who.email && last !== who.email);
+    if (switched) {
+      writeToken(this.key, null);
+      this.token = null;
+    }
+    await this.ensureVisitor();
+    await this.call("/profile", { body: { ...who, ...(sessionId ? { sessionId } : {}) } });
+    try {
+      if (persist && who.email) localStorage.setItem(whoKey, who.email);
+    } catch {
+      // storage blocked
+    }
+    return switched;
+  }
+
   /** The host app's user signed out: forget this browser's chat identity. */
   forget(): void {
     // AI-24: the server drops their own keys for actions too (best effort; they expire anyway).
     if (this.token) void this.call("/logout", { body: {}, keepalive: true }).catch(() => undefined);
     writeToken(this.key, null);
     this.token = null;
+    try {
+      localStorage.removeItem(`jun:who:${this.key}`);
+    } catch {
+      // storage blocked
+    }
   }
 
   async ensureVisitor(): Promise<string> {
@@ -493,6 +527,8 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   /** Bumped when this browser's identity changes, to reload its conversations. */
   const [identityVersion, setIdentityVersion] = useState(0);
+  /** V-17: who the page says its user is, without a token (a label on the contact, never verified). */
+  const [who, setWho] = useState<ProfileHint | null>(null);
   /** A returning visitor's conversations are loading: skeleton, not the new-chat greeting it may jump from. */
   const [restoring, setRestoring] = useState(() => Boolean(api.token));
   /** D-128: bumped each time the loader's live socket (re)opens, to link it to this browser's chats again. */
@@ -609,6 +645,9 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
         setHostTheme(t === "light" || t === "dark" || t === "auto" ? t : null);
       }
       if (data?.type === "jun:highlight") setHighlight((h) => ({ n: (h?.n ?? 0) + 1, sound: data.sound === true }));
+      // V-07: a teammate's invite just arrived: a cue, which plays once the visitor has clicked or typed on the
+      // page (the iframe's allow="autoplay"), under the desk's sound switch. Not for the automatic nudges.
+      if (data?.type === "jun:invite") playNow("attention");
       if (data?.type === "jun:backdrop") setBackdrop(data.dark === true ? "dark" : data.dark === false ? "light" : null);
       if (data?.type === "jun:away") setPageAway(data.away === true);
       if (data?.type === "jun:session" || data?.type === "jun:consent") {
@@ -627,8 +666,14 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
       // the cut-off step and the next one starts), instead of waiting for the visitor to open it.
       if (data?.type === "jun:session" && !preview && runCutShort()) postToHost({ type: "jun:open" });
       // Who the host page's signed-in user is (or that they signed out).
-      if ((data?.type === "jun:session" && typeof data.userToken === "string") || data?.type === "jun:identify") {
+      // V-17: identify({ name, email }) without a token: only a label, sent by the effect below.
+      if ((data?.type === "jun:session" || data?.type === "jun:identify") && typeof data.userToken !== "string" && data.who && typeof data.who === "object") {
+        const w = data.who as Record<string, unknown>;
+        const hint = { name: typeof w.name === "string" ? w.name : null, email: typeof w.email === "string" ? w.email : null };
+        setWho((old) => (old && old.name === hint.name && old.email === hint.email ? old : hint));
+      } else if ((data?.type === "jun:session" && typeof data.userToken === "string") || data?.type === "jun:identify") {
         const userToken = typeof data.userToken === "string" ? data.userToken : null;
+        setWho(null);
         if (userToken) {
           api.identify(userToken).then(
             () => setIdentityVersion((n) => n + 1),
@@ -668,6 +713,16 @@ export function WidgetApp({ widgetKey }: { widgetKey: string }) {
     postToHost({ type: "jun:ready" });
     return () => window.removeEventListener("message", onMessage);
   }, [api, refreshConversations]);
+
+  // V-17: label this browser's contact with the page's name and email (again once the live session is known,
+  // so the visitor list shows them too).
+  useEffect(() => {
+    if (preview || !who || (!who.name && !who.email)) return;
+    api.profile(who, sessionId).then(
+      (switched) => switched && setIdentityVersion((n) => n + 1),
+      (err: Error) => console.warn(`[Jun] identify failed: ${err.message}`),
+    );
+  }, [api, who, sessionId]);
 
   // D-128: the hub sends `reply` signals to the loader's live socket of the contact a chat belongs
   // to; only this frame holds the visitor token, so it tells the server which session is it.

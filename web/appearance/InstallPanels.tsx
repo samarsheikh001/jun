@@ -254,12 +254,13 @@ const userToken = jwt.sign(
   { algorithm: "HS256", expiresIn: "1h" },
 );
 // In the page: data-user-token="<userToken>" on the script tag, or
-JunDesk.identify(userToken);   // and JunDesk.logout() when they sign out`;
+JunDesk.identify(userToken);   // and JunDesk.logout() when they sign out
+// Without a token, JunDesk.identify({ name, email }) only labels the visitor (shown as not verified).`;
   return (
     <SettingsCard
       title="Identify signed-in customers"
       description={<>Your backend signs a short-lived token saying who the user is. Agents then see a verified name, email and attributes, the AI can greet them and look up <em>their</em> account
-        ({"{user.id}"} in tools), and their chats follow them across devices. Without a valid token, visitors stay anonymous.</>}
+        ({"{user.id}"} in tools), and their chats follow them across devices. Without a token, <code>JunDesk.identify({"{ name, email }"})</code> only labels them: agents see it as not verified, and none of the above applies.</>}
       action={!secret && <Button size="sm" disabled={busy} onClick={() => run(async () => { setSecret((await api<{ secret: string }>(base, { body: {} })).secret); setShown(true); })}>Create identity secret</Button>}
     >
       {secret && (

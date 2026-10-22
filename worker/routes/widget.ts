@@ -24,6 +24,7 @@ import { loadAgentConfig } from "../ai/config-store.ts";
 import { intentSkill } from "../ai/config.ts";
 import { islandLine } from "../../shared/island.ts";
 import { emailOn, emailSettings } from "../../shared/email.ts";
+import { EMAIL_PATTERN, readProfileHint } from "../../shared/contacts.ts";
 import { canSendEmail } from "../lib/email.ts";
 
 // Public API used by the widget frame. Visitors are anonymous contacts identified by a
@@ -287,6 +288,30 @@ widget.post("/widget/:key/identify", async (c) => {
   return c.json({ token: result.token, contactId: result.contactId });
 });
 
+// V-17 (D-146): the page's own word for who its user is (JunDesk.identify({ name, email }) without a token),
+// like PostHog's identify. Only a label on this browser's contact: never verified, never merged into another
+// contact, no {user.*} actions, history or company; a verified contact keeps its own details.
+widget.post("/widget/:key/profile", async (c) => {
+  const inbox = await widgetInbox(c);
+  const { contactId } = await visitor(c, inbox);
+  const body = await readJson(c.req);
+  const hint = readProfileHint(body);
+  const row = await c.env.DB.prepare("SELECT name, email, verified_at FROM contacts WHERE id = ?").bind(contactId).first<{ name: string | null; email: string | null; verified_at: number | null }>();
+  if (!row || row.verified_at !== null) return c.json({ ok: true, verified: true });
+  const name = hint.name ?? row.name;
+  const email = hint.email ?? row.email;
+  if (name !== row.name || email !== row.email) {
+    await c.env.DB.prepare("UPDATE contacts SET name = ?, email = ?, last_seen_at = ? WHERE id = ? AND verified_at IS NULL").bind(name, email, Date.now(), contactId).run();
+    // Inbox lists show the contact's name and email: refresh their conversations.
+    const chats = await c.env.DB.prepare("SELECT id FROM conversations WHERE contact_id = ? LIMIT 50").bind(contactId).all<{ id: string }>();
+    c.executionCtx.waitUntil(Promise.all(chats.results.map((r) => notifyConversationChanged(c.env, { conversationId: r.id, workspaceId: inbox.workspaceId }))));
+  }
+  // The live visitor list names them too (as not verified).
+  const sessionId = typeof body.sessionId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(body.sessionId) ? body.sessionId : null;
+  if (sessionId) await c.env.WORKSPACE_HUB.getByName(inbox.workspaceId).nameSession(sessionId, { id: contactId, name, email, verified: false });
+  return c.json({ ok: true, verified: false });
+});
+
 // AI-24: the host app's user signed out (JunDesk.logout()): forget their own keys for actions now,
 // not only when their identity token expires.
 widget.post("/widget/:key/logout", async (c) => {
@@ -492,7 +517,7 @@ widget.post("/widget/:key/conversations/:cid/email", async (c) => {
   const ref = await visitorConversation(c, inbox, contactId);
   const raw = (await readJson(c.req)).email;
   const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "invalid_field", "That doesn't look like an email address.");
+  if (email.length > 320 || !EMAIL_PATTERN.test(email)) throw new HttpError(400, "invalid_field", "That doesn't look like an email address.");
   const updated = await c.env.DB.prepare("UPDATE contacts SET email = ? WHERE id = ? AND verified_at IS NULL").bind(email, contactId).run();
   if (updated.meta.changes === 0) throw new HttpError(409, "verified", "Your email comes from your account.");
   await c.env.CONVERSATION.getByName(ref.conversationId).addNote(ref, `The customer left their email for a reply: ${email}`, `email:${await sha256(email)}`);
