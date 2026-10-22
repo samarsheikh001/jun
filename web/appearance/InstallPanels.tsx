@@ -32,7 +32,9 @@ export const hostOf = (origin: string) => {
   }
 };
 
-const snippetFor = (widgetKey: string) => `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}" defer></script>`;
+// V-18: `posthog` adds data-identify-from="posthog" (visitors labelled from PostHog's identify()).
+const snippetFor = (widgetKey: string, posthog = false) =>
+  `<script src="${window.location.origin}/widget.js" data-key="${widgetKey}"${posthog ? ' data-identify-from="posthog"' : ""} defer></script>`;
 
 /** "Send to a developer": the snippet with plain instructions, ready to paste into a message. */
 const developerNote = (snippet: string) => `Could you add our support chat (Jun) to the website?
@@ -56,9 +58,11 @@ const PLATFORMS: { id: string; label: string; text: ReactNode }[] = [
 export function InstallTab({ workspaceId, canEdit, install, reload }: { workspaceId: string; canEdit: boolean; install: InstallState | null; reload: () => Promise<void> }) {
   const [copied, setCopied] = useState<"snippet" | "note" | null>(null);
   const [platform, setPlatform] = useState<string | null>(null);
+  // Only shapes the copied snippet: nothing is saved on the desk.
+  const [posthog, setPosthog] = useState(false);
   const { busy, error, run } = useAction();
   const widgetKey = install?.widgetKey ?? null;
-  const snippet = widgetKey ? snippetFor(widgetKey) : "";
+  const snippet = widgetKey ? snippetFor(widgetKey, posthog) : "";
   const copy = async (what: "snippet" | "note") => {
     await navigator.clipboard?.writeText(what === "snippet" ? snippet : developerNote(snippet));
     setCopied(what);
@@ -89,6 +93,12 @@ export function InstallTab({ workspaceId, canEdit, install, reload }: { workspac
             <Button size="sm" disabled={!widgetKey} onClick={() => void copy("snippet")}>{copied === "snippet" ? "Copied ✓" : "Copy"}</Button>
           </div>
         </div>
+        <SettingRow
+          label="Already using PostHog?"
+          description={<>Adds <code>data-identify-from="posthog"</code>: when your app calls <code>posthog.identify()</code>, the chat picks up the user's id, name and email (shown to your team as not verified). No <code>JunDesk.identify()</code> call needed.</>}
+        >
+          <Switch checked={posthog} onCheckedChange={setPosthog} aria-label="Label visitors from PostHog's identify" />
+        </SettingRow>
         <div className="install-share">
           <Button variant="outline" size="sm" disabled={!widgetKey} onClick={() => void copy("note")}>{copied === "note" ? "Copied ✓" : "Send to a developer"}</Button>
           <span className="muted small">Copies the snippet with a few lines on where it goes, for an email or chat.</span>
