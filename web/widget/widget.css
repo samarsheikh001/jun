@@ -326,7 +326,9 @@ html.island.island-dark {
 /* The box springs to the measured size (the proposal's stiffness 380 / damping 30, about 0.65s with a
    slight overshoot). The shell fills it; the highlight's glow sits on the box, outside the shell's
    clip, and stays inside the 32px the frame keeps visible around the island. */
-.i-box { position: relative; border-radius: 28px; transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), transform 0.35s cubic-bezier(0.34, 1.6, 0.5, 1), left 0.65s cubic-bezier(0.34, 1.25, 0.5, 1); }
+/* The folded pill follows the desk's corner radius: the default (16px) and up is fully round (half its
+   44px height), less is squarer. Open states use var(--radius) itself. */
+.i-box { --i-pill: min(calc(var(--radius) * 1.375), 22px); position: relative; border-radius: var(--i-pill); transition: width 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), height 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), border-radius 0.65s cubic-bezier(0.34, 1.25, 0.5, 1), transform 0.35s cubic-bezier(0.34, 1.6, 0.5, 1), left 0.65s cubic-bezier(0.34, 1.25, 0.5, 1); }
 /* Pressing the resting pill squishes it a little; it springs back on release. */
 .i-box:has(.i-rest:active) { transform: scale(0.97); transition-duration: 0.65s, 0.65s, 0.65s, 0.12s, 0.65s; }
 /* Held and dragged: it follows the pointer at once, lifted a little; let go, it springs to its spot. */
@@ -362,7 +364,7 @@ html.island.island-dark {
 /* Resting: the light, the hint typing out the suggested questions (or a new reply), and the "/" key. */
 .i-rest { display: flex; align-items: center; gap: 12px; width: 100%; height: 44px; padding: 0 16px 0 16px; border: 0; background: transparent; color: var(--text); font-size: 14px; text-align: left; transition: background 0.15s; }
 .i-rest:hover { background: var(--hover); }
-.i-rest:focus-visible { outline-offset: -4px; border-radius: 28px; }
+.i-rest:focus-visible { outline-offset: -4px; border-radius: var(--i-pill); }
 .i-rest .i-hint { flex: 1; min-width: 0; height: 20px; overflow: hidden; pointer-events: none; user-select: none; white-space: nowrap; font-size: 14px; line-height: 150%; color: var(--muted); mask-image: linear-gradient(to right, black 85%, transparent 100%); }
 .i-hint-text { line-height: 20px; animation: i-fade 300ms ease-out; }
 .i-rest-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -383,7 +385,7 @@ html.island.island-dark {
 .i-nudge { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 6px 6px 16px; }
 .i-nudge-text { flex: 1; min-width: 0; color: var(--text-soft); font-size: 13.5px; line-height: 1.45; }
 .i-nudge-from { color: var(--muted); }
-.i-ask { height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 600; }
+.i-ask { height: 32px; padding: 0 14px; border: 0; border-radius: min(var(--radius), 16px); background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 600; }
 .i-ask:hover { background: var(--accent-hover); }
 .i-ghost { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border: 0; border-radius: 14px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .i-ghost:hover { background: var(--hover); color: var(--text); }
@@ -726,7 +728,7 @@ html.island.island-dark {
 .i-status-btn { width: 100%; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background 0.15s; }
 .i-status-btn:hover { background: var(--hover); }
 .island-dark .i-status-btn:hover { background: #161618; }
-.i-status-btn:focus-visible { outline-offset: -4px; border-radius: 28px; }
+.i-status-btn:focus-visible { outline-offset: -4px; border-radius: var(--i-pill); }
 /* D-79: a one-line pill hugs its line (the box springs to the measured width). */
 .i-hug .i-rest, .i-hug .i-status { width: 100%; }
 .i-hug .i-rest-text { flex: 1 1 auto; }
