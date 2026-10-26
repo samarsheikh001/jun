@@ -1496,9 +1496,11 @@ function WidgetThread({
   const setIslandOpen = island?.setOpen;
   const islandState = useIslandState({ island: Boolean(island), open, hasChat, conversationId, opener, intent, handling, introKey: island && island.suggestions.length > 0 && !preview ? api.key : null });
   // The box takes focus when the island opens (and again once a new chat's thread, or another
-  // island state, swaps the box in).
+  // island state, swaps the box in). Not on touch screens: focus opens the on-screen keyboard, which
+  // resizes the page and throws the island around; the visitor taps the box when they want to type.
   useEffect(() => {
-    if (setIslandOpen && open) document.querySelector<HTMLTextAreaElement>(".i-view textarea")?.focus();
+    if (!setIslandOpen || !open || !window.matchMedia("(pointer: fine)").matches) return;
+    document.querySelector<HTMLTextAreaElement>(".i-view textarea")?.focus({ preventScroll: true });
   }, [setIslandOpen, open, islandState.state]);
   // Esc folds the chat back into the island; so does a click on the page while nothing's been asked.
   useEffect(() => {
