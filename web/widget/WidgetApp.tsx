@@ -14,7 +14,7 @@ import { MessageList, type AiAnswerView } from "../components/MessageList.tsx";
 import { formatTime, uploadFile, useThread, useTypingSignal, type PendingMessage } from "../lib/thread.ts";
 import { bindSounds, cue, playChime, playNow, setSoundOn, unlockSoundOnInteraction } from "../lib/sound.ts";
 import { AiAnswer, RunSteps, runLine } from "./answer.tsx";
-import { AUTO_RUN_WITHIN_MS } from "./action.tsx";
+import { AUTO_RUN_WITHIN_MS, RUN_ANSWER_MS } from "./action.tsx";
 import { Badge, MiniCard, morph, useCardFrame, usePhoneFrame } from "./card.tsx";
 import { Island, type Highlight, IslandChips, IslandControls, IslandRow, IslandTop, NudgeLine, RestPill, StatusLine, type IslandSpot, type IslandState } from "./island.tsx";
 
@@ -1318,14 +1318,36 @@ function WidgetThread({
   // the page often answers before the server does, and a card shown again in that gap would start
   // it again (an auto action looped, re-running on the page and flooding the server with results).
   const started = useRef(new Set<string>());
+  // When each run started here was sent to the page, for the timer below.
+  const sentAt = useRef(new Map<string, number>());
   const startAction = (action: MessageAction, input: Record<string, unknown>) => {
     // Started on an earlier page of this tab: the reload check closes it, never run again here.
     if (started.current.has(action.runId) || elsewhere.has(action.runId) || readRuns().includes(action.runId)) return;
     started.current.add(action.runId);
     writeRuns([...readRuns().filter((id) => id !== action.runId), action.runId]);
     setRunning((r) => ({ ...r, [action.runId]: true }));
-    void whenPageActionsReady().then(() => postToHost({ type: "jun:run", runId: action.runId, id: action.id, input }));
+    void whenPageActionsReady().then(() => {
+      sentAt.current.set(action.runId, Date.now());
+      postToHost({ type: "jun:run", runId: action.runId, id: action.id, input });
+    });
   };
+  // A run the page never answers (widget-actions.js gives up after 60 s itself, so this is the page or
+  // its answer gone missing) is closed as failed after RUN_ANSWER_MS: else its step spins forever and
+  // the AI never takes its next turn.
+  useEffect(() => {
+    const ids = Object.keys(running);
+    if (!ids.length) return;
+    const timer = setInterval(() => {
+      for (const runId of ids) {
+        const at = sentAt.current.get(runId);
+        if (at === undefined || Date.now() - at < RUN_ANSWER_MS) continue;
+        sentAt.current.delete(runId);
+        setRunning(({ [runId]: _gone, ...rest }) => rest);
+        actionResult.current(runId, "error", "The page didn't answer.");
+      }
+    }, 5_000);
+    return () => clearInterval(timer);
+  }, [running]);
   // AI-32: a step started before this page loaded that's still pending never reported back: the page
   // went away under it (a click that opened a new page). Close it once the socket is open, so the AI's
   // follow-up turn reads the new page instead of the run stopping (and its card asking again).

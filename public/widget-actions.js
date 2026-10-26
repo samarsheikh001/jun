@@ -181,11 +181,23 @@
       if (!t) return post({ type: "jun:action", runId: runId, status: "gone" });
       var input = m.input && typeof m.input == "object" ? m.input : {};
       highlight(t);
+      // An action that never settles (a page script stuck, a promise nobody resolves) would leave the
+      // chat's step spinning and the AI waiting for good: after a while it counts as failed, so the AI
+      // gets its turn (page control: 20 s, the site's own actions: 60 s). Whatever comes later is dropped.
+      var over = 0, timer = setTimeout(function () {
+        over = 1;
+        post({ type: "jun:action", runId: runId, status: "error", result: "The page didn't finish this in time." });
+        unhighlight();
+      }, CONTROL.test(t.name) ? 20000 : 60000);
       Promise.resolve().then(function () { return ours ? t.execute(input, runOptions()) : mc.executeTool(t, input); }).then(function (r) {
+        if (over) return;
+        clearTimeout(timer);
         results.set(runId, { tool: t, result: r });
         var page = t.name == "read_page"; // a page's text: for the AI only, never a card's data
         post({ type: "jun:action", runId: runId, status: "ok", result: text(r, page && 12000), data: page ? void 0 : data(r), canUndo: typeof t.undo == "function" });
       }, function (e) {
+        if (over) return;
+        clearTimeout(timer);
         post({ type: "jun:action", runId: runId, status: "error", result: text(e && e.message) || "Something went wrong." });
       }).then(unhighlight, unhighlight);
     });

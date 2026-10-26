@@ -11,6 +11,8 @@ import { shownDescription } from "../../shared/page-control.ts";
 
 /** An `auto` action proposed longer ago than this isn't run by itself (a reload, not a live reply). */
 export const AUTO_RUN_WITHIN_MS = 30_000;
+/** A run the page hasn't answered after this long is closed as failed (widget-actions.js gives up at 60 s). */
+export const RUN_ANSWER_MS = 75_000;
 /** Up to this many choices are buttons; more become a select. */
 const CHIP_LIMIT = 6;
 

@@ -161,6 +161,15 @@ export function useThread(options: {
     return socket.current?.send(event) ?? false;
   }, []);
 
+  // AI-21: a page action's result that came back while the socket was reconnecting waits here and goes
+  // out when it opens again: dropped, the step spun forever and the AI never took its next turn. The
+  // server keeps the first result per run, so sending one twice is harmless.
+  const unsentResults = useRef(new Map<string, ClientEvent>());
+  useEffect(() => {
+    if (state !== "open") return;
+    for (const [runId, event] of unsentResults.current) if (sendEvent(event)) unsentResults.current.delete(runId);
+  }, [state, sendEvent]);
+
   /** Optimistically shows the message and sends it over the socket. Returns false if offline. */
   const send = useCallback(
     (body: string, attachments: Attachment[] = [], clientMsgId: string = crypto.randomUUID(), context?: unknown, internal = false, actions?: unknown) => {
@@ -232,8 +241,12 @@ export function useThread(options: {
     /** AI-21: the visitor's answers for a proposed action's missing params. */
     actionInput: (runId: string, input: Record<string, unknown>) => sendEvent({ type: "action_input", runId, input }),
     /** AI-21: what the page did with the action (or that it was cancelled, gone, undone). */
-    actionResult: (runId: string, status: Exclude<ActionStatus, "pending">, result?: string, canUndo?: boolean, data?: string) =>
-      sendEvent({ type: "action_result", runId, status, ...(result ? { result } : {}), ...(canUndo ? { canUndo } : {}), ...(data ? { data } : {}) }),
+    actionResult: (runId: string, status: Exclude<ActionStatus, "pending">, result?: string, canUndo?: boolean, data?: string) => {
+      const event: ClientEvent = { type: "action_result", runId, status, ...(result ? { result } : {}), ...(canUndo ? { canUndo } : {}), ...(data ? { data } : {}) };
+      if (sendEvent(event)) return true;
+      unsentResults.current.set(runId, event);
+      return false;
+    },
     merge,
     send,
     sendWidgetAction,
