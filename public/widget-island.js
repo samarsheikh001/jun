@@ -1,7 +1,9 @@
 /*! Jun island | MIT License
- * Loaded by widget.js for the island (D-39), with J._bd = { host, post, auto, shown, open } (D-138: moved
- * out of widget.js to keep the loader under its budget).
+ * Loaded by widget.js for the island (D-39), with J._bd = { host, post, auto, offset, shown, open } (D-138:
+ * moved out of widget.js to keep the loader under its budget).
  * "/" on the page opens the island, unless the visitor is typing somewhere on the page.
+ * The page's own fixed bars along the bottom (an app's tab bar on phones, a cookie banner) lift the island
+ * above them (jun:lift, the frame moves up); data-bottom-offset on the snippet sets the lift instead.
  * Scrolling down tells the frame the visitor is reading (jun:away), so a resting island steps aside.
  * D-99, when the desk's island colour is "auto" (bd.auto): tells the island frame whether
  * the page behind it is dark (jun:backdrop), so it draws itself near-black on light pages and light on
@@ -36,13 +38,37 @@
     clearTimeout(rest);
     if (away) rest = setTimeout(function () { run = 0; tell(false); }, 900);
   }, { passive: true });
-  if (!bd.auto) return;
   // The island's middle along the page, from the frame (jun:spot): the visitor can throw it to a side.
   var cx = null;
   addEventListener("message", function (e) {
     if (e.data && e.data.type == "jun:spot" && typeof e.data.cx == "number") cx = e.data.cx, look();
   });
-  var timer, paint;
+  var timer, paint, set = bd.offset == null || bd.offset === "" ? NaN : +bd.offset;
+  bd.lift = 0;
+  // How far the page's fixed bars along the bottom (an app's tab bar, a cookie banner) reach up, so the
+  // island sits above them. At five points along the bottom edge, from the topmost element there, up its
+  // ancestors to the first fixed or sticky one: the widest box on the way that touches the bottom, spans
+  // half the page and is at most 40% of its height (an app shell fixed over the whole screen keeps its
+  // tab bar). Something that scrolls on the way isn't a bar. data-bottom-offset sets it instead.
+  function lift() {
+    var h = innerHeight, w = innerWidth, top = h, x, list, el, i, s, r, bar;
+    if (set >= 0) return Math.min(set, h * 0.4);
+    for (x = 1; x < 6; x++) {
+      list = document.elementsFromPoint(w * x / 6, h - 2);
+      for (i = 0; i < list.length && (list[i] == bd.host || bd.host.contains(list[i])); i++);
+      for (el = list[i], bar = null; el && el != document.body && el != document.documentElement; el = el.parentElement) {
+        s = getComputedStyle(el);
+        if (/auto|scroll/.test(s.overflowY) && el.scrollHeight > el.clientHeight) break;
+        r = el.getBoundingClientRect();
+        if (r.bottom >= h - 8 && r.height <= h * 0.4 && r.width >= w / 2) bar = r.top;
+        if (/fixed|sticky/.test(s.position)) {
+          if (bar != null && s.visibility != "hidden" && s.opacity != "0") top = Math.min(top, bar);
+          break;
+        }
+      }
+    }
+    return Math.round(Math.max(0, h - top));
+  }
   // Dark (true), light (false), or null when the value has no solid colour in it.
   function shade(s) {
     var m = s && s.match(/(rgba?|hsla?|oklch|oklab|lab|lch|color)\([^()]*\)|#[0-9a-f]{3,8}\b/gi), n = 0, t = 0, d;
@@ -62,8 +88,11 @@
     if (timer) return;
     timer = setTimeout(function () {
       timer = 0;
-      // The island's middle: 24px from the bottom (12px on phones) plus half its 44px.
-      var list = document.elementsFromPoint(cx == null ? innerWidth / 2 : cx, innerHeight - (innerWidth < 640 ? 34 : 46)), el, dark = null, c;
+      var up = lift();
+      if (up != bd.lift) bd.post({ type: "jun:lift", px: (bd.lift = up) });
+      if (!bd.auto) return;
+      // The island's middle: 24px from the bottom (12px on phones) plus half its 44px, above the lift.
+      var list = document.elementsFromPoint(cx == null ? innerWidth / 2 : cx, innerHeight - up - (innerWidth < 640 ? 34 : 46)), el, dark = null, c;
       for (var i = 0; i < list.length && !el; i++) if (list[i] != bd.host) el = list[i];
       for (; el && dark == null; el = el.parentElement) {
         c = getComputedStyle(el);

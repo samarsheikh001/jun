@@ -116,6 +116,7 @@ type FrameBox = { x: number; w: number; h: number };
  */
 function useIslandFrame(box: FrameBox, live: boolean, away = false, dragging = false): void {
   const shown = useRef<FrameBox | null>(null);
+  const lift = useHostLift();
   useLayoutEffect(() => {
     const bottom = edge(window.innerWidth);
     const send = (b: FrameBox, hide: boolean) =>
@@ -124,8 +125,9 @@ function useIslandFrame(box: FrameBox, live: boolean, away = false, dragging = f
         css:
           // The page's width, so the island can sit at either side (IslandSpot), and room for the tallest
           // answer (720px) plus its edge and glow; the clip-path leaves the rest of the page clickable.
-          // Inside, innerWidth is the page's and innerHeight its height up to 840px.
-          "display:block;top:auto;bottom:0;left:0;right:0;margin:0;width:100%;height:min(840px,100%);" +
+          // Inside, innerWidth is the page's and innerHeight its height up to 840px. `lift`: above the
+          // page's own bars along the bottom.
+          `display:block;top:auto;bottom:${lift}px;left:0;right:0;margin:0;width:100%;height:min(840px,100% - ${lift}px);` +
           "border:0;border-radius:0;background:none;box-shadow:none;color-scheme:normal;" +
           // Away: nothing of the frame is left to take the page's clicks.
           `clip-path:inset(${hide ? "100%" : `calc(100% - ${Math.round(b.h + bottom + GLOW)}px)`} calc(100% - ${Math.round(b.x + b.w + GLOW)}px) ${Math.max(0, bottom - GLOW)}px ${Math.max(0, Math.round(b.x - GLOW))}px)`,
@@ -149,11 +151,28 @@ function useIslandFrame(box: FrameBox, live: boolean, away = false, dragging = f
       send(box, away);
     }, live ? LIVE_SETTLE_MS : SETTLE_MS);
     return () => clearTimeout(settle);
-  }, [box.x, box.w, box.h, live, away, dragging]);
+  }, [box.x, box.w, box.h, live, away, dragging, lift]);
   // widget-island.js reads the page's colour under the island's middle (D-99).
   useEffect(() => {
     postToHost({ type: "jun:spot", cx: Math.round(box.x + box.w / 2) });
   }, [box.x, box.w]);
+}
+
+/**
+ * How far the host page's fixed bars along the bottom (an app's tab bar, a cookie banner) reach up, in px,
+ * as widget-island.js measures them (`jun:lift`), or the snippet's `data-bottom-offset`. 0 until it says.
+ */
+function useHostLift(): number {
+  const [lift, setLift] = useState(0);
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: unknown; px?: unknown } | null;
+      if (e.source === window.parent && data?.type === "jun:lift" && typeof data.px === "number" && Number.isFinite(data.px)) setLift(Math.round(Math.max(0, Math.min(400, data.px))));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  return lift;
 }
 
 /** The island's left edge in the frame for a spot (the centre on narrow frames). */

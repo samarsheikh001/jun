@@ -24,6 +24,8 @@
  *   JunDesk.onWidgetAction(function (a) { a.type; a.payload; a.values; a.widget; }) (returns a remover),
  *   or the "jundesk:widget-action" window event (same object as event.detail).
  *      / .reportError({ message, code? }) / .track(name, props?). In island mode, "/" on the page opens it.
+ * The island sits above the page's fixed bars along the bottom (a tab bar, a cookie banner); where it
+ * guesses wrong, data-bottom-offset="72" sets the distance in px (0 for none).
  * identify() takes a JWT your backend signs with the desk's identity secret (data-user-token works too), or
  * (V-17) { id, name, email, token? }: without a token they only label the visitor, as not verified; contacts
  * sharing the id or email show as one person on the desk (V-18). data-identify-from="posthog" takes them from
@@ -341,7 +343,7 @@
       if (pageControl && consented) chunk("page-control");
       // The island's extras (widget-island.js): "/" opens it (D-39), and an "auto" island is drawn
       // against the page behind it (D-99): that chunk watches the colour there.
-      if (cfg.launcher == "island") J._bd = { host: host, post: post, auto: cfg.islandSurface == "auto", shown: () => open, open: () => setOpen(true) }, chunk("island");
+      if (cfg.launcher == "island") J._bd = { host: host, post: post, auto: cfg.islandSurface == "auto", offset: attr("bottom-offset"), shown: () => open, open: () => setOpen(true) }, chunk("island");
     }
     if (!cfg || cfg.launcher == "button") chunk("button");
     paintTheme();
@@ -408,6 +410,7 @@
       if (pendingOpener) proactive();
       var bd = J._bd;
       if (bd && bd.dark != null) post({ type: "jun:backdrop", dark: bd.dark });
+      if (bd && bd.lift) post({ type: "jun:lift", px: bd.lift });
     }
     if (type == "jun:proactive-shown") pendingOpener = null;
     if (type == "jun:open" || type == "jun:close") setOpen(type == "jun:open");
