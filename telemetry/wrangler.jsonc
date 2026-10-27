@@ -8,6 +8,9 @@
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
   "routes": [{ "pattern": "telemetry.jun.so", "custom_domain": true }],
-  "d1_databases": [{ "binding": "DB", "database_name": "jun-telemetry", "database_id": "b1410256-fc1e-4bc1-90c9-b1840c7736f5" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "jun-telemetry", "database_id": "b1410256-fc1e-4bc1-90c9-b1840c7736f5" },
+    // The hosted-Jun waitlist from jun.so: emails people left, kept apart from the pings.
+    { "binding": "WAITLIST", "database_name": "jun-waitlist", "database_id": "185b6d1a-bb2b-4dcb-88f3-8acc119e2873" }
+  ],
   "observability": { "enabled": true }
 }

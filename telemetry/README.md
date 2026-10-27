@@ -17,4 +17,14 @@ Pass `-c wrangler.jsonc` every time: without it, Wrangler also finds the desk's 
 
 Stats: `https://telemetry.jun.so/?key=<STATS_KEY>`. Without the key, it answers 404.
 
+## Hosted-Jun waitlist
+
+The same Worker takes jun.so's "Want us to host it?" form: `POST /v1/waitlist` with `{ email, source }`, only from jun.so's origins (CORS). Emails go to their own D1 database, `jun-waitlist` (`waitlist.sql`), never into the pings' database; a hidden `website` field catches bots, and signing up twice answers the same. The stats page lists them.
+
+```sh
+npx wrangler d1 execute jun-waitlist -c wrangler.jsonc --remote --file waitlist.sql
+```
+
+## Changing the ping
+
 Before a desk release adds a field to the ping, update `readPing` and deploy this collector first. Otherwise the collector refuses the new pings.

@@ -3,10 +3,13 @@ import { readPing, TELEMETRY_FEATURES, AI_PROVIDERS } from "../shared/telemetry.
 // T-20 (D-151): the collector for desks' anonymous daily pings, run by the Jun project at
 // telemetry.jun.so (not part of a desk: deployed on its own from this folder, see README.md).
 // Stores what `readPing` lets through, one row per desk per day; never the IP address or any
-// header. GET /?key=<STATS_KEY> shows the numbers.
+// header. GET /?key=<STATS_KEY> shows the numbers. It also takes jun.so's hosted-Jun waitlist (POST /v1/waitlist,
+// emails people chose to leave), in its own database.
 
 interface CollectorEnv {
   DB: D1Database;
+  /** The hosted-Jun waitlist (waitlist.sql), apart from the pings. */
+  WAITLIST: D1Database;
   /** `wrangler secret put STATS_KEY`: the stats page's key. */
   STATS_KEY?: string;
 }
@@ -21,6 +24,7 @@ export default {
       if (request.method !== "POST") return new Response("POST only", { status: 405 });
       return receive(request, env);
     }
+    if (url.pathname === "/v1/waitlist") return waitlist(request, env);
     if (url.pathname === "/" && request.method === "GET") return stats(url, env);
     return new Response("Not found", { status: 404 });
   },
@@ -53,6 +57,39 @@ async function receive(request: Request, env: CollectorEnv): Promise<Response> {
   return new Response(null, { status: 204 });
 }
 
+// The site's pages post here from the browser.
+const SITE_ORIGINS = new Set(["https://jun.so", "https://www.jun.so", "http://localhost:3000"]);
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const SOURCE = /^[a-z0-9-]{1,32}$/;
+
+async function waitlist(request: Request, env: CollectorEnv): Promise<Response> {
+  const origin = request.headers.get("origin") ?? "";
+  const cors: Record<string, string> = SITE_ORIGINS.has(origin)
+    ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type", vary: "origin" }
+    : {};
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  if (request.method !== "POST") return new Response("POST only", { status: 405, headers: cors });
+  if (!SITE_ORIGINS.has(origin)) return new Response("Not allowed", { status: 403 });
+  const text = await request.text();
+  if (text.length > 1024) return new Response("Too large", { status: 413, headers: cors });
+  let body: { email?: unknown; source?: unknown; website?: unknown };
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return new Response("Not JSON", { status: 400, headers: cors });
+  }
+  // `website` is a field people never see: a bot that fills it gets the same answer and nothing is saved.
+  if (body.website) return new Response(null, { status: 204, headers: cors });
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (email.length > 254 || !EMAIL.test(email)) return new Response("Not an email", { status: 400, headers: cors });
+  const source = typeof body.source === "string" && SOURCE.test(body.source) ? body.source : "site";
+  // Already on the list answers the same, so the form doesn't tell anyone who signed up.
+  await env.WAITLIST.prepare("INSERT OR IGNORE INTO waitlist (email, created_at, source) VALUES (?, ?, ?)")
+    .bind(email, Date.now(), source)
+    .run();
+  return new Response(null, { status: 204, headers: cors });
+}
+
 async function sameKey(a: string, b: string): Promise<boolean> {
   const enc = new TextEncoder();
   const [x, y] = await Promise.all([crypto.subtle.digest("SHA-256", enc.encode(a)), crypto.subtle.digest("SHA-256", enc.encode(b))]);
@@ -69,6 +106,10 @@ async function stats(url: URL, env: CollectorEnv): Promise<Response> {
   const { results: days } = await env.DB.prepare(
     "SELECT day, COUNT(*) AS n FROM pings WHERE day >= ? GROUP BY day ORDER BY day",
   ).bind(new Date(now - 30 * DAY_MS).toISOString().slice(0, 10)).all<{ day: string; n: number }>();
+
+  const { results: waiting } = await env.WAITLIST.prepare(
+    "SELECT email, created_at, source FROM waitlist ORDER BY created_at DESC",
+  ).all<{ email: string; created_at: number; source: string }>();
 
   const within = (ms: number) => desks.filter((d) => now - d.last_seen < ms);
   const active = within(7 * DAY_MS);
@@ -109,6 +150,7 @@ ${section("AI provider", share(listField("providers", AI_PROVIDERS)))}
 ${section("Workspaces", share(field("workspaces")))}
 ${section("Team members", share(field("members")))}
 ${section("Desk age (days)", share(field("age")))}
+<h2>Hosted-Jun waitlist (${waiting.length})</h2><table><tr><th>Email</th><th>From</th><th>Joined</th></tr>${waiting.map((w) => `<tr><td>${esc(w.email)}</td><td>${esc(w.source)}</td><td>${new Date(w.created_at).toISOString().slice(0, 10)}</td></tr>`).join("") || "<tr><td colspan=3>Nobody yet</td></tr>"}</table>
 <h2>Desks per day</h2><table><tr><th>Day</th><th>Desks</th></tr>${days.map((d) => `<tr><td>${d.day}</td><td>${d.n}</td></tr>`).join("") || "<tr><td colspan=2>None yet</td></tr>"}</table>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
 }
