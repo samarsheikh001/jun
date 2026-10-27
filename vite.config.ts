@@ -134,6 +134,8 @@ function buildWidget(): Plugin {
 // Builds the dashboard (index.html), the widget frame (widget.html) and the Worker
 // (worker/) together; `vite dev` runs them in the Workers runtime with local D1,
 // R2 and Durable Objects. public/ (widget.js loader, demo.html) is copied; widget.js gets minified.
+const TEST_VARS = ["JUN_EMAIL_DELAY_MS", "JUN_TELEMETRY_URL"];
+
 export default defineConfig({
   // JUN_STATE_DIR gives a separate local database (used by the e2e tests so they don't
   // touch your own local desk). Pair with `wrangler ... --persist-to` on the same path.
@@ -141,8 +143,11 @@ export default defineConfig({
   // The widget frame keeps its own plain CSS (web/styles.css + web/widget/widget.css).
   plugins: [preactWidget(), react(), tailwindcss(), minifyLoader(), buildWidget(), pageControlChunk(), cloudflare({
     ...(process.env.JUN_STATE_DIR ? { persistState: { path: process.env.JUN_STATE_DIR } } : {}),
-    // e2e-email: email replies after seconds instead of minutes.
-    ...(process.env.JUN_EMAIL_DELAY_MS ? { config: { vars: { JUN_EMAIL_DELAY_MS: process.env.JUN_EMAIL_DELAY_MS } } } : {}),
+    // Test-only vars from the shell: e2e-email's email replies after seconds instead of minutes; the
+    // usage ping (T-20) to a local collector.
+    ...(TEST_VARS.some((name) => process.env[name])
+      ? { config: { vars: Object.fromEntries(TEST_VARS.filter((name) => process.env[name]).map((name) => [name, process.env[name]!])) } }
+      : {}),
   })],
   // Listen on 127.0.0.1: dev-only "Sign in with ChatGPT" must return to a 127.0.0.1
   // loopback URL (OpenAI forbids substituting localhost), and on Windows Vite would

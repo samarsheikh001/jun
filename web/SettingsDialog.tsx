@@ -13,6 +13,8 @@ import { setThemePref, THEME_LABEL, THEME_PREFS, useThemePref, type ThemePref } 
 import { useAction } from "./useAction.ts";
 import { UPDATE_HELP, useUpdate } from "./lib/updates.ts";
 import { JUN_VERSION } from "../shared/version.ts";
+import { TELEMETRY_DOCS } from "../shared/telemetry.ts";
+import { Switch } from "@/components/ui/switch.tsx";
 import { goHome, switchWorkspace, type Membership } from "./workspaces/workspace.ts";
 import { NewWorkspaceDialog } from "./workspaces/WorkspaceSwitcher.tsx";
 import { Input } from "@/components/ui/input.tsx";
@@ -29,6 +31,7 @@ interface Member { id: string; name: string; email: string | null; role: Role }
 interface Invite { id: string; role: Role; createdBy: string; createdAt: number; expiresAt: number }
 
 const RANK: Record<Role, number> = { owner: 3, admin: 2, agent: 1 };
+const isDeskOwner = (me: Me) => (me.memberships ?? []).some((m) => m.role === "owner");
 const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString() : "never");
 
 // Town's settings dialog (D-35): a 924×720 modal, a 224px nav on the left (the sections, then the theme
@@ -93,8 +96,8 @@ export function SettingsDialog({ me, workspace, path, onClose }: { me: Me; works
   const themePref = useThemePref();
   // Every section's data at once, so switching sections never waits or fills in piece by piece.
   useEffect(() => {
-    prefetchSettings(workspace?.workspaceId ?? null, Boolean(workspace && workspace.role !== "agent"));
-  }, [workspace]);
+    prefetchSettings(workspace?.workspaceId ?? null, Boolean(workspace && workspace.role !== "agent"), isDeskOwner(me));
+  }, [workspace, me]);
 
   useEffect(() => {
     if (sub && !sections.some((s) => s.id === sub)) return navigate(workspace ? "/settings" : "/settings/account", { replace: true });
@@ -188,7 +191,7 @@ const SECTION_CARDS: Record<SectionId, (canInvite: boolean) => string[]> = {
   notifications: () => ["This device", "Notify me when"],
   integrations: () => ["Issue trackers", "GitHub", "Linear"],
   account: () => ["Your account", "Your passkeys"],
-  desk: () => ["This desk"],
+  desk: () => ["This desk", "Anonymous usage ping"],
 };
 
 /** A section shows only once all of its data is in (fetched when Settings opened), then all at once. */
@@ -196,7 +199,7 @@ type SectionProps = { id: SectionId; me: Me; workspace: Membership | undefined; 
 
 function Section(props: SectionProps) {
   const canInvite = props.role !== "agent";
-  const ready = useSectionReady(sectionRequests(props.id, props.workspaceId, canInvite));
+  const ready = useSectionReady(sectionRequests(props.id, props.workspaceId, canInvite, isDeskOwner(props.me)));
   if (!ready) {
     // Straight in the section list (no wrapper), so the cards keep their dividers.
     return (
@@ -291,6 +294,7 @@ function DeskPanel({ me, onHome }: { me: Me; onHome: boolean }) {
   const owner = all.some((m) => m.role === "owner");
   const [creating, setCreating] = useState(false);
   return (
+    <>
     <SettingsCard title="This desk" description="Shared by every workspace on it: one Jun, deployed to your Cloudflare account.">
       <VersionRow admin={admin} />
       <SettingRow
@@ -304,6 +308,41 @@ function DeskPanel({ me, onHome }: { me: Me; onHome: boolean }) {
         </div>
       </SettingRow>
       <NewWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
+    </SettingsCard>
+    {owner && <TelemetryCard />}
+    </>
+  );
+}
+
+interface TelemetryState { on: boolean; offByEnv: boolean; lastSentAt: number | null; preview: Record<string, unknown> }
+
+/** T-20 (D-151): the anonymous daily ping, its switch, and exactly what it sends (owners). */
+function TelemetryCard() {
+  const [state, setState] = useState(() => cachedGet<TelemetryState>("/desk/telemetry"));
+  const [showing, setShowing] = useState(false);
+  const { busy, error, run } = useAction();
+  useEffect(() => {
+    fetchSetting<TelemetryState>("/desk/telemetry").then(setState, () => {});
+  }, []);
+  const toggle = (on: boolean) => run(async () => setState(await api<TelemetryState>("/desk/telemetry", { method: "PUT", body: { on } })));
+  return (
+    <SettingsCard
+      title="Anonymous usage ping"
+      description={<>Once a day this desk tells the Jun project that it exists: a random id, the version, and rounded counts. Never names, website addresses, emails, messages or anything about your customers. It helps decide what to build next. <a href={TELEMETRY_DOCS} target="_blank" rel="noreferrer">What it sends</a></>}
+    >
+      <SettingRow
+        label="Send it"
+        description={error ? <span className="error">{error}</span> : state?.offByEnv ? "Turned off for the whole desk by JUN_TELEMETRY=off on the Worker." : state?.lastSentAt ? `Last sent ${new Date(state.lastSentAt).toLocaleString()}.` : state?.on ? "Not sent yet: the first one goes within 15 minutes." : "Off."}
+      >
+        <Switch checked={state?.on ?? true} disabled={!state || busy || state.offByEnv} onCheckedChange={toggle} aria-label="Send the anonymous usage ping" />
+      </SettingRow>
+      {state && (
+        <SettingRow label="What the next one says" wide>
+          {showing
+            ? <pre className="code">{JSON.stringify(state.preview, null, 2)}</pre>
+            : <Button size="sm" variant="outline" onClick={() => setShowing(true)}>Show it</Button>}
+        </SettingRow>
+      )}
     </SettingsCard>
   );
 }

@@ -219,6 +219,28 @@ claude mcp add --transport http jun https://your-desk.example.com/mcp --header "
 
 The desk's **MCP** page (in the sidebar) connects Claude Code, Cursor, Codex or any MCP app with one button.
 
+## Anonymous usage ping
+
+Once a day your desk tells the Jun project that it exists, so we know how many desks run, on which versions, and which features get used. This is everything it sends:
+
+```json
+{
+  "v": 1,
+  "id": "ins_3166d9b08d4427e0848c49a5c39c01cc",
+  "version": "0.1.6",
+  "workspaces": "2-5",
+  "members": "2-5",
+  "chats30d": "101-1000",
+  "age": "7-29",
+  "providers": ["workers-ai"],
+  "features": ["ai", "knowledge", "email", "pageControl"]
+}
+```
+
+The id is random, made once by your desk; counts are rounded into ranges; `features` lists which parts are on in at least one workspace (`ai`, `knowledge`, `email`, `whatsapp`, `identity`, `pageControl`, `actions`, `mcp`, `issues`). Never names, website addresses, emails, messages, keys or anything about your customers. It goes to `telemetry.jun.so`, whose code is in [`telemetry/`](telemetry/): it accepts exactly this shape and stores no IP address.
+
+**Turning it off:** an owner switches it off in **Settings → This desk → Anonymous usage ping** (which also shows the next ping as it will be sent), or set the Worker variable `JUN_TELEMETRY=off` to keep it off whatever the setting says.
+
 ## Develop
 
 Requires Node 22.18+.

@@ -59,8 +59,8 @@ function loadThisDevice(): Promise<string | null> {
 
 type SectionId = "general" | "ai" | "inbox" | "team" | "notifications" | "integrations" | "account" | "desk";
 
-/** Every GET a section's panels make on opening. */
-export function sectionRequests(id: SectionId, workspaceId: string, canInvite: boolean): string[] {
+/** Every GET a section's panels make on opening. `deskOwner`: an owner somewhere on the desk. */
+export function sectionRequests(id: SectionId, workspaceId: string, canInvite: boolean, deskOwner = false): string[] {
   const ws = `/workspaces/${workspaceId}`;
   switch (id) {
     case "general": return [];
@@ -70,7 +70,7 @@ export function sectionRequests(id: SectionId, workspaceId: string, canInvite: b
     case "notifications": return [`${ws}/notifications`, `${ws}/push/subscriptions`, THIS_DEVICE];
     case "integrations": return [`${ws}/trackers`];
     case "account": return ["/passkeys"];
-    case "desk": return [];
+    case "desk": return deskOwner ? ["/desk/telemetry"] : [];
   }
 }
 
@@ -78,12 +78,12 @@ const WORKSPACE_SECTIONS: SectionId[] = ["general", "ai", "inbox", "team", "noti
 
 /**
  * On opening the dialog: every section's data in parallel (each URL once if it's already on its way).
- * No workspace (the desk's home, D-97): only your account's.
+ * No workspace (the desk's home, D-97): only your account's and the desk's.
  */
-export function prefetchSettings(workspaceId: string | null, canInvite: boolean) {
-  const ids: SectionId[] = [...(workspaceId ? WORKSPACE_SECTIONS : []), "account"];
+export function prefetchSettings(workspaceId: string | null, canInvite: boolean, deskOwner = false) {
+  const ids: SectionId[] = [...(workspaceId ? WORKSPACE_SECTIONS : []), "account", "desk"];
   for (const id of ids) {
-    for (const url of sectionRequests(id, workspaceId ?? "", canInvite)) {
+    for (const url of sectionRequests(id, workspaceId ?? "", canInvite, deskOwner)) {
       if (inflight.has(url)) continue;
       if (url === THIS_DEVICE) void loadThisDevice();
       else void fetchSetting(url).catch(() => {});

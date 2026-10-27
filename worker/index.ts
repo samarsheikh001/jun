@@ -17,6 +17,8 @@ import { widget } from "./routes/widget.ts";
 import { onboarding } from "./routes/onboarding.ts";
 import { visitors } from "./routes/visitors.ts";
 import { workspaces } from "./routes/workspaces.ts";
+import { desk } from "./routes/desk.ts";
+import { sendTelemetry } from "./lib/telemetry.ts";
 import { agent } from "./routes/agent.ts";
 import { frameAncestors } from "./lib/origins.ts";
 import { receiveEmail } from "./lib/email.ts";
@@ -70,6 +72,7 @@ app.route("/", issues);
 app.route("/", notifications);
 app.route("/", email);
 app.route("/", home);
+app.route("/", desk);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 
@@ -116,9 +119,11 @@ export default {
     await handleCrawlBatch(batch as MessageBatch<CrawlJob>, env);
   },
   // Every 15 minutes, topic labels for quiet chats (A-02) and stuck website syncs finished (D-88); once a
-  // day also the knowledge re-sync.
+  // day also the knowledge re-sync and the anonymous usage ping (T-20; also the first run after setup).
   async scheduled(controller, env, ctx) {
-    if (isDailyRun(controller.scheduledTime)) ctx.waitUntil(resyncAll(env));
+    const daily = isDailyRun(controller.scheduledTime);
+    if (daily) ctx.waitUntil(resyncAll(env));
+    ctx.waitUntil(sendTelemetry(env, daily));
     ctx.waitUntil(labelAllWorkspaces(env));
     ctx.waitUntil(finishStuckSyncs(env));
   },

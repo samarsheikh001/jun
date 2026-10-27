@@ -1,0 +1,13 @@
+// T-20 (D-151): the Jun project's collector for desks' anonymous pings, at telemetry.jun.so.
+// Not part of a desk and not deployed by the Deploy button: `cd telemetry && npx wrangler deploy`.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "jun-telemetry",
+  "account_id": "29d86fb59acd88609270c10171262590",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "telemetry.jun.so", "custom_domain": true }],
+  "d1_databases": [{ "binding": "DB", "database_name": "jun-telemetry", "database_id": "b1410256-fc1e-4bc1-90c9-b1840c7736f5" }],
+  "observability": { "enabled": true }
+}
