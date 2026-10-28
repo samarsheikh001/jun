@@ -19,6 +19,7 @@ test("the manifest points Slack at this workspace's addresses", () => {
   assert.equal(m.settings.socket_mode_enabled, false);
   assert.ok(m.oauth_config.scopes.bot.includes("chat:write.customize"));
   assert.ok(m.oauth_config.scopes.bot.includes("users:read.email"));
+  assert.ok(m.oauth_config.scopes.bot.includes("commands"));
   assert.deepEqual(m.features.shortcuts.map((s) => [s.type, s.callback_id]), [["message", SLACK_IDS.noteShortcut]]);
   // Slack caps an app's name at 35 characters.
   assert.ok((slackManifest("https://d", "w", "A very long workspace name that goes on") as { display_information: { name: string } }).display_information.name.length <= 35);

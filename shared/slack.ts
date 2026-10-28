@@ -19,9 +19,10 @@ export const SLACK_IDS = {
   open: "jun_open",
 } as const;
 
-/** The bot's scopes: post (with a teammate's or the visitor's name), read thread replies, join a public channel, read who wrote. */
+/** The bot's scopes: post (with a teammate's or the visitor's name), read thread replies, join a public channel, read who wrote. `commands`: Slack refuses a manifest with a shortcut (the note) without it. */
 export const SLACK_BOT_SCOPES = [
   "chat:write",
+  "commands",
   "chat:write.customize",
   "channels:history",
   "groups:history",
