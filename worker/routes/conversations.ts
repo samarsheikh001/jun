@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AiAction, ConversationStatus } from "../../shared/protocol.ts";
 import { likePattern } from "../../shared/contacts.ts";
+import { blockPattern } from "../../shared/email.ts";
 import { draftSuggestions } from "../ai/suggestions.ts";
 import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
@@ -221,6 +222,24 @@ conversations.get("/conversations/:cid/actions", async (c) => {
     createdAt: r.created_at,
   }));
   return c.json({ actions });
+});
+
+// C-13: "Mark as spam" on an email ticket: its sender (or their whole domain) is blocked for this
+// workspace (their mail is dropped from then on) and the ticket is closed.
+conversations.post("/conversations/:cid/spam", async (c) => {
+  const ref = await requireConversation(c, c.req.param("cid"));
+  const body = await readJson(c.req);
+  const scope = body.scope === "domain" ? "domain" : "address";
+  const row = await c.env.DB.prepare("SELECT ct.email, ct.source FROM conversations cv JOIN contacts ct ON ct.id = cv.contact_id WHERE cv.id = ?")
+    .bind(ref.conversationId)
+    .first<{ email: string | null; source: string | null }>();
+  if (!row?.email || row.source !== "email") throw new HttpError(400, "not_email", "Only an email sender can be marked as spam.");
+  const me = c.get("user");
+  const pattern = blockPattern(row.email, scope);
+  await c.env.DB.prepare("INSERT OR IGNORE INTO blocked_senders (workspace_id, pattern, created_by, created_at) VALUES (?, ?, ?, ?)").bind(ref.workspaceId, pattern, me.id, Date.now()).run();
+  await changeConversation(c.env, ref, { status: "resolved" }, { id: me.id, name: me.name }, (p) => c.executionCtx.waitUntil(p));
+  await c.env.CONVERSATION.getByName(ref.conversationId).addNote(ref, `${me.name} marked this as spam: mail from ${pattern} is dropped from now on.`, `spam:${pattern}`);
+  return c.json({ conversation: await loadSummary(c.env.DB, ref.conversationId), blocked: pattern });
 });
 
 conversations.patch("/conversations/:cid", async (c) => {

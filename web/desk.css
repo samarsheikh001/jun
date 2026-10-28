@@ -499,6 +499,7 @@ form.ws-rename { display: flex; gap: 8px; align-items: center; width: 100%; marg
 .cv-text { font-size: 13px; color: var(--foreground); }
 .cv-text.nowrap { white-space: nowrap; }
 .cv-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; max-width: 220px; }
+.cv-subject { color: var(--foreground); font-weight: 500; }
 .cv-dash { color: var(--stone); }
 .cv-time { white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
 .cv-table td.cv-empty { padding: 32px 18px; text-align: center; font-size: 13px; color: var(--tertiary); }
@@ -529,6 +530,7 @@ form.ws-rename { display: flex; gap: 8px; align-items: center; width: 100%; marg
 .cv-drawer-head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--sidebar-border); }
 .cv-drawer-title { min-width: 0; }
 .cv-drawer-name { font-size: 14px; font-weight: 665; letter-spacing: 0.02em; color: var(--foreground); }
+.cv-drawer-subject { margin-top: 2px; font-size: 13px; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-drawer-meta { margin-top: 1px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); }
 /* Our conversation controls (assignee, status, resolve, issue) sit before Widgo's close button. */
 .cv-drawer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }

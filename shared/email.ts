@@ -127,6 +127,90 @@ export function parseReplyAddress(address: string): { token: string; domain: str
   return match ? { token: match[1]!, domain: domainOf(address) } : null;
 }
 
+// ---------- a forwarded support inbox (C-13) ----------
+
+/**
+ * C-13: the address a support inbox forwards to, `reply+in-<token>@<reply domain>`. It's a subaddress
+ * of the same `reply@` rule, so it needs no Cloudflare setup of its own; the token is the workspace's
+ * own (random, changed on the Channels page), so nobody mails the desk directly without going through
+ * support@.
+ */
+const FORWARD_RE = new RegExp(`^${REPLY_LOCAL}\\+in-([a-z0-9]{${TOKEN_LENGTH}})$`);
+
+export const forwardAddress = (token: string, replyDomain: string) => `${REPLY_LOCAL}+in-${token}@${replyDomain}`;
+
+export function parseForwardAddress(address: string): { token: string; domain: string } | null {
+  const at = address.lastIndexOf("@");
+  if (at < 1) return null;
+  const match = FORWARD_RE.exec(address.slice(0, at).toLowerCase());
+  return match ? { token: match[1]!, domain: domainOf(address) } : null;
+}
+
+/** What's kept in the widget inbox's settings as `emailForwarding`. */
+export interface ForwardingSettings {
+  enabled: boolean;
+  token: string;
+  /** When the last forwarded email arrived (the page's "Receiving" line). */
+  lastAt: number | null;
+  /** A Gmail forwarding confirmation that came in, for the admin to copy (Gmail asks before it forwards). */
+  confirmation: { code: string; link: string | null; at: number } | null;
+}
+
+export function forwardingSettings(raw: unknown): ForwardingSettings {
+  const v = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const c = typeof v.confirmation === "object" && v.confirmation !== null ? (v.confirmation as Record<string, unknown>) : null;
+  return {
+    enabled: v.enabled === true,
+    token: typeof v.token === "string" ? v.token : "",
+    lastAt: typeof v.lastAt === "number" ? v.lastAt : null,
+    confirmation: c && typeof c.code === "string" && typeof c.at === "number" ? { code: c.code, link: typeof c.link === "string" ? c.link : null, at: c.at } : null,
+  };
+}
+
+/** New tickets at most this often: per sender per hour, and per workspace per day. Over it, mail is kept closed and unanswered. */
+export const MAX_TICKETS_PER_SENDER_HOUR = 10;
+export const MAX_TICKETS_PER_DAY = 300;
+
+/**
+ * Gmail's "Forwarding Confirmation" mail (sent to the forwarding address before Gmail forwards
+ * anything): its code and link, else null. Never a ticket.
+ */
+export function gmailConfirmation(from: string, subject: string, text: string): { code: string; link: string | null } | null {
+  if (!/@google\.com$/i.test(from.trim()) || !/forwarding confirmation/i.test(subject)) return null;
+  const code = /\(#(\d{5,})\)/.exec(subject)?.[1] ?? /confirmation code:\s*(\d{5,})/i.exec(text)?.[1];
+  if (!code) return null;
+  const link = /https:\/\/mail(?:-settings)?\.google\.com\/mail\/\S+/i.exec(text)?.[0] ?? null;
+  return { code, link: link?.replace(/[>)\].,]+$/, "") ?? null };
+}
+
+/** Message-IDs as a list: one header's ids (`<a@b> <c@d>`), without the brackets. */
+export function messageIds(header: string | null | undefined): string[] {
+  if (!header) return [];
+  const bracketed = header.match(/<[^<>\s]+>/g);
+  const ids = bracketed ? bracketed.map((id) => id.slice(1, -1)) : header.split(/\s+/);
+  return ids.map((id) => id.trim()).filter((id) => id.length > 2 && id.length <= 500);
+}
+
+/** The subject a ticket keeps: no "Re:"/"Fwd:" prefixes, one line, ≤ 200 characters. */
+export function ticketSubject(subject: string | null | undefined): string {
+  let s = (subject ?? "").replace(/\s+/g, " ").trim();
+  while (/^(re|fwd?|aw|wg|sv|tr)\s*(\[\d+\])?\s*:\s*/i.test(s)) s = s.replace(/^(re|fwd?|aw|wg|sv|tr)\s*(\[\d+\])?\s*:\s*/i, "");
+  return s.slice(0, 200) || "(no subject)";
+}
+
+/** A blocked sender, as stored: the address (no +tag), or `@domain` for the whole domain. */
+export function blockPattern(address: string, scope: "address" | "domain"): string {
+  const v = address.trim().toLowerCase();
+  const at = v.lastIndexOf("@");
+  return scope === "domain" ? v.slice(at) : `${v.slice(0, at).replace(/\+.*$/, "")}${v.slice(at)}`;
+}
+
+export function isBlocked(address: string, patterns: string[]): boolean {
+  const mine = blockPattern(address, "address");
+  const domain = blockPattern(address, "domain");
+  return patterns.some((p) => p === mine || p === domain);
+}
+
 /** Same mailbox, ignoring case and a `+tag` (people reply from user+support@…). */
 export function sameMailbox(a: string, b: string): boolean {
   const norm = (x: string) => {
@@ -142,10 +226,12 @@ export function sameMailbox(a: string, b: string): boolean {
 /**
  * Mail that no person wrote (out-of-office, bounces, mailing lists, our own echoes): never a message
  * in the chat, so two autoresponders can't loop. `get` reads a header by name (case-insensitive).
+ * `forwarded`: mail a support inbox forwarded (C-13), which a forwarding rule may mark `auto-forwarded`
+ * (RFC 3834) though a person wrote it.
  */
-export function isAutomatic(get: (name: string) => string | null, from: string): boolean {
+export function isAutomatic(get: (name: string) => string | null, from: string, options: { forwarded?: boolean } = {}): boolean {
   const auto = get("auto-submitted")?.trim().toLowerCase();
-  if (auto && auto !== "no") return true;
+  if (auto && auto !== "no" && !(options.forwarded && auto.startsWith("auto-forwarded"))) return true;
   if (get("x-autoreply") || get("x-autorespond") || get("x-auto-response-suppress")?.match(/\b(all|oof|autoreply)\b/i)) return true;
   if (get("list-id") || get("list-unsubscribe")) return true;
   if (/^(bulk|junk|list|auto_reply)$/i.test(get("precedence")?.trim() ?? "")) return true;
@@ -233,8 +319,11 @@ const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 /** One stable subject per conversation, so mail apps keep one thread. */
 export const replySubject = (workspaceName: string) => `Re: your conversation with ${workspaceName}`;
 
-/** The email for the replies a customer hasn't seen: plain text and simple HTML. */
-export function renderReplyEmail(input: { workspaceName: string; messages: EmailedMessage[] }): { subject: string; text: string; html: string } {
+/**
+ * The email for the replies a customer hasn't seen: plain text and simple HTML. A ticket (C-13)
+ * answers under its own subject.
+ */
+export function renderReplyEmail(input: { workspaceName: string; messages: EmailedMessage[]; subject?: string | null }): { subject: string; text: string; html: string } {
   // The author's name once per run of their messages.
   const named = input.messages.map((m, i) => ({ ...m, showAuthor: i === 0 || input.messages[i - 1]!.author !== m.author }));
   const text = [
@@ -261,7 +350,7 @@ ${m.files.map((f) => `<div style="margin-top:6px"><a href="${escapeHtml(f.url)}"
   .join("\n")}
 <p style="margin:24px 0 0;color:#8a8a8a;font-size:12px">Reply to this email to answer ${escapeHtml(input.workspaceName)}.</p>
 </body></html>`;
-  return { subject: replySubject(input.workspaceName), text, html };
+  return { subject: input.subject ? `Re: ${input.subject}` : replySubject(input.workspaceName), text, html };
 }
 
 /** A Message-ID as headers want it: `<id>`. */

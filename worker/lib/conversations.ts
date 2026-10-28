@@ -5,7 +5,7 @@ import type { Attachment, AuthorType, ConversationIssue, ConversationStatus, Csa
 export const SUMMARY_SELECT = `
   SELECT c.id, c.status, c.handling, c.assignee_id, c.last_seq, c.last_message_at, c.last_message_preview,
          c.last_message_author, c.agent_read_seq, c.visitor_read_seq, c.created_at, c.debug_issue_count,
-         c.resolution, c.csat_rating, c.csat_resolution, c.intent, c.intent_exited_at,
+         c.resolution, c.csat_rating, c.csat_resolution, c.intent, c.intent_exited_at, c.type, c.subject,
          c.topic_id, (SELECT tp.name FROM topics tp WHERE tp.id = c.topic_id) AS topic_name,
          ct.id AS contact_id, ct.name AS contact_name, ct.email AS contact_email, ct.verified_at AS contact_verified_at,
          (SELECT json_group_array(t.name) FROM conversation_tags ctg JOIN tags t ON t.id = ctg.tag_id WHERE ctg.conversation_id = c.id) AS tags
@@ -29,6 +29,8 @@ export interface SummaryRow {
   csat_resolution: number | null;
   intent: string | null;
   intent_exited_at: number | null;
+  type: "chat" | "ticket";
+  subject: string | null;
   topic_id: string | null;
   topic_name: string | null;
   contact_id: string;
@@ -58,6 +60,8 @@ export function toSummary(row: SummaryRow): ConversationSummary {
     // Rated since it was last resolved (a reopened conversation isn't, until it's resolved and rated again).
     csat: { rating: row.csat_rating, ratedThisRound: row.status === "resolved" && row.csat_rating !== null && row.csat_resolution === row.resolution },
     intent: conversationIntent(row.intent, row.intent_exited_at),
+    type: row.type,
+    subject: row.subject,
   };
 }
 

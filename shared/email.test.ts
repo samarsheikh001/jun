@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  applyEmailPatch, DEFAULT_EMAIL_SETTINGS, emailOn, emailSettings, htmlToText, isAutomatic, newReplyToken, parseReplyAddress,
-  renderReplyEmail, replyAddress, replyRuleAddress, replyText, sameMailbox, threadHeaders,
+  applyEmailPatch, blockPattern, DEFAULT_EMAIL_SETTINGS, emailOn, emailSettings, forwardAddress, forwardingSettings, gmailConfirmation, htmlToText,
+  isAutomatic, isBlocked, messageIds, newReplyToken, parseForwardAddress, parseReplyAddress, renderReplyEmail, replyAddress, replyRuleAddress, replyText,
+  sameMailbox, threadHeaders, ticketSubject,
 } from "./email.ts";
 
 test("settings: lenient read, strict change", () => {
@@ -53,6 +54,9 @@ test("automatic mail is recognised", () => {
   assert.equal(isAutomatic(h({ "list-id": "<news.example.com>" }), "pat@example.com"), true);
   assert.equal(isAutomatic(h({}), "MAILER-DAEMON@example.com"), true);
   assert.equal(isAutomatic(h({ "x-jun-desk": "1" }), "pat@example.com"), true, "our own email looping back");
+  assert.equal(isAutomatic(h({ "auto-submitted": "auto-forwarded" }), "pat@example.com"), true);
+  assert.equal(isAutomatic(h({ "auto-submitted": "auto-forwarded" }), "pat@example.com", { forwarded: true }), false, "a support inbox's forwarding rule");
+  assert.equal(isAutomatic(h({ "auto-submitted": "auto-replied" }), "pat@example.com", { forwarded: true }), true);
 });
 
 test("reply text cuts the quote and the signature", () => {
@@ -89,4 +93,49 @@ test("the email lists the replies, escaped, with the marker on top", () => {
 test("thread headers reference earlier messages", () => {
   assert.deepEqual(threadHeaders([]), {});
   assert.deepEqual(threadHeaders(["a@x", "<b@x>"]), { "In-Reply-To": "<b@x>", References: "<a@x> <b@x>" });
+});
+
+test("C-13: the forwarding address round-trips and isn't a reply address", () => {
+  const token = newReplyToken();
+  const address = forwardAddress(token, "reply.acme.com");
+  assert.equal(address, `reply+in-${token}@reply.acme.com`);
+  assert.deepEqual(parseForwardAddress(address.toUpperCase()), { token, domain: "reply.acme.com" });
+  assert.equal(parseReplyAddress(address), null);
+  assert.equal(parseForwardAddress(replyAddress(token, "reply.acme.com")), null);
+  assert.equal(parseForwardAddress("reply+in-short@reply.acme.com"), null);
+  assert.deepEqual(forwardingSettings({ enabled: true, token: "t", confirmation: { code: 1 } }), { enabled: true, token: "t", lastAt: null, confirmation: null });
+});
+
+test("C-13: Gmail's forwarding confirmation is recognised", () => {
+  const text = [
+    "sam@gmail.com has requested to automatically forward mail to your email address",
+    "Confirmation code: 123456789",
+    "To allow it, click the link below:",
+    "https://mail-settings.google.com/mail/vf-%5BANGjdJ%5D-abc.",
+  ].join("\n");
+  assert.deepEqual(gmailConfirmation("forwarding-noreply@google.com", "(#123456789) Gmail Forwarding Confirmation - Receive Mail from sam@gmail.com", text), {
+    code: "123456789",
+    link: "https://mail-settings.google.com/mail/vf-%5BANGjdJ%5D-abc",
+  });
+  assert.equal(gmailConfirmation("sam@gmail.com", "(#123456789) Gmail Forwarding Confirmation", text), null, "only from Google");
+  assert.equal(gmailConfirmation("forwarding-noreply@google.com", "Hello", text), null);
+});
+
+test("C-13: message ids, ticket subjects, blocked senders", () => {
+  assert.deepEqual(messageIds("<a@x.com>  <b@y.com>"), ["a@x.com", "b@y.com"]);
+  assert.deepEqual(messageIds("a@x.com"), ["a@x.com"]);
+  assert.deepEqual(messageIds(undefined), []);
+  assert.equal(ticketSubject("Re: Fwd: RE[2]:  Billing\n page broken "), "Billing page broken");
+  assert.equal(ticketSubject(""), "(no subject)");
+  assert.equal(ticketSubject("x".repeat(300)).length, 200);
+  assert.equal(blockPattern("Spam+x@Junk.io", "address"), "spam@junk.io");
+  assert.equal(blockPattern("spam@junk.io", "domain"), "@junk.io");
+  assert.ok(isBlocked("spam+y@junk.io", ["spam@junk.io"]));
+  assert.ok(isBlocked("other@junk.io", ["@junk.io"]));
+  assert.ok(!isBlocked("sam@acme.com", ["@junk.io", "spam@junk.io"]));
+});
+
+test("C-13: a ticket's email answers under its subject", () => {
+  const email = renderReplyEmail({ workspaceName: "Acme", subject: "Billing page broken", messages: [{ author: "Acme", body: "Fixed", files: [] }] });
+  assert.equal(email.subject, "Re: Billing page broken");
 });

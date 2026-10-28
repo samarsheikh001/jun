@@ -112,6 +112,10 @@ export interface ConversationSummary {
   csat: { rating: CsatRating | null; ratedThisRound: boolean };
   /** AI-20: the intent the host app opened the chat with (null otherwise). Agents only; always null for visitors. */
   intent: ConversationIntent | null;
+  /** D-05: a widget chat, or a ticket (C-13: an email to the forwarded support inbox). */
+  type: "chat" | "ticket";
+  /** C-13: a ticket's email subject (null for chats). */
+  subject: string | null;
   /** D-80: visitors only, on the widget's list, for the ongoing chat: the folded island's line (a waiting card, else the last reply), so it shows before the messages load. */
   islandLine?: IslandLine | null;
 }

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { applyEmailPatch, emailOn, emailProblems, isEmail, replyAddress, type EmailSettings } from "../../shared/email.ts";
+import { applyEmailPatch, emailOn, emailProblems, forwardAddress, isEmail, newReplyToken, replyAddress, type EmailSettings } from "../../shared/email.ts";
 import { requireUser } from "../auth/session.ts";
 import { cloudflareTokenUrl, workerNameFromHost, type SetupResult } from "../../shared/email-setup.ts";
 import { cloudflareApi, CloudflareError, findWorkerName, listZones, runEmailSetup } from "../lib/cloudflare.ts";
@@ -20,7 +20,7 @@ async function emailStatus(c: AppContext, workspaceId: string) {
   const loaded = await loadEmailSettings(c.env.DB, workspaceId);
   if (!loaded) throw new HttpError(404, "not_found", "No widget inbox.");
   const canSend = canSendEmail(c.env);
-  const { settings } = loaded;
+  const { settings, forwarding } = loaded;
   return {
     settings,
     canSend,
@@ -28,6 +28,13 @@ async function emailStatus(c: AppContext, workspaceId: string) {
     problems: emailProblems(settings, canSend),
     // What a conversation's reply address looks like (the real ones carry a random token).
     replyExample: settings.replyDomain ? replyAddress("…", settings.replyDomain) : null,
+    // C-13: the address a support inbox forwards to (on only while email is on).
+    forwarding: {
+      enabled: forwarding.enabled && emailOn(settings, canSend),
+      address: forwarding.token && settings.replyDomain ? forwardAddress(forwarding.token, settings.replyDomain) : null,
+      lastAt: forwarding.lastAt,
+      confirmation: forwarding.confirmation,
+    },
   };
 }
 
@@ -119,6 +126,45 @@ email.post("/workspaces/:id/email/test", async (c) => {
   // A local dev server's send_email binding writes the message to a file instead of sending it.
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(new URL(c.req.url).hostname);
   return c.json({ ok: true, to, local });
+});
+
+// C-13: forward a support inbox. Turning it on makes the workspace's forwarding token (once);
+// `rotate` makes a new one, so the old address stops working; `clearConfirmation` hides Gmail's code.
+email.put("/workspaces/:id/email/forwarding", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const body = await readJson(c.req);
+  const loaded = await loadEmailSettings(c.env.DB, workspaceId);
+  if (!loaded) throw new HttpError(404, "not_found", "No widget inbox.");
+  const next = { ...loaded.forwarding };
+  if (body.enabled !== undefined) {
+    if (typeof body.enabled !== "boolean") throw new HttpError(400, "invalid_field", "Forwarding must be on or off.");
+    if (body.enabled && !emailOn(loaded.settings, canSendEmail(c.env))) throw new HttpError(400, "not_configured", "Set up email replies first: forwarded mail is answered by email.");
+    next.enabled = body.enabled;
+  }
+  if (body.rotate === true || (next.enabled && !next.token)) {
+    next.token = newReplyToken();
+    next.confirmation = null;
+  }
+  if (body.clearConfirmation === true) next.confirmation = null;
+  await c.env.DB.prepare("UPDATE inboxes SET settings = json_set(settings, '$.emailForwarding', json(?)) WHERE id = ?").bind(JSON.stringify(next), loaded.inboxId).run();
+  return c.json(await emailStatus(c, workspaceId));
+});
+
+// C-13: senders marked as spam (POST /conversations/:cid/spam adds one). Members read, admins remove.
+email.get("/workspaces/:id/email/blocked", async (c) => {
+  const workspaceId = c.req.param("id");
+  await roleIn(c, workspaceId);
+  const rows = await c.env.DB.prepare("SELECT pattern, created_at FROM blocked_senders WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 500").bind(workspaceId).all<{ pattern: string; created_at: number }>();
+  return c.json({ blocked: rows.results.map((r) => ({ pattern: r.pattern, createdAt: r.created_at })) });
+});
+
+email.delete("/workspaces/:id/email/blocked", async (c) => {
+  const workspaceId = c.req.param("id");
+  await requireAdmin(c, workspaceId);
+  const pattern = c.req.query("pattern") ?? "";
+  await c.env.DB.prepare("DELETE FROM blocked_senders WHERE workspace_id = ? AND pattern = ?").bind(workspaceId, pattern.toLowerCase()).run();
+  return c.json({ ok: true });
 });
 
 // D-111: set email up from the desk. The admin pastes a Cloudflare API token (made from the link the

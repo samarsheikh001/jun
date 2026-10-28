@@ -266,6 +266,7 @@ export function ConversationRows({ rows, columns, selected, cursor, empty, membe
                     {/* The row's link: keyboard focus, Enter and open-in-new-tab. */}
                     <a id={`conv-${c.id}`} href={deskHref(`/inbox/${c.id}`)} onFocus={() => onFocusRow(c.id)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(c.id); }}>{contactLabel(c.contact)}</a>
                     {c.contact.verified && <span className="verified" title="Identity verified by your site">✓</span>}
+                    {c.type === "ticket" && <em className="tag" title="Came in by email, to your forwarded support inbox">Email</em>}
                     {c.handling === "ai" && <em className="tag ai-tag" title="The AI assistant is answering">AI</em>}
                     {/* AI-20: opened from the customer's app with an intent (agents only). */}
                     {c.intent && <em className="tag intent-tag" title={`Opened from the customer's app with the intent "${c.intent.name}"`}>{c.intent.name}</em>}
@@ -278,6 +279,7 @@ export function ConversationRows({ rows, columns, selected, cursor, empty, membe
             {shows("Message") && (
               <td className="cv-text">
                 <span className="cv-clamp">
+                  {c.subject && <span className="cv-subject">{c.subject} · </span>}
                   {c.lastMessageAuthor === "agent" && <span className="muted">You: </span>}
                   {c.lastMessageAuthor === "ai" && <span className="muted">AI: </span>}
                   {(c.lastMessageAuthor === "ai" && c.lastMessagePreview ? markdownToPlain(c.lastMessagePreview).replace(/\s+/g, " ") : c.lastMessagePreview) || dash}

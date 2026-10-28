@@ -8,7 +8,8 @@ import { Button, buttonVariants } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
-import { CheckIcon, ExternalLinkIcon, MailIcon, SlackIcon, XIcon } from "@/components/icons";
+import { CheckIcon, CopyIcon, ExternalLinkIcon, MailIcon, SlackIcon, XIcon } from "@/components/icons";
+import { formatTime } from "../lib/thread.ts";
 import type { EmailSettings } from "../../shared/email.ts";
 import type { SlackView } from "../../shared/slack.ts";
 import { SlackChannelPage, slackLabel } from "./SlackChannel.tsx";
@@ -38,6 +39,8 @@ export interface EmailStatus {
   on: boolean;
   problems: string[];
   replyExample: string | null;
+  /** C-13: forwarding a support inbox (on only while email is on). */
+  forwarding: { enabled: boolean; address: string | null; lastAt: number | null; confirmation: { code: string; link: string | null; at: number } | null };
 }
 
 /** /channels: one card per channel (the chat widget has its own entries), saying whether it's live, each opening its own page. */
@@ -57,7 +60,7 @@ export function ChannelsOverview({ workspaceId }: { workspaceId: string }) {
         <ChannelCard
           Icon={MailIcon}
           title="Email"
-          text="Replies reach customers who left the chat by email, and their answers come back to the same conversation."
+          text="Forward your support inbox here, and email customers who left the chat. Answers by email come back to the same conversation."
           status={email === null ? null : email.on ? { label: "On", on: true } : { label: email.settings.from ? "Off" : "Not set up", on: false }}
           href="/channels/email"
         />
@@ -214,6 +217,8 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
           {status && s?.enabled && status.problems.length > 0 && <p className="error small">{status.problems.join(" ")}</p>}
         </SettingsCard>
 
+        {status && <ForwardingCard base={base} status={status} canEdit={canEdit} onChange={setStatus} />}
+
         <SettingsCard title="Do it by hand" description="Instead of connecting Cloudflare: once per domain, in the Cloudflare account this desk runs on.">
           <details>
             <summary className="small cursor-pointer">Show the steps</summary>
@@ -234,6 +239,137 @@ export function EmailChannelPage({ workspaceId, workspaceName, canEdit }: { work
         </SettingsCard>
       </div>
     </div>
+  );
+}
+
+/** Which mail service the forwarding steps are for. */
+const FORWARD_STEPS: { id: string; label: string; steps: ReactNode[] }[] = [
+  {
+    id: "gmail",
+    label: "Gmail",
+    steps: [
+      <>In Gmail, open Settings → See all settings → Forwarding and POP/IMAP → Add a forwarding address, and paste the address above.</>,
+      <>Gmail emails a confirmation code to that address. It shows up here, on this page, within a minute: type it into Gmail (or open its link).</>,
+      <>Choose "Forward a copy of incoming mail to" the address, and save.</>,
+    ],
+  },
+  {
+    id: "workspace",
+    label: "Google Workspace",
+    steps: [
+      <>An admin opens admin.google.com → Apps → Google Workspace → Gmail → Routing, and adds a rule for the support mailbox.</>,
+      <>Under "Also deliver to", add the address above. No confirmation code is needed this way.</>,
+    ],
+  },
+  {
+    id: "microsoft",
+    label: "Microsoft 365",
+    steps: [
+      <>Microsoft 365 blocks forwarding to outside addresses until an admin allows it (the sender gets error 5.7.520). In Microsoft Defender, open Email &amp; collaboration → Policies → Anti-spam → the outbound policy, and set Automatic forwarding to On, for everyone or in a policy for just the support mailbox.</>,
+      <>Then in Outlook, for the support mailbox: Settings → Mail → Forwarding, turn it on and paste the address above. Keep a copy if people still read that mailbox.</>,
+    ],
+  },
+  {
+    id: "other",
+    label: "Other",
+    steps: [<>Add a rule in your mail service that forwards (or redirects) every email for the support address to the address above. Services call it forwarding, an alias or a routing rule.</>],
+  },
+];
+
+/**
+ * C-13: forward a support inbox. The address to forward to, how to set it up per mail service, whether
+ * mail is arriving, Gmail's confirmation code when it comes, and the senders marked as spam.
+ */
+function ForwardingCard({ base, status, canEdit, onChange }: { base: string; status: EmailStatus; canEdit: boolean; onChange: (s: EmailStatus) => void }) {
+  const save = useAction();
+  const [provider, setProvider] = useState("gmail");
+  const [copied, setCopied] = useState(false);
+  const [blocked, setBlocked] = useState<{ pattern: string; createdAt: number }[] | null>(null);
+  const f = status.forwarding;
+  useEffect(() => {
+    if (f.enabled) api<{ blocked: { pattern: string; createdAt: number }[] }>(`${base}/blocked`).then((r) => setBlocked(r.blocked), () => {});
+  }, [base, f.enabled]);
+  // Waiting on the first email (or Gmail's code): look again every 10 s.
+  useEffect(() => {
+    if (!f.enabled || f.lastAt) return;
+    const timer = setInterval(() => api<EmailStatus>(base).then(onChange, () => {}), 10_000);
+    return () => clearInterval(timer);
+  }, [base, f.enabled, f.lastAt, onChange]);
+  const put = (body: Record<string, unknown>) => save.run(async () => onChange(await api<EmailStatus>(`${base}/forwarding`, { method: "PUT", body })));
+  const copy = async () => {
+    if (!f.address) return;
+    await navigator.clipboard.writeText(f.address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const unblock = (pattern: string) => save.run(async () => {
+    await api(`${base}/blocked?pattern=${encodeURIComponent(pattern)}`, { method: "DELETE" });
+    setBlocked((list) => list?.filter((b) => b.pattern !== pattern) ?? null);
+  });
+  const steps = FORWARD_STEPS.find((p) => p.id === provider)!;
+  return (
+    <SettingsCard
+      title="Forward your support inbox"
+      description={<>
+        Mail to your support address (like support@) becomes a conversation here. The AI and your team answer it, and the answer goes back by email from the address above,
+        so customers keep writing to the address they know.{!status.on && " Turn on email replies first."}
+      </>}
+      action={<Badge variant={f.enabled ? "default" : "secondary"}>{f.enabled ? (f.lastAt ? "Receiving" : "Waiting for mail") : "Off"}</Badge>}
+    >
+      <SettingRow label="Forward support mail here" description="Off: the address stops taking mail.">
+        <Switch checked={f.enabled} disabled={!canEdit || !status.on || save.busy} onCheckedChange={(enabled) => put({ enabled })} aria-label="Forward a support inbox" />
+      </SettingRow>
+      {f.enabled && f.address && (
+        <div className="space-y-4 pt-2">
+          <div>
+            <p className="small mb-1">Forward to this address:</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="rounded-md bg-muted px-2 py-1.5 small break-all">{f.address}</code>
+              <Button type="button" variant="outline" size="sm" onClick={() => void copy()}><CopyIcon />{copied ? "Copied" : "Copy"}</Button>
+            </div>
+            <p className="muted small mt-1">
+              {f.lastAt ? <>Last email {formatTime(f.lastAt)}.</> : <>Nothing has arrived yet; this page checks every few seconds.</>} Keep the address private: anyone who has it can open tickets.
+            </p>
+          </div>
+          {f.confirmation && (
+            <div className="rounded-lg border p-3 small" role="status">
+              <p><strong>Gmail's confirmation code: <code>{f.confirmation.code}</code></strong> (arrived {formatTime(f.confirmation.at)})</p>
+              <p className="muted mt-1">Type it into Gmail's forwarding settings{f.confirmation.link ? <>, or <a href={f.confirmation.link} target="_blank" rel="noreferrer">open Gmail's link</a></> : null}, then choose to forward a copy of incoming mail.</p>
+              {canEdit && <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => put({ clearConfirmation: true })}>Done</Button>}
+            </div>
+          )}
+          <div>
+            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Your mail service">
+              {FORWARD_STEPS.map((p) => (
+                <Button key={p.id} type="button" size="sm" variant={p.id === provider ? "default" : "ghost"} role="tab" aria-selected={p.id === provider} onClick={() => setProvider(p.id)}>{p.label}</Button>
+              ))}
+            </div>
+            <ol className="mt-2 list-decimal space-y-2 pl-5 small">
+              {steps.steps.map((step, i) => <li key={i}>{step}</li>)}
+            </ol>
+          </div>
+          {blocked && blocked.length > 0 && (
+            <div>
+              <p className="small mb-1">Marked as spam (their mail is dropped):</p>
+              <ul className="space-y-1 small">
+                {blocked.map((b) => (
+                  <li key={b.pattern} className="flex items-center gap-2">
+                    <code>{b.pattern}</code>
+                    {canEdit && <Button type="button" variant="ghost" size="sm" disabled={save.busy} onClick={() => unblock(b.pattern)}>Unblock</Button>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {canEdit && (
+            <Button type="button" variant="outline" size="sm" disabled={save.busy} onClick={() => { if (confirm("Make a new address? The old one stops working, so update your forwarding rule too.")) put({ rotate: true }); }}>
+              New address
+            </Button>
+          )}
+        </div>
+      )}
+      {save.error && <p className="error small">{save.error}</p>}
+    </SettingsCard>
   );
 }
 

@@ -39,7 +39,7 @@ The Worker's `email()` handler gets a new first branch: the `to` address is `rep
 A public support address gets junk, and every message the AI answers costs tokens, so:
 
 - Email Routing's SPF/DKIM/DMARC checks run first (above). `isAutomatic` drops bulk mail.
-- **Rate limits:** at most 10 new tickets an hour from one address, and 300 a day per workspace (numbers to tune). Mail over a limit is still kept, as a closed ticket marked "Over the limit". Nothing is lost, the AI doesn't answer it, and nobody is paged.
+- **Rate limits:** at most 10 new tickets an hour from one address, and 300 a day per workspace (numbers to tune). *Built (D-153):* mail over a limit is dropped with a log line, not kept as a closed ticket; either way nothing is answered.
 - **Mark as spam** on a ticket: closes it, hides it from the inbox, and blocks the sender's address (or their whole domain, as a choice) for this workspace. Mail from a blocked sender is accepted and dropped, never bounced, so spammers learn nothing.
 - **The AI doesn't answer** a sender's first mail while it looks like spam. A cheap check on the first message only (e.g. the existing topic or intent call is asked one extra yes/no question) puts it in the team's queue instead. *(Open question: build this in v1 or wait until spam is a real problem? See §7.)*
 - **Loops:** our mail carries `Auto-Submitted: auto-generated` and `X-Jun-Desk`, and inbound drops both. A ticket gets at most 20 emails a day (`MAX_EMAILS_PER_DAY`) and takes at most 30 inbound an hour (`MAX_INBOUND_PER_HOUR`), as today.

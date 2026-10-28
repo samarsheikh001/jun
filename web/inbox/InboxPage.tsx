@@ -23,6 +23,7 @@ import type { Hub } from "../Shell.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { SelectField, SelectOption } from "@/components/ui/select-field.tsx";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 
 /** The composer's saved-reply / @mention popup: focus stays in the textarea, so no tab stop. */
@@ -179,7 +180,7 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
   const memberName = useCallback((id: string | null) => (id ? members.find((m) => m.id === id)?.name ?? "Teammate" : ""), [members]);
   const shown = useMemo(() => {
     if (!list) return null;
-    const filtered = search.trim() ? list.filter((c) => matchesFilter(search, [contactLabel(c.contact), c.contact.email, c.lastMessagePreview, c.topic?.name, ...c.tags])) : list;
+    const filtered = search.trim() ? list.filter((c) => matchesFilter(search, [contactLabel(c.contact), c.contact.email, c.subject, c.lastMessagePreview, c.topic?.name, ...c.tags])) : list;
     return sortConversations(filtered, sort, memberName);
   }, [list, search, sort, memberName]);
 
@@ -474,6 +475,15 @@ function Thread({
     }
   };
 
+  // C-13: an email ticket's sender (or their domain) blocked, and the ticket closed.
+  const markSpam = async (scope: "address" | "domain") => {
+    try {
+      setConversation((await api<{ conversation: ConversationSummary }>(`/conversations/${conversationId}/spam`, { method: "POST", body: { scope } })).conversation);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const setTags = async (next: string[]) => {
     try {
       setConversation((await api<{ conversation: ConversationSummary }>(`/conversations/${conversationId}/tags`, { method: "PUT", body: { tags: next } })).conversation);
@@ -543,7 +553,9 @@ function Thread({
             <CsatBadge rating={conversation.csat.rating} />
             <IntentBadge intent={conversation.intent} />
           </div>
+          {conversation.subject && <div className="cv-drawer-subject">{conversation.subject}</div>}
           <div className="cv-drawer-meta">
+            {conversation.type === "ticket" && <span title="Came in by email, to your forwarded support inbox">By email ·</span>}
             <span>{thread.state === "open" ? "Live" : thread.state === "connecting" ? "Connecting…" : "Reconnecting…"}</span>
             <span>· started {formatTime(conversation.createdAt)}</span>
             {conversation.topic && <span title="Topic, labelled by the AI">· {conversation.topic.name}</span>}
@@ -564,6 +576,15 @@ function Thread({
           <SelectOption value="resolved">Resolved</SelectOption>
         </SelectField>
         {conversation.status !== "resolved" && <Button size="sm" onClick={() => void update({ status: "resolved" })}>Resolve</Button>}
+        {conversation.type === "ticket" && conversation.contact.email && (
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />}>Spam</DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void markSpam("address")}>Block {conversation.contact.email}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void markSpam("domain")}>Block everyone at {conversation.contact.email.slice(conversation.contact.email.lastIndexOf("@"))}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <span className="issue-button">
           <Button variant="outline" size="sm" disabled={configuredProviders(trackers).length === 0} title={configuredProviders(trackers).length ? "Draft an issue from this conversation" : "Connect GitHub or Linear in Settings first"} onClick={() => setIssueOpen(true)}>
             Create issue
