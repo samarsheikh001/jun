@@ -37,6 +37,7 @@ import { newId } from "./lib/crypto.ts";
 import { EMAIL_IDS_KEY, emailUnseenReplies, EmailSendError, type InboundEmail } from "./lib/email.ts";
 import { EMAIL_DELAY_MS, MAX_INBOUND_PER_HOUR } from "../shared/email.ts";
 import { notifyTeam } from "./lib/notify.ts";
+import { runSlackJob, type SlackJob } from "./lib/slack.ts";
 import { loadToolSecrets, secretScrubber } from "./lib/tool-secrets.ts";
 
 /** Who is on the other end of a socket or RPC call. The Worker authenticates before forwarding. */
@@ -102,6 +103,8 @@ const EMAIL_DUE_KEY = "email:due";
 const EMAIL_FIRST_KEY = "email:first";
 /** C-02: emails in from the customer this hour. */
 const EMAIL_IN_KEY = "email:in";
+/** C-09: this chat has a Slack thread (so its messages and card changes are worth a look). */
+const SLACK_THREAD_KEY = "slack:thread";
 /** A visitor socket that hasn't pinged for this long (clients ping every 30 s) is a closed tab. */
 const VISITOR_GONE_MS = 75_000;
 const MAX_WIDGET_CHANGES = 200;
@@ -143,6 +146,8 @@ export class Conversation extends DurableObject<Env> {
   /** D-128: when the last `reply` signal went to the visitor's loader, and whether one is waiting. */
   #signaledAt = 0;
   #signalPending = false;
+  /** C-09: the chain Slack jobs run on. */
+  #slack: Promise<void> = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -344,6 +349,19 @@ ${email.body}`;
       return this.addNote(ref, body, email.clientMsgId);
     }
     await this.#addMessage(ref, { role: "visitor", contactId }, { clientMsgId: email.clientMsgId, body: email.body, attachments: email.attachments }, { via: "email" });
+  }
+
+  /**
+   * RPC (C-09): a teammate's reply in the chat's Slack thread, as them (matched by email). It's marked
+   * `via: "slack"` so it isn't posted back into the thread.
+   */
+  async receiveSlack(refIn: ConversationRef, participant: Participant & { role: "agent" }, input: { clientMsgId: string; body: string }): Promise<SendResult> {
+    try {
+      return { ok: true, message: await this.#addMessage(this.#bind(refIn), participant, input, { via: "slack" }) };
+    } catch (error) {
+      if (error instanceof SendError) return { ok: false, code: error.code, message: error.message };
+      throw error;
+    }
   }
 
   /** RPC (I-02): a new chat went straight to the team (AI off): give it to an online teammate if the workspace uses round robin. */
@@ -705,6 +723,7 @@ ${email.body}`;
     this.ctx.waitUntil(this.#publish(ref));
     if (!internal && (input.authorType === "agent" || input.authorType === "ai")) this.#scheduleEmail();
     if (!internal && input.authorType !== "visitor") this.ctx.waitUntil(this.#signalVisitor(ref));
+    this.#toSlack(ref, { kind: "message", message });
     return { message, created: true };
   }
 
@@ -1172,6 +1191,8 @@ ${email.body}`;
    * I-14: notify the assignee, or, if it's still unassigned, everyone who wants to know.
    */
   async #autoAssign(ref: ConversationRef): Promise<void> {
+    // C-09: the chat's Slack thread, if the workspace has Slack.
+    this.#toSlack(ref, { kind: "open" });
     try {
       const picked = await autoAssign(this.env, ref);
       if (picked) {
@@ -1378,9 +1399,28 @@ ${email.body}`;
     }
   }
 
+  /**
+   * C-09 (D-152): Slack work for this chat, one job after another (so its thread opens once and
+   * messages arrive in order). Until a thread is open, only what can open one is looked at (a handoff,
+   * or a visitor's message for 'all'), so workspaces without Slack pay nothing for the rest.
+   */
+  #toSlack(ref: ConversationRef, job: SlackJob): void {
+    const threaded = this.ctx.storage.kv.get<boolean>(SLACK_THREAD_KEY) === true;
+    if (!threaded && job.kind === "card") return;
+    if (!threaded && job.kind === "message" && job.message.authorType !== "visitor") return;
+    this.#slack = this.#slack
+      .then(() => runSlackJob(this.env, ref, job))
+      .then((done) => {
+        if (done.opened) this.ctx.storage.kv.put(SLACK_THREAD_KEY, true);
+      })
+      .catch((error) => console.error("slack", error));
+    this.ctx.waitUntil(this.#slack);
+  }
+
   async #publish(ref: ConversationRef): Promise<void> {
     const conversation = await loadSummary(this.env.DB, ref.conversationId);
     if (!conversation) return;
+    this.#toSlack(ref, { kind: "card" });
     this.#broadcast({ type: "conversation", conversation }, { agentsOnly: true });
     this.#broadcast({ type: "conversation", conversation: forVisitor(conversation) }, { visitorsOnly: true });
     await this.env.WORKSPACE_HUB.getByName(ref.workspaceId).publish({ type: "conversation", conversation });

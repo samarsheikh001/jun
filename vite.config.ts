@@ -134,7 +134,7 @@ function buildWidget(): Plugin {
 // Builds the dashboard (index.html), the widget frame (widget.html) and the Worker
 // (worker/) together; `vite dev` runs them in the Workers runtime with local D1,
 // R2 and Durable Objects. public/ (widget.js loader, demo.html) is copied; widget.js gets minified.
-const TEST_VARS = ["JUN_EMAIL_DELAY_MS", "JUN_TELEMETRY_URL"];
+const TEST_VARS = ["JUN_EMAIL_DELAY_MS", "JUN_TELEMETRY_URL", "SLACK_API_URL"];
 
 export default defineConfig({
   // JUN_STATE_DIR gives a separate local database (used by the e2e tests so they don't

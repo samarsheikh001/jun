@@ -6,6 +6,7 @@ import { requireUser } from "../auth/session.ts";
 import type { ConversationRef, Participant } from "../conversation.ts";
 import { loadDebugContext, loadIssues, loadMessages, loadSummary, SUMMARY_SELECT, toSummary, type SummaryRow } from "../lib/conversations.ts";
 import { connectConversation, connectHub, notifyConversationChanged, sendMessage } from "../lib/realtime.ts";
+import { changeConversation, STATUSES } from "../lib/conversation-change.ts";
 import { notifyTeam } from "../lib/notify.ts";
 import { newId } from "../lib/crypto.ts";
 import { applyInboxPatch } from "../lib/inbox-settings.ts";
@@ -16,8 +17,6 @@ import { object, readJson } from "../lib/validate.ts";
 import { HttpError, type AppContext, type AppEnv } from "../types.ts";
 import { storeUpload } from "./files.ts";
 import { secretScrubber } from "../lib/tool-secrets.ts";
-
-const STATUSES: ConversationStatus[] = ["open", "pending", "snoozed", "resolved"];
 
 export async function requireMember(c: AppContext, workspaceId: string): Promise<void> {
   const row = await c.env.DB.prepare("SELECT 1 FROM members WHERE workspace_id = ? AND user_id = ?").bind(workspaceId, c.get("user").id).first();
@@ -227,50 +226,8 @@ conversations.get("/conversations/:cid/actions", async (c) => {
 conversations.patch("/conversations/:cid", async (c) => {
   const ref = await requireConversation(c, c.req.param("cid"));
   const body = await readJson(c.req);
-  const sets: string[] = [];
-  const params: unknown[] = [];
-
-  if (body.status !== undefined) {
-    if (!STATUSES.includes(body.status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
-    // W-12: becoming resolved starts a new round the visitor can rate, unless they already rated
-    // this round and haven't written since (pending → resolved again doesn't ask twice).
-    sets.push(
-      `resolution = resolution + (CASE WHEN status != 'resolved' AND ? = 'resolved' AND NOT (
-         csat_resolution IS NOT NULL AND csat_resolution = resolution AND NOT EXISTS (
-           SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND m.author_type = 'visitor' AND m.created_at > conversations.csat_at)
-       ) THEN 1 ELSE 0 END)`,
-      "status = ?",
-    );
-    params.push(body.status, body.status);
-  }
-  let newAssignee: string | null = null;
-  if (body.assigneeId !== undefined) {
-    if (body.assigneeId !== null) {
-      const member = await c.env.DB.prepare("SELECT 1 FROM members WHERE workspace_id = ? AND user_id = ?").bind(ref.workspaceId, String(body.assigneeId)).first();
-      if (!member) throw new HttpError(400, "invalid_field", "Assignee must be a member of this workspace.");
-      // I-14: tell them, unless it was already theirs (or they assigned themselves: the actor is never notified).
-      const current = await c.env.DB.prepare("SELECT assignee_id FROM conversations WHERE id = ?").bind(ref.conversationId).first<{ assignee_id: string | null }>();
-      if (current?.assignee_id !== body.assigneeId) newAssignee = String(body.assigneeId);
-    }
-    sets.push("assignee_id = ?");
-    params.push(body.assigneeId);
-  }
-  if (body.handling !== undefined) {
-    // "Hand back to AI" (or take over without replying).
-    if (body.handling !== "ai" && body.handling !== "human") throw new HttpError(400, "invalid_field", "handling must be ai or human.");
-    sets.push("handling = ?");
-    params.push(body.handling);
-  }
-  if (sets.length === 0) throw new HttpError(400, "invalid_body", "Nothing to change.");
-
-  await c.env.DB.prepare(`UPDATE conversations SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`)
-    .bind(...params, Date.now(), ref.conversationId)
-    .run();
-  await notifyConversationChanged(c.env, ref);
-  if (newAssignee) {
-    const me = c.get("user");
-    c.executionCtx.waitUntil(notifyTeam(c.env, ref, { kind: "assigned", actorId: me.id, targets: [newAssignee] }, { by: me.name }));
-  }
+  const me = c.get("user");
+  await changeConversation(c.env, ref, body, { id: me.id, name: me.name }, (p) => c.executionCtx.waitUntil(p));
   return c.json({ conversation: await loadSummary(c.env.DB, ref.conversationId) });
 });
 

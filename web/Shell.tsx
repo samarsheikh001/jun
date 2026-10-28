@@ -33,7 +33,7 @@ import { STEP_ORDER, useOnboarding, WelcomePage } from "./welcome/WelcomePage.ts
 import { GetStartedCard } from "./welcome/GetStartedCard.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { ConnectPage } from "./connect/ConnectPage.tsx";
-import { CHANNEL_SECTIONS, channelSection, ChannelsOverview, EmailChannelPage } from "./channels/ChannelsPage.tsx";
+import { CHANNEL_SECTIONS, channelSection, ChannelsOverview, EmailChannelPage, SlackChannelPage } from "./channels/ChannelsPage.tsx";
 import { WorkspaceSwitcher, WorkspaceSwitcherSkeleton } from "./workspaces/WorkspaceSwitcher.tsx";
 import { currentWorkspace, goHome, switchWorkspace } from "./workspaces/workspace.ts";
 
@@ -651,6 +651,8 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       ) : section === "channels" ? (
         channelSection(pagePath) === "email" ? (
           <EmailChannelPage workspaceId={workspace.workspaceId} workspaceName={workspace.workspaceName} canEdit={canEdit} />
+        ) : channelSection(pagePath) === "slack" ? (
+          <SlackChannelPage workspaceId={workspace.workspaceId} canEdit={canEdit} />
         ) : (
           <ChannelsOverview workspaceId={workspace.workspaceId} />
         )

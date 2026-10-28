@@ -8,6 +8,7 @@ import { SOCKET_PROTOCOL, type HubClientEvent, type HubEvent, type LiveClientEve
 import { upsertIdentified } from "./lib/contacts.ts";
 import { newId } from "./lib/crypto.ts";
 import { IdentityError, verifyIdentityToken } from "./lib/identity.ts";
+import type { SlackKeys, SlackUser } from "./lib/slack-api.ts";
 import { generateVapidKeys, pushTopic, sendPush, type PushOutcome, type VapidKeys } from "./lib/webpush.ts";
 
 export const HUB_USER_HEADER = "x-jun-user";
@@ -216,6 +217,42 @@ export class WorkspaceHub extends DurableObject<Env> {
   async setCloudflareToken(value: string | null): Promise<void> {
     if (value) await this.ctx.storage.put("cloudflare-token", value);
     else await this.ctx.storage.delete("cloudflare-token");
+  }
+
+  /**
+   * RPC (C-09, D-152): the workspace's Slack bot token and signing secret, from Channels → Slack.
+   * Kept here like the Cloudflare token: never D1, never returned by the API.
+   */
+  async slackKeys(): Promise<SlackKeys | null> {
+    return (await this.ctx.storage.get<SlackKeys>("slack-keys")) ?? null;
+  }
+
+  /** RPC (C-09): save or (null) remove the Slack keys (and what was cached with them). */
+  async setSlackKeys(value: SlackKeys | null): Promise<void> {
+    if (value) await this.ctx.storage.put("slack-keys", value);
+    else await this.ctx.storage.delete("slack-keys");
+    for (const key of (await this.ctx.storage.list({ prefix: "slack-user:" })).keys()) await this.ctx.storage.delete(key);
+  }
+
+  /**
+   * RPC (C-09): true the first time an event id is seen (Slack retries an event it thinks we missed;
+   * the id is unique across workspaces). Remembers the last 1,000.
+   */
+  async slackEventIsNew(eventId: string): Promise<boolean> {
+    const seen = this.ctx.storage.kv.get<string[]>("slack-events") ?? [];
+    if (seen.includes(eventId)) return false;
+    this.ctx.storage.kv.put("slack-events", [...seen, eventId].slice(-1000));
+    return true;
+  }
+
+  /** RPC (C-09): a Slack user's name and email, cached for a day (users.info is rate limited). */
+  async slackUser(userId: string): Promise<SlackUser | null> {
+    const hit = await this.ctx.storage.get<SlackUser & { at: number }>(`slack-user:${userId}`);
+    return hit && Date.now() - hit.at < 86_400_000 ? { name: hit.name, email: hit.email } : null;
+  }
+
+  async setSlackUser(userId: string, user: SlackUser): Promise<void> {
+    await this.ctx.storage.put(`slack-user:${userId}`, { ...user, at: Date.now() });
   }
 
   /**

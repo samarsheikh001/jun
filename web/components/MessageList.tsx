@@ -206,7 +206,7 @@ export function MessageList({
     const done = m.meta.widgetAction?.tool?.done;
     const row = (
       <div key={m.clientMsgId} className={`msg ${own ? "own" : "other"} ${m.authorType === "ai" ? "ai" : ""} ${m.internal ? "note" : ""}`} data-anchor={anchors && own ? m.clientMsgId : undefined}>
-        {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}{m.meta.via === "email" && " · by email"}</div>}
+        {showAuthor && <div className="author muted small">{m.internal && <span className="tag note-tag">Note</span>}{authorLabel(m)} · {formatTime(m.createdAt)}{m.meta.via === "email" && " · by email"}{m.meta.via === "slack" && " · from Slack"}</div>}
         {m.authorType === "ai" && actionsFor(m.clientMsgId)}
         {m.authorType === "ai" && m.meta.widgets?.map((w) => (
           <div key={w.id} className="ai-widget" title={`Card: widgets/${w.name}.widget`}>

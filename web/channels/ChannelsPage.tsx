@@ -10,20 +10,25 @@ import { Skeleton, SkelText } from "@/components/ui/skeleton.tsx";
 import { Switch } from "@/components/ui/switch.tsx";
 import { CheckIcon, ExternalLinkIcon, MailIcon, SlackIcon, XIcon } from "@/components/icons";
 import type { EmailSettings } from "../../shared/email.ts";
+import type { SlackView } from "../../shared/slack.ts";
+import { SlackChannelPage, slackLabel } from "./SlackChannel.tsx";
+
+export { SlackChannelPage };
 import { CLOUDFLARE_TOKEN_PERMISSIONS, type SetupResult, type SetupStep } from "../../shared/email-setup.ts";
 
 // The Channels group (sidebar): ways customers reach the desk besides the chat widget, which keeps its
 // own Chat widget and Appearance entries (D-112). Email (C-02) is /channels/email; /channels lists them.
 
-export type ChannelSection = "overview" | "email";
+export type ChannelSection = "overview" | "email" | "slack";
 
 export const CHANNEL_SECTIONS: { id: Exclude<ChannelSection, "overview">; label: string; path: string }[] = [
   { id: "email", label: "Email", path: "/channels/email" },
+  { id: "slack", label: "Slack", path: "/channels/slack" },
 ];
 
 /** Which Channels page a path shows. */
 export function channelSection(path: string): ChannelSection {
-  return path.startsWith("/channels/email") ? "email" : "overview";
+  return path.startsWith("/channels/email") ? "email" : path.startsWith("/channels/slack") ? "slack" : "overview";
 }
 
 /** GET /workspaces/:id/email. */
@@ -38,8 +43,10 @@ export interface EmailStatus {
 /** /channels: one card per channel (the chat widget has its own entries), saying whether it's live, each opening its own page. */
 export function ChannelsOverview({ workspaceId }: { workspaceId: string }) {
   const [email, setEmail] = useState<EmailStatus | null>(null);
+  const [slack, setSlack] = useState<SlackView | null>(null);
   useEffect(() => {
     api<EmailStatus>(`/workspaces/${workspaceId}/email`).then(setEmail, () => {});
+    api<SlackView>(`/workspaces/${workspaceId}/slack`).then(setSlack, () => {});
   }, [workspaceId]);
   return (
     <div className="page-tabs">
@@ -54,7 +61,13 @@ export function ChannelsOverview({ workspaceId }: { workspaceId: string }) {
           status={email === null ? null : email.on ? { label: "On", on: true } : { label: email.settings.from ? "Off" : "Not set up", on: false }}
           href="/channels/email"
         />
-        <ChannelCard Icon={SlackIcon} title="Slack" text="Answer customers in shared Slack channels, and reply to handed-off chats from Slack." status={{ label: "Coming soon", on: false }} />
+        <ChannelCard
+          Icon={SlackIcon}
+          title="Slack"
+          text="Chats that need a person open a thread in your team's Slack channel. Reply in the thread to answer the customer."
+          status={slack === null ? null : slackLabel(slack)}
+          href="/channels/slack"
+        />
       </div>
       </div>
     </div>

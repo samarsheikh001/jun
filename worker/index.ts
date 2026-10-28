@@ -18,6 +18,8 @@ import { onboarding } from "./routes/onboarding.ts";
 import { visitors } from "./routes/visitors.ts";
 import { workspaces } from "./routes/workspaces.ts";
 import { desk } from "./routes/desk.ts";
+import { slack } from "./routes/slack.ts";
+import { handleSlackActions, handleSlackEvents } from "./lib/slack.ts";
 import { sendTelemetry } from "./lib/telemetry.ts";
 import { agent } from "./routes/agent.ts";
 import { frameAncestors } from "./lib/origins.ts";
@@ -36,7 +38,8 @@ const app = new Hono<AppEnv>().basePath("/api");
 // and, when the browser says where they came from, come from this origin.
 // The loader's nudge request is the exception: it comes from customers' sites (any origin),
 // carries no cookies or tokens, and is sent as text/plain so browsers skip a CORS preflight.
-const PUBLIC_CROSS_ORIGIN = /^\/api\/widget\/[^/]+\/nudge$/;
+// So are Slack's calls (C-09): form-encoded, no cookies, checked by their signature instead.
+const PUBLIC_CROSS_ORIGIN = /^\/api\/(widget\/[^/]+\/nudge|slack\/[^/]+\/(events|actions))$/;
 
 app.use("*", async (c, next) => {
   if (c.req.method !== "GET" && c.req.method !== "HEAD" && !PUBLIC_CROSS_ORIGIN.test(new URL(c.req.url).pathname)) {
@@ -53,6 +56,9 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true }));
+// C-09: Slack's Events API and interactivity for a workspace's Slack app (signature-checked).
+app.post("/slack/:ws/events", (c) => handleSlackEvents(c.env, c.executionCtx as ExecutionContext, c.req.param("ws"), c.req.raw));
+app.post("/slack/:ws/actions", (c) => handleSlackActions(c.env, c.executionCtx as ExecutionContext, c.req.param("ws"), c.req.raw));
 // Used only by public/demo.html to show P1: a request that fails like a real bug would.
 app.post("/demo/billing", (c) => c.json({ error: { code: "payment_provider_timeout", message: "Upstream payment provider timed out" } }, 500));
 app.route("/", auth);
@@ -73,6 +79,7 @@ app.route("/", notifications);
 app.route("/", email);
 app.route("/", home);
 app.route("/", desk);
+app.route("/", slack);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "No such API route." } }, 404));
 
