@@ -46,6 +46,7 @@ export async function deskFacts(db: D1Database, now = Date.now()): Promise<DeskF
     count(`SELECT COUNT(*) FROM ai_actions WHERE created_at >= ? AND tool NOT IN (${marks})`, since, ...PAGE_CONTROL_TOOLS),
     count("SELECT COUNT(*) FROM api_tokens"),
     count("SELECT COUNT(*) FROM conversation_issues"),
+    count("SELECT COUNT(*) FROM slack_connections WHERE status = 'connected' AND channel_id IS NOT NULL"),
   ]);
   const n = (i: number) => Number(results[i]?.results[0]?.n ?? 0) || 0;
   const providers = String(results[4]?.results[0]?.n ?? "").split(",").filter(Boolean);
@@ -59,6 +60,7 @@ export async function deskFacts(db: D1Database, now = Date.now()): Promise<DeskF
   if (n(9)) features.push("actions");
   if (n(10)) features.push("mcp");
   if (n(11)) features.push("issues");
+  if (n(12)) features.push("slack");
   return {
     workspaces: n(0),
     members: n(1),

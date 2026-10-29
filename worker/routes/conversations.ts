@@ -114,6 +114,8 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   const topic = c.req.query("topic"); // A-02: a topic id
   const rating = c.req.query("rating"); // W-12: "good" | "bad", the latest rating
   if (rating !== undefined && rating !== "good" && rating !== "bad") throw new HttpError(400, "invalid_field", "rating must be good or bad.");
+  const type = c.req.query("type"); // C-13: "chat" | "ticket" (a forwarded email)
+  if (type !== undefined && type !== "chat" && type !== "ticket") throw new HttpError(400, "invalid_field", "type must be chat or ticket.");
   if (status !== "all" && !STATUSES.includes(status as ConversationStatus)) throw new HttpError(400, "invalid_field", "Unknown status.");
 
   // The other filters apply to the per-status counts too (the inbox's tabs); status only to the rows.
@@ -139,6 +141,10 @@ conversations.get("/workspaces/:id/conversations", async (c) => {
   if (rating) {
     where.push("c.csat_rating = ?");
     params.push(rating);
+  }
+  if (type) {
+    where.push("c.type = ?");
+    params.push(type);
   }
   // D-135: the assistant's @ list searches as typed instead of filtering the latest 100 in the browser.
   const q = (c.req.query("q") ?? "").trim().slice(0, 100);

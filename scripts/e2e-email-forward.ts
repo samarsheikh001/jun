@@ -97,6 +97,12 @@ await step("a forwarded email becomes a ticket from the customer in From:, unver
   assert.match(first.body, /^The export has been stuck at 99% since this morning\./);
   assert.equal(first.meta.via, "email");
   assert.ok(msgs.some((m) => m.internal && m.body.startsWith(`Also sent to: lee-${run}@globex.test`)), "Cc'd people are a note");
+  // The inbox's Chats / Emails filter.
+  const listed = async (type: string) => (await owner.call(`/workspaces/${workspaceId}/conversations?status=all&type=${type}`));
+  const emails = await listed("ticket");
+  assert.ok((emails.json.conversations as { id: string; type: string }[]).some((x) => x.id === ticketId && x.type === "ticket"));
+  assert.ok(!((await listed("chat")).json.conversations as { id: string }[]).some((x) => x.id === ticketId));
+  assert.equal((await listed("fax")).status, 400);
   // A retried delivery is the same message, not a second ticket.
   assert.equal((await deliver(forwarder, address, forwarded(customer, `m1-${run}`, "The export has been stuck at 99% since this morning."))).status, 200);
   assert.equal((await tickets(customer)).length, 1);

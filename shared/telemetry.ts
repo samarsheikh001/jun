@@ -8,7 +8,7 @@ export const TELEMETRY_URL = "https://telemetry.jun.so/v1/ping";
 export const TELEMETRY_DOCS = "https://github.com/samarsheikh001/jun#anonymous-usage-ping";
 
 /** Features a desk can report as in use: on in at least one workspace. */
-export const TELEMETRY_FEATURES = ["ai", "knowledge", "email", "whatsapp", "identity", "pageControl", "actions", "mcp", "issues"] as const;
+export const TELEMETRY_FEATURES = ["ai", "knowledge", "email", "whatsapp", "identity", "pageControl", "actions", "mcp", "issues", "slack"] as const;
 export type TelemetryFeature = (typeof TELEMETRY_FEATURES)[number];
 
 export const AI_PROVIDERS = ["workers-ai", "openai", "chatgpt"] as const;

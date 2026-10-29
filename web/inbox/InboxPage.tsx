@@ -38,6 +38,7 @@ function SuggestScroller({ className, children }: { className: string; children:
 type StatusFilter = ConversationStatus | "all";
 type AssigneeFilter = "all" | "me" | "unassigned" | "mentions";
 type RatingFilter = CsatRating | "";
+type TypeFilter = ConversationSummary["type"] | "";
 interface Member { id: string; name: string }
 interface Tag { id: string; name: string; conversations: number }
 interface Topic { id: string; name: string; conversations: number }
@@ -81,6 +82,7 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
   const [assignee, setAssignee] = useState<AssigneeFilter>(initialAssignee);
   const [tagFilter, setTagFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>(initialRating);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
   const [list, setList] = useState<ConversationSummary[] | null>(null);
   // Per-status totals for the tabs, under the other filters (from the server, not just the loaded rows).
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
@@ -109,13 +111,14 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
       (tagFilter === "" || c.tags.some((t) => t.toLowerCase() === tagFilter.toLowerCase())) &&
       (topicFilter === "" || c.topic?.id === topicFilter) &&
       (ratingFilter === "" || c.csat.rating === ratingFilter) &&
+      (typeFilter === "" || c.type === typeFilter) &&
       (assignee === "all" || assignee === "mentions" || (assignee === "me" ? c.assigneeId === me.id : c.assigneeId === null)),
-    [status, assignee, tagFilter, topicFilter, ratingFilter, me.id],
+    [status, assignee, tagFilter, topicFilter, ratingFilter, typeFilter, me.id],
   );
 
   const query = useMemo(
-    () => new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(topicFilter ? { topic: topicFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}) }).toString(),
-    [status, assignee, tagFilter, topicFilter, ratingFilter],
+    () => new URLSearchParams({ status, ...(assignee !== "all" ? { assignee } : {}), ...(tagFilter ? { tag: tagFilter } : {}), ...(topicFilter ? { topic: topicFilter } : {}), ...(ratingFilter ? { rating: ratingFilter } : {}), ...(typeFilter ? { type: typeFilter } : {}) }).toString(),
+    [status, assignee, tagFilter, topicFilter, ratingFilter, typeFilter],
   );
   useEffect(() => {
     let cancelled = false;
@@ -252,7 +255,8 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
     !shown || shown.length > 0 ? null
     : search.trim() ? `No conversations match “${search.trim()}”.`
     : ratingFilter ? "No conversations with this rating."
-    : topicFilter || tagFilter || assignee !== "all" ? "No conversations match these filters."
+    : typeFilter === "ticket" ? "No emails. Forward your support inbox from Channels → Email to get them here."
+    : topicFilter || tagFilter || typeFilter || assignee !== "all" ? "No conversations match these filters."
     : status === "all" ? "No conversations yet. Install the widget from Settings to start receiving chats."
     : "No records.";
 
@@ -326,6 +330,11 @@ export function InboxPage({ workspaceId, workspaceName, me, hub, conversationId 
             <SelectOption value="">Any rating</SelectOption>
             <SelectOption value="good">Rated 👍 Good</SelectOption>
             <SelectOption value="bad">Rated 👎 Bad</SelectOption>
+          </SelectField>
+          <SelectField size="sm" className="cv-filter" value={typeFilter} onValueChange={(value) => setTypeFilter(value as TypeFilter)} aria-label="Chats or emails">
+            <SelectOption value="">Chats and emails</SelectOption>
+            <SelectOption value="chat">Chats</SelectOption>
+            <SelectOption value="ticket">Emails</SelectOption>
           </SelectField>
         </TabStrip>
         <div className="cv-table-wrap">

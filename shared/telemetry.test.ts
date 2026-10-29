@@ -37,6 +37,7 @@ test("the collector refuses anything else", () => {
   assert.equal(readPing({ ...ping, members: "7" }), null);
   assert.equal(readPing({ ...ping, version: "1.0.0; drop table" }), null);
   assert.equal(readPing({ ...ping, features: ["ai", "ai"] }), null);
+  assert.ok(readPing({ ...ping, features: ["slack"] }), "slack is a known feature");
   assert.equal(readPing({ ...ping, providers: ["anthropic"] }), null);
   assert.equal(readPing([ping]), null);
 });

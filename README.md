@@ -237,7 +237,7 @@ Once a day your desk tells the Jun project that it exists, so we know how many d
 }
 ```
 
-The id is random, made once by your desk; counts are rounded into ranges; `features` lists which parts are on in at least one workspace (`ai`, `knowledge`, `email`, `whatsapp`, `identity`, `pageControl`, `actions`, `mcp`, `issues`). Never names, website addresses, emails, messages, keys or anything about your customers. It goes to `telemetry.jun.so`, whose code is in [`telemetry/`](telemetry/): it accepts exactly this shape and stores no IP address.
+The id is random, made once by your desk; counts are rounded into ranges; `features` lists which parts are on in at least one workspace (`ai`, `knowledge`, `email`, `whatsapp`, `identity`, `pageControl`, `actions`, `mcp`, `issues`, `slack`). Never names, website addresses, emails, messages, keys or anything about your customers. It goes to `telemetry.jun.so`, whose code is in [`telemetry/`](telemetry/): it accepts exactly this shape and stores no IP address.
 
 **Turning it off:** an owner switches it off in **Settings → This desk → Anonymous usage ping** (which also shows the next ping as it will be sent), or set the Worker variable `JUN_TELEMETRY=off` to keep it off whatever the setting says.
 
