@@ -6,7 +6,7 @@
 // (src/lib/agent.ts) against this tab; the chat is kept per tab in storage.session, so it comes back
 // after a page load on sites the person allowed.
 import type { ModelMessage } from "ai";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ActionParam, MessageAction } from "../../../../shared/actions.ts";
 import { Composer } from "../../../../web/components/Composer.tsx";
 import { AiAnswer, RunSteps, runLine, type ActionControls } from "../../../../web/widget/answer.tsx";
@@ -325,7 +325,7 @@ export function IslandApp() {
   const exchangeView = (ex: Exchange, latest: boolean) => {
     const steps = ex.actions.filter((a) => !(latest && a.runId === waitingId));
     return (
-      <div key={ex.id}>
+      <Fragment key={ex.id}>
         <div className="msg own">
           <div className="bubble">{ex.question}</div>
         </div>
@@ -339,7 +339,7 @@ export function IslandApp() {
           )}
           {ex.error && <p className="i-error" role="alert">{ex.error}</p>}
         </div>
-      </div>
+      </Fragment>
     );
   };
 
@@ -371,11 +371,14 @@ export function IslandApp() {
         <div className={`i-answer${cardOnly ? " i-card" : ""}`}>
           <IslandTop who={null} view={cardOnly ? { label: "Show chat", run: () => setRunOpened(true) } : exchanges.length > 1 ? { label: "Earlier", run: () => setShowAll(true) } : null} exit={null} />
           <div className="i-body" role="log">
-            {cardOnly && waitingAction ? (
-              <AiAnswer answer={{ body: "", sources: [], followUps: [], streaming: false, latest: true, steps: [], action: waitingAction, createdAt: last.at }} controls={controls} cardTheme="dark" />
-            ) : (
-              exchangeView(last, true)
-            )}
+            {/* .messages: the widget's MessageList root, which gives the answer its side padding. */}
+            <div className="messages">
+              {cardOnly && waitingAction ? (
+                <AiAnswer answer={{ body: "", sources: [], followUps: [], streaming: false, latest: true, steps: [], action: waitingAction, createdAt: last.at }} controls={controls} cardTheme="dark" />
+              ) : (
+                exchangeView(last, true)
+              )}
+            </div>
             {notice && <p className="i-error" role="alert">{notice}</p>}
           </div>
           {row}
@@ -386,7 +389,7 @@ export function IslandApp() {
         <div className="i-panel">
           <IslandTop who={null} view={{ label: "Latest", run: () => setShowAll(false) }} exit={null} />
           <div className="i-body i-log" role="log">
-            {exchanges.map((ex, i) => exchangeView(ex, i === exchanges.length - 1))}
+            <div className="messages">{exchanges.map((ex, i) => exchangeView(ex, i === exchanges.length - 1))}</div>
           </div>
           {row}
           {corner}

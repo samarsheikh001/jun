@@ -237,6 +237,21 @@ try {
     await shoot("island-open");
     // Not signed in: it offers Sign in with ChatGPT, not a dead end.
     assert.ok(await cdp.eval<boolean>(frame, "[...document.querySelectorAll('.i-foot button')].some((b) => b.textContent === 'Sign in with ChatGPT')"));
+    // A saved answer (as a page load brings it back): the answer view, with the widget's side padding.
+    const saved = {
+      exchanges: [{ id: "x1", question: "What can I do on this page?", text: "This is the **Account settings** page. You can:\n\n- Change your display name.\n- Pick a plan in **Plan**.\n- Save with **Save changes**.", streaming: false, error: null, at: Date.now(), actions: [{ runId: "r1", id: "r1", name: "read_page", description: "Read", risk: "auto", params: {}, required: [], input: {}, missing: [], status: "ok", result: null, canUndo: false, statusLine: "Reading the page" }] }],
+      history: [],
+    };
+    await cdp.eval(sw, `chrome.storage.session.set({ "jun.chat.${tabId}": ${JSON.stringify(saved)} })`);
+    await cdp.eval(frame, "setTimeout(() => location.reload(), 50)");
+    await wait(800);
+    await until("the restored chat", () => cdp.eval<boolean>(frame, "!!document.querySelector('.i-rest')"));
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "/", text: "/" }, page);
+    await until("the answer view", () => cdp.eval<boolean>(frame, "!!document.querySelector('.i-answer .messages .msg.ai')"));
+    await wait(1200);
+    await shoot("island-answer");
+    const inset = await cdp.eval<number>(frame, "(() => { const b = document.querySelector('.i-answer .msg.ai .bubble'); const s = document.querySelector('.i-shell'); return Math.round(b.getBoundingClientRect().left - s.getBoundingClientRect().left); })()");
+    assert.ok(inset >= 16, `the answer touches the island's edge (${inset}px in)`);
     console.log(`  screenshots: ${shots.join(", ")}`);
   });
 
