@@ -1,7 +1,7 @@
 // E2E for Jun for Chrome (E-01): loads a test build of extension/ into a real Chrome (its own
 // throwaway profile, DevTools Protocol over a pipe, Extensions.loadUnpacked), opens
 // scripts/e2e-extension-page.html (a strict CSP, a password field, a [data-jun-private] block) and
-// drives the content script the way the side panel does: inject, list tools, read (masked and not),
+// drives the content script the way the island does: inject, list tools, read (masked and not),
 // point, type, choose, click. No AI is called. Run: node scripts/e2e-extension.ts
 // (CHROME_PATH to pick the browser; it builds extension/dist-test first).
 import assert from "node:assert/strict";
@@ -11,71 +11,10 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
+import { Cdp, chromePath, until, wait } from "./extension-cdp.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const OUT = join(ROOT, "extension", "dist-test", "chrome-mv3");
-
-function chromePath(): string {
-  const candidates = [
-    process.env.CHROME_PATH,
-    "C:/Program Files/Google/Chrome/Application/chrome.exe",
-    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/usr/bin/google-chrome",
-    "/usr/bin/chromium",
-  ];
-  const found = candidates.find((p) => p && existsSync(p));
-  if (!found) throw new Error("No Chrome found: set CHROME_PATH");
-  return found;
-}
-
-// ---------- DevTools Protocol over --remote-debugging-pipe ----------
-type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
-class Cdp {
-  #id = 0;
-  #pending = new Map<number, Pending>();
-  #buffer = "";
-  #out: Writable;
-  constructor(out: Writable, input: Readable) {
-    this.#out = out;
-    input.setEncoding("utf8");
-    input.on("data", (chunk: string) => {
-      this.#buffer += chunk;
-      let end: number;
-      while ((end = this.#buffer.indexOf("\0")) >= 0) {
-        const msg = JSON.parse(this.#buffer.slice(0, end));
-        this.#buffer = this.#buffer.slice(end + 1);
-        const p = msg.id !== undefined ? this.#pending.get(msg.id) : undefined;
-        if (!p) continue;
-        this.#pending.delete(msg.id);
-        if (msg.error) p.reject(new Error(`${msg.error.message} ${msg.error.data ?? ""}`));
-        else p.resolve(msg.result);
-      }
-    });
-  }
-  send(method: string, params: object = {}, sessionId?: string): Promise<any> {
-    const id = ++this.#id;
-    this.#out.write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + "\0");
-    return new Promise((resolve, reject) => this.#pending.set(id, { resolve, reject }));
-  }
-  /** Runs an expression in a target and returns its (awaited) value. */
-  async eval<T>(sessionId: string, expression: string): Promise<T> {
-    const r = await this.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId);
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value as T;
-  }
-}
-
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until<T>(what: string, fn: () => Promise<T | undefined | null | false>, ms = 10000): Promise<T> {
-  const end = Date.now() + ms;
-  for (;;) {
-    const v = await fn().catch(() => undefined);
-    if (v) return v;
-    if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`);
-    await wait(150);
-  }
-}
 
 let failed = 0;
 async function step(name: string, fn: () => Promise<void>) {
