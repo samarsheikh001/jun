@@ -22,6 +22,15 @@ test("pageRead: masks every string and drops the URL's query values", () => {
   assert.equal(read.footer, "[End of page]");
 });
 
+test("pageRead: unmasked (the extension's switch) keeps the text and URL, still cut to size", () => {
+  const read = pageRead(state, "https://app.example.com", MAX_PAGE_READ_RESULT, false);
+  assert.equal(read.url, state.url);
+  assert.equal(read.title, state.title);
+  assert.ok(read.content.includes("jane@example.com") && read.content.includes("4242 4242"), read.content);
+  const long = { ...state, content: "x".repeat(30000) };
+  assert.ok(JSON.stringify(pageRead(long, "https://app.example.com", MAX_PAGE_READ_RESULT, false)).length <= MAX_PAGE_READ_RESULT);
+});
+
 test("pageRead: a long page is cut so its JSON fits the cap, with a note", () => {
   const long = { ...state, content: Array.from({ length: 3000 }, (_, i) => `\t[${i}]<a >"Item" ${i} />`).join("\n") };
   const read = pageRead(long, "https://app.example.com");

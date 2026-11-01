@@ -1,0 +1,24 @@
+{
+  "name": "@jun/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Jun for Chrome: help on any page, on your own AI (E-01).",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare",
+    "typecheck": "wxt prepare && tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.83",
+    "@page-agent/page-controller": "1.12.4",
+    "ai": "^7.0.127",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "wxt": "^0.21.5"
+  }
+}

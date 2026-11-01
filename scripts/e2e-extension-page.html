@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- A strict CSP like many apps': the content script runs in its own world, so it must still work. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
+    <title>Acme settings</title>
+  </head>
+  <body>
+    <h1>Account settings</h1>
+    <p>Signed in as jane@example.com</p>
+    <label>Display name <input id="name" name="name" value="Jane" /></label>
+    <label>Plan
+      <select id="plan"><option>Free</option><option>Team</option><option>Business</option></select>
+    </label>
+    <label>Password <input id="pw" type="password" value="hunter2-secret" /></label>
+    <div data-jun-private><p>Private note: ssn 123-45-6789</p><button id="danger">Delete everything</button></div>
+    <button id="save" onclick="document.getElementById('status').textContent = 'Saved as ' + document.getElementById('name').value + ' on ' + document.getElementById('plan').value">Save changes</button>
+    <p id="status">Not saved</p>
+  </body>
+</html>

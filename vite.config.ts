@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { build as rolldown } from "rolldown";
 import { minifySync } from "rolldown/utils";
 import { defineConfig, type Plugin } from "vite";
+import { pageControllerPlugins } from "./web/page-control/build.ts";
 
 /**
  * public/widget.js stays readable in the repo; the copy we serve is minified (it runs on
@@ -67,24 +68,7 @@ async function bundlePageControl(): Promise<string> {
     input: resolve(import.meta.dirname, "web/page-control/index.ts"),
     platform: "browser",
     write: false,
-    plugins: [
-      {
-        name: "jun:no-mask",
-        resolveId: (id) => (/SimulatorMask/.test(id) ? "\0jun-no-mask" : null),
-        load: (id) => (id === "\0jun-no-mask" ? "export class SimulatorMask {}" : null),
-      },
-      {
-        // executeJavascript is never exposed; its direct eval goes too (no eval on customers' pages,
-        // and a direct eval stops the minifier renaming anything around it).
-        name: "jun:no-eval",
-        transform(code, id) {
-          if (!/page-controller[\\/]dist[\\/]lib[\\/]page-controller\.js$/.test(id)) return null;
-          const out = code.replace(/\beval\(`[^`]*`\)/, '(() => { throw new Error("Not available in Jun"); })()');
-          if (out === code) throw new Error("page-controller changed: check its executeJavascript (vite.config.ts, jun:no-eval)");
-          return out;
-        },
-      },
-    ],
+    plugins: pageControllerPlugins(),
     output: {
       format: "iife",
       codeSplitting: false,
