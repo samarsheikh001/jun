@@ -2,7 +2,8 @@
 
 Ask how to do anything on the page you're on. Jun reads the page, shows you where things are
 (a ring and a note on the element) and, when you ask, clicks, types or chooses for you after you
-confirm. It runs on your own AI key; there is no Jun server. MIT licensed.
+confirm. It runs on your own AI: **Sign in with ChatGPT** (your Plus or Pro plan, the default) or an
+OpenAI API key. There is no Jun server.
 
 Feature E-01 (`docs/features.md`), decision D-155, research `docs/research/12-browser-extension.md`.
 
@@ -14,7 +15,8 @@ npm run build -w extension
 ```
 
 Then in Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → `extension/dist/chrome-mv3`.
-Click the Jun button in the toolbar on any website, add your OpenAI API key in Settings and ask.
+Click the Jun button in the toolbar on any website, **Sign in with ChatGPT** in Settings (or paste an
+OpenAI API key) and ask.
 
 `npm run dev -w extension` opens a browser with the extension loaded and reloads it on changes.
 
@@ -27,7 +29,14 @@ Click the Jun button in the toolbar on any website, add your OpenAI API key in S
 | Background | `src/entrypoints/background.ts` | Opens the panel from the toolbar button (which grants `activeTab`) |
 | Protocol | `src/lib/protocol.ts` | The panel ↔ page messages |
 
-**Permissions:** `sidePanel`, `activeTab`, `scripting`, `storage`, and `api.openai.com`. Page access is
+**Sign in with ChatGPT:** OpenAI's documented flow for open-source, locally hosted apps, the same code
+as the desk and the CLI (`packages/llm/src/chatgpt/`). Its redirect must be `http://127.0.0.1:1455/auth/callback`,
+which an extension can't listen on, so `src/lib/chatgpt.ts` opens the sign-in in a tab, reads the tab's
+address when it reaches the callback (the browser shows a "can't connect" page for a moment) and closes it.
+Tokens stay in `chrome.storage.local` (`jun.chatgpt`) and go only to OpenAI.
+
+**Permissions:** `sidePanel`, `activeTab`, `scripting`, `storage`, `api.openai.com`, `auth.openai.com`
+and `127.0.0.1:1455` (to read the sign-in callback). Page access is
 per site: the toolbar click gives access until you leave the page, **Allow on <site>** keeps it.
 
 **Privacy:** masking is on by default (emails, card-like numbers, tokens, the address's query values);
@@ -46,6 +55,5 @@ own key and sent only to OpenAI.
 
 ## Not yet
 
-Sign in with ChatGPT (needs OpenAI's approval for its open-source programme; its redirect is
-loopback-only), other providers, runs that outlive the panel, several tabs, cross-origin frames, a
+Other providers (Anthropic, Gemini), runs that outlive the panel, several tabs, cross-origin frames, a
 Chrome Web Store listing and privacy policy.

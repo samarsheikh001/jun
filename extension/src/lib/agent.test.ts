@@ -103,7 +103,7 @@ test("runTurn: Always allow counts for the next click in the same answer; maskin
 
 test("runTurn: no key and no model is a plain message", async () => {
   await assert.rejects(
-    runTurn({ keys: { openai: "" }, settings: () => DEFAULT_SETTINGS, target, tools: TOOLS, history: [], text: "hi", signal: new AbortController().signal, on: { text() {}, step() {}, confirm: async () => "no" } }),
+    runTurn({ keys: { openai: "" }, settings: () => ({ ...DEFAULT_SETTINGS, provider: "openai" }), target, tools: TOOLS, history: [], text: "hi", signal: new AbortController().signal, on: { text() {}, step() {}, confirm: async () => "no" } }),
     /Add your OpenAI API key/,
   );
 });

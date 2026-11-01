@@ -8,7 +8,12 @@ export const KEYS_KEY = "jun.keys";
 export type ConfirmMode = "allow-always" | "every-time" | "never";
 export const CONFIRM_MODES: ConfirmMode[] = ["allow-always", "every-time", "never"];
 
+/** Whose AI: the person's ChatGPT plan (Sign in with ChatGPT, the default) or an OpenAI API key. */
+export type Provider = "chatgpt" | "openai";
+
 export interface Settings {
+  provider: Provider;
+  /** Empty: the provider's default (DEFAULT_MODELS). */
   model: string;
   /** Mask emails, card-like numbers, tokens and URL query values before the page goes to the AI. */
   mask: boolean;
@@ -21,17 +26,23 @@ export interface Keys {
   openai: string;
 }
 
-export const DEFAULT_MODEL = "gpt-6.1-sol";
-export const DEFAULT_SETTINGS: Settings = { model: DEFAULT_MODEL, mask: true, confirm: "allow-always", allowed: [] };
+/** As the desk's (worker/ai/models.ts DEFAULT_MODELS): small and fast on the plan, the API's default otherwise. */
+export const DEFAULT_MODELS: Record<Provider, string> = { chatgpt: "gpt-6-luna", openai: "gpt-6.1-sol" };
+export const DEFAULT_SETTINGS: Settings = { provider: "chatgpt", model: "", mask: true, confirm: "allow-always", allowed: [] };
+
+export function modelOf(settings: Settings): string {
+  return settings.model || DEFAULT_MODELS[settings.provider];
+}
 
 const record = (raw: unknown): Record<string, unknown> => (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {});
 
 export function readSettings(raw: unknown): Settings {
   const s = record(raw);
-  const model = typeof s.model === "string" && s.model.trim() ? s.model.trim().slice(0, 100) : DEFAULT_MODEL;
+  const provider: Provider = s.provider === "openai" ? "openai" : "chatgpt";
+  const model = typeof s.model === "string" ? s.model.trim().slice(0, 100) : "";
   const confirm = CONFIRM_MODES.includes(s.confirm as ConfirmMode) ? (s.confirm as ConfirmMode) : DEFAULT_SETTINGS.confirm;
   const allowed = Array.isArray(s.allowed) ? [...new Set(s.allowed.filter((o): o is string => typeof o === "string" && /^https?:\/\/[^/]+$/.test(o)))].slice(0, 200) : [];
-  return { model, mask: s.mask !== false, confirm, allowed };
+  return { provider, model, mask: s.mask !== false, confirm, allowed };
 }
 
 export function readKeys(raw: unknown): Keys {

@@ -88,3 +88,12 @@ small { display: block; font-size: 12px; margin-top: 4px; }
 .allowed { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .allowed > span { font-weight: 600; }
 .site { display: flex; justify-content: space-between; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.label { font-weight: 600; font-size: 13px; }
+.seg { display: flex; padding: 3px; gap: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.seg button { flex: 1; border: 0; background: none; border-radius: 999px; padding: 5px 10px; cursor: pointer; color: var(--muted); }
+.seg button.on { background: var(--fg); color: var(--bg); font-weight: 600; }
+.primary.big { padding: 9px 16px; align-self: stretch; }
+.account { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }
+.bad { color: var(--error); }

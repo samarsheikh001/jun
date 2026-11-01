@@ -4,9 +4,10 @@ import type { ModelMessage } from "ai";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { shownDescription, shownInput } from "../../../../shared/page-control.ts";
 import { runTurn, TurnError, type Decision, type StepEvent } from "../../lib/agent.ts";
+import { signedIn, signIn, signOut } from "../../lib/chatgpt.ts";
 import { callPage, currentTarget, hasSiteAccess, requestSiteAccess, type NoTarget, type Target } from "../../lib/page.ts";
 import type { ToolInfo } from "../../lib/protocol.ts";
-import { DEFAULT_SETTINGS, KEYS_KEY, readKeys, readSettings, SETTINGS_KEY, type ConfirmMode, type Keys, type Settings } from "../../lib/settings.ts";
+import { DEFAULT_MODELS, DEFAULT_SETTINGS, KEYS_KEY, readKeys, readSettings, SETTINGS_KEY, type ConfirmMode, type Keys, type Provider, type Settings } from "../../lib/settings.ts";
 
 type Item =
   | { kind: "user"; id: string; text: string }
@@ -22,6 +23,9 @@ const CONFIRM_LABELS: Record<ConfirmMode, string> = {
   never: "Never ask",
 };
 
+/** Whether the chosen AI can answer: signed in with ChatGPT, or an API key. */
+const ready = (s: Settings, k: Keys, account: { email: string } | null) => (s.provider === "chatgpt" ? !!account : !!k.openai);
+
 let ids = 0;
 const nextId = () => `i${++ids}`;
 const isTarget = (t: Target | NoTarget | null): t is Target => !!t && "tabId" in t;
@@ -30,6 +34,7 @@ export function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [keys, setKeys] = useState<Keys>({ openai: "" });
   const [loaded, setLoaded] = useState(false);
+  const [account, setAccount] = useState<{ email: string } | null>(null); // signed in with ChatGPT
   const [view, setView] = useState<"chat" | "settings">("chat");
   const [target, setTarget] = useState<Target | NoTarget | null>(null);
   const [kept, setKept] = useState(true); // lasting access to the target's site
@@ -44,11 +49,13 @@ export function App() {
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    void browser.storage.local.get([SETTINGS_KEY, KEYS_KEY]).then((s) => {
+    void Promise.all([browser.storage.local.get([SETTINGS_KEY, KEYS_KEY]), signedIn()]).then(([s, who]) => {
       const loadedKeys = readKeys(s[KEYS_KEY]);
-      setSettings(readSettings(s[SETTINGS_KEY]));
+      const loadedSettings = readSettings(s[SETTINGS_KEY]);
+      setSettings(loadedSettings);
       setKeys(loadedKeys);
-      if (!loadedKeys.openai) setView("settings");
+      setAccount(who);
+      if (!ready(loadedSettings, loadedKeys, who)) setView("settings");
       setLoaded(true);
     });
   }, []);
@@ -96,7 +103,7 @@ export function App() {
   async function send(text: string) {
     text = text.trim();
     if (!text || busy) return;
-    if (!keys.openai) return setView("settings");
+    if (!ready(settingsRef.current, keys, account)) return setView("settings");
     const t = await currentTarget();
     setTarget(t);
     if (!isTarget(t)) return;
@@ -196,7 +203,7 @@ export function App() {
       </header>
 
       {view === "settings" ? (
-        <SettingsView settings={settings} keys={keys} onSave={save} onDone={() => setView("chat")} />
+        <SettingsView settings={settings} keys={keys} account={account} onAccount={setAccount} onSave={save} onDone={() => setView("chat")} />
       ) : (
         <>
           <Access target={target} kept={kept} onKeep={async (pattern) => setKept(await requestSiteAccess(pattern))} />
@@ -329,30 +336,94 @@ function Row(props: { item: Item; onAnswer: (id: string, d: Decision) => void })
   );
 }
 
-function SettingsView(props: { settings: Settings; keys: Keys; onSave: (s: Settings, k: Keys) => Promise<void>; onDone: () => void }) {
+function SettingsView(props: {
+  settings: Settings;
+  keys: Keys;
+  account: { email: string } | null;
+  onAccount: (a: { email: string } | null) => void;
+  onSave: (s: Settings, k: Keys) => Promise<void>;
+  onDone: () => void;
+}) {
+  const [provider, setProvider] = useState<Provider>(props.settings.provider);
   const [key, setKey] = useState(props.keys.openai);
   const [model, setModel] = useState(props.settings.model);
   const [mask, setMask] = useState(props.settings.mask);
   const [confirm, setConfirm] = useState<ConfirmMode>(props.settings.confirm);
-  const [saved, setSaved] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const [problem, setProblem] = useState("");
+  const canAnswer = (p: Provider) => (p === "chatgpt" ? !!props.account : !!key.trim());
+
+  const settingsNow = (p = provider) => readSettings({ ...props.settings, provider: p, model, mask, confirm });
 
   async function submit(e: Event) {
     e.preventDefault();
-    await props.onSave(readSettings({ ...props.settings, model, mask, confirm }), { openai: key.trim() });
-    setSaved(true);
-    if (key.trim()) props.onDone();
+    await props.onSave(settingsNow(), { openai: key.trim() });
+    if (canAnswer(provider)) props.onDone();
+  }
+
+  async function chatgpt() {
+    setSigning(true);
+    setProblem("");
+    try {
+      const who = await signIn();
+      props.onAccount(who);
+      setProvider("chatgpt");
+      await props.onSave(settingsNow("chatgpt"), { openai: key.trim() });
+      props.onDone();
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSigning(false);
+    }
   }
 
   return (
     <form class="settings" onSubmit={submit}>
-      <label>
-        <span>OpenAI API key</span>
-        <input type="password" value={key} placeholder="sk-…" autoComplete="off" onInput={(e) => setKey((e.target as HTMLInputElement).value)} />
-        <small>Kept in this browser only and sent only to OpenAI. Jun has no server.</small>
-      </label>
+      <div class="field">
+        <span class="label">Your AI</span>
+        <div class="seg">
+          <button type="button" class={provider === "chatgpt" ? "on" : ""} onClick={() => setProvider("chatgpt")}>
+            ChatGPT
+          </button>
+          <button type="button" class={provider === "openai" ? "on" : ""} onClick={() => setProvider("openai")}>
+            OpenAI API key
+          </button>
+        </div>
+      </div>
+      {provider === "chatgpt" ? (
+        <div class="field">
+          {props.account ? (
+            <div class="account">
+              <span>Signed in as {props.account.email}</span>
+              <button
+                type="button"
+                class="link"
+                onClick={async () => {
+                  await signOut();
+                  props.onAccount(null);
+                }}
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button type="button" class="primary big" disabled={signing} onClick={chatgpt}>
+              {signing ? "Finish signing in in the new tab…" : "Sign in with ChatGPT"}
+            </button>
+          )}
+          <small>Uses your ChatGPT plan (Plus or Pro). Your sign-in stays in this browser and goes only to OpenAI. Jun has no server.</small>
+          {problem && <small class="bad">{problem}</small>}
+        </div>
+      ) : (
+        <label>
+          <span>OpenAI API key</span>
+          <input type="password" value={key} placeholder="sk-…" autoComplete="off" onInput={(e) => setKey((e.target as HTMLInputElement).value)} />
+          <small>Kept in this browser only and sent only to OpenAI. Jun has no server.</small>
+        </label>
+      )}
       <label>
         <span>Model</span>
-        <input value={model} onInput={(e) => setModel((e.target as HTMLInputElement).value)} />
+        <input value={model} placeholder={DEFAULT_MODELS[provider]} onInput={(e) => setModel((e.target as HTMLInputElement).value)} />
       </label>
       <label class="row">
         <input type="checkbox" checked={mask} onChange={(e) => setMask((e.target as HTMLInputElement).checked)} />
@@ -387,7 +458,6 @@ function SettingsView(props: { settings: Settings; keys: Keys; onSave: (s: Setti
       <button type="submit" class="primary">
         Save
       </button>
-      {saved && !key.trim() && <small>Saved. Add a key to start.</small>}
     </form>
   );
 }

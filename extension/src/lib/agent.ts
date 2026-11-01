@@ -1,12 +1,13 @@
 // One answer from the person's own AI (E-01): streamText with the page tools, run from the side
 // panel against one tab. Tools that change the page wait for the panel's Confirm card first.
 import { createOpenAI } from "@ai-sdk/openai";
+import { chatgptFetch, OPENAI_API_BASE, signedIn } from "./chatgpt.ts";
 import { isStepCount, jsonSchema, streamText, tool, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { reloadedResult } from "../../../shared/page-control.ts";
 import { callPage, type Target } from "./page.ts";
 import { systemPrompt, wrapPage } from "./prompt.ts";
 import { pointFor, type ToolInfo } from "./protocol.ts";
-import { needsConfirm, type Keys, type Settings } from "./settings.ts";
+import { modelOf, needsConfirm, type Keys, type Settings } from "./settings.ts";
 
 export const MAX_STEPS = 20;
 
@@ -49,8 +50,9 @@ export class TurnError extends Error {}
 /** The AI's history after the turn (to send with the next one). */
 export async function runTurn(turn: Turn): Promise<ModelMessage[]> {
   const { target, on } = turn;
-  const { model, mask } = turn.settings();
-  if (!turn.model && !turn.keys.openai) throw new TurnError("Add your OpenAI API key in Settings first.");
+  const settings = turn.settings();
+  const { mask } = settings;
+  const ai = turn.model ? { model: turn.model, prompt: (system: string) => ({ system }) } : await modelFor(settings, turn.keys);
   const call = turn.call ?? callPage;
   const messages: ModelMessage[] = [...turn.history, { role: "user", content: turn.text }];
 
@@ -77,8 +79,8 @@ export async function runTurn(turn: Turn): Promise<ModelMessage[]> {
   }
 
   const result = streamText({
-    model: turn.model ?? createOpenAI({ apiKey: turn.keys.openai })(model),
-    system: systemPrompt({ host: target.site.host, title: target.title }),
+    model: ai.model,
+    ...ai.prompt(systemPrompt({ host: target.site.host, title: target.title })),
     messages,
     tools,
     stopWhen: isStepCount(MAX_STEPS),
@@ -103,10 +105,29 @@ export async function runTurn(turn: Turn): Promise<ModelMessage[]> {
   return [...messages, ...(await result.responseMessages)];
 }
 
+/**
+ * The person's AI. ChatGPT plan usage takes the system prompt as `instructions` (it rejects system
+ * messages) and only streams, like the desk's (worker/ai/providers.ts); neither stores the chat.
+ */
+async function modelFor(settings: Settings, keys: Keys): Promise<{ model: LanguageModel; prompt: (system: string) => Record<string, unknown> }> {
+  const id = modelOf(settings);
+  if (settings.provider === "chatgpt") {
+    if (!(await signedIn())) throw new TurnError("Sign in with ChatGPT in Settings first.");
+    return {
+      model: createOpenAI({ apiKey: "chatgpt-plan", baseURL: OPENAI_API_BASE, fetch: chatgptFetch })(id),
+      prompt: (system) => ({ providerOptions: { openai: { instructions: system, store: false } } }),
+    };
+  }
+  if (!keys.openai) throw new TurnError("Add your OpenAI API key in Settings first.");
+  return { model: createOpenAI({ apiKey: keys.openai })(id), prompt: (system) => ({ system, providerOptions: { openai: { store: false } } }) };
+}
+
 /** The provider's error as one line the person can act on. */
 export function providerMessage(error: unknown): string {
-  const e = error as { statusCode?: number; message?: string } | null;
-  if (e?.statusCode === 401) return "OpenAI didn't accept the API key. Check it in Settings.";
+  const e = error as { statusCode?: number; message?: string; code?: string; cause?: { code?: string } } | null;
+  const code = e?.code ?? e?.cause?.code;
+  if (code === "not_signed_in" || code === "reauth_required") return "Your ChatGPT sign-in ended. Sign in again in Settings.";
+  if (e?.statusCode === 401) return "OpenAI didn't accept the sign-in or API key. Check it in Settings.";
   if (e?.statusCode === 404) return "OpenAI doesn't know that model. Check the model name in Settings.";
   if (e?.statusCode === 429) return "OpenAI says you're over your limit or out of credit. Try again later or check your OpenAI account.";
   return e?.message ? `The AI failed: ${e.message.slice(0, 200)}` : "The AI failed. Try again.";

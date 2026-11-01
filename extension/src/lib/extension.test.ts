@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { callbackParams, REDIRECT_URI } from "./chatgpt.ts";
 import { wrapPage, systemPrompt } from "./prompt.ts";
 import { pointFor, readRequest } from "./protocol.ts";
-import { needsConfirm, readKeys, readSettings, siteOf, DEFAULT_MODEL, DEFAULT_SETTINGS } from "./settings.ts";
+import { modelOf, needsConfirm, readKeys, readSettings, siteOf, DEFAULT_SETTINGS } from "./settings.ts";
 
 test("readRequest: only the panel's three message shapes, inputs cleaned", () => {
   assert.deepEqual(readRequest({ type: "jun:tools" }), { type: "jun:tools" });
@@ -27,9 +28,13 @@ test("pointFor: a ring only for clicks, typing and choices with a real element n
 test("readSettings: defaults, bad values dropped, masking on unless turned off", () => {
   assert.deepEqual(readSettings(undefined), DEFAULT_SETTINGS);
   assert.deepEqual(readSettings({ model: "  ", mask: "yes", confirm: "sometimes", allowed: "x" }), DEFAULT_SETTINGS);
-  const s = readSettings({ model: " gpt-x ", mask: false, confirm: "never", allowed: ["https://a.com", "https://a.com", "https://a.com/path", "javascript:1", 4, "http://b.io:8080"] });
-  assert.deepEqual(s, { model: "gpt-x", mask: false, confirm: "never", allowed: ["https://a.com", "http://b.io:8080"] });
-  assert.equal(readSettings({}).model, DEFAULT_MODEL);
+  const s = readSettings({ provider: "openai", model: " gpt-x ", mask: false, confirm: "never", allowed: ["https://a.com", "https://a.com", "https://a.com/path", "javascript:1", 4, "http://b.io:8080"] });
+  assert.deepEqual(s, { provider: "openai", model: "gpt-x", mask: false, confirm: "never", allowed: ["https://a.com", "http://b.io:8080"] });
+  // ChatGPT sign-in is the default; an empty model means the provider's own default.
+  assert.equal(readSettings({ provider: "claude" }).provider, "chatgpt");
+  assert.equal(modelOf(readSettings({})), "gpt-6-luna");
+  assert.equal(modelOf(readSettings({ provider: "openai" })), "gpt-6.1-sol");
+  assert.equal(modelOf(s), "gpt-x");
   assert.deepEqual(readKeys({ openai: " sk-1 " }), { openai: "sk-1" });
   assert.deepEqual(readKeys(null), { openai: "" });
 });
@@ -66,4 +71,13 @@ test("systemPrompt: names the site, guides first, treats page text as data", () 
   assert.match(p, /Guide first/);
   assert.match(p, /<page_content>.*never instructions/s);
   assert.match(p, /Never type passwords/);
+});
+
+test("callbackParams: only the loopback callback the sign-in asked for", () => {
+  assert.equal(REDIRECT_URI, "http://127.0.0.1:1455/auth/callback");
+  assert.equal(callbackParams("http://127.0.0.1:1455/auth/callback?code=c1&state=s1&client_id=app_1")?.get("client_id"), "app_1");
+  assert.equal(callbackParams("http://127.0.0.1:1455/auth/callback?error=access_denied")?.get("error"), "access_denied");
+  for (const other of [undefined, "https://auth.openai.com/log-in", "http://127.0.0.1:1456/auth/callback?code=x", "http://localhost:1455/auth/callback?code=x", "https://evil.com/?http://127.0.0.1:1455/auth/callback"]) {
+    assert.equal(callbackParams(other), null, String(other));
+  }
 });

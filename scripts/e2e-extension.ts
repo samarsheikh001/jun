@@ -208,11 +208,11 @@ try {
     assert.equal(odd, "none");
   });
 
-  await step("the side panel draws: settings first without a key, then the chat", async () => {
+  await step("the side panel draws: settings (Sign in with ChatGPT) first, then the chat", async () => {
     const { targetId } = await cdp.send("Target.createTarget", { url: `chrome-extension://${extId}/sidepanel.html` });
     const { sessionId: panel } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: 380, height: 640, deviceScaleFactor: 1, mobile: false }, panel);
-    await until("the settings view", () => cdp.eval<boolean>(panel, "!!document.querySelector('.settings input[type=password]')"));
+    await until("the settings view", () => cdp.eval<boolean>(panel, "[...document.querySelectorAll('.settings button')].some((b) => b.textContent === 'Sign in with ChatGPT')"));
     const shots: string[] = [];
     const shoot = async (name: string) => {
       const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, panel);
@@ -221,10 +221,30 @@ try {
       shots.push(file);
     };
     await shoot("settings");
-    await cdp.eval(panel, `chrome.storage.local.set({ "jun.keys": { openai: "sk-test" } }).then(() => location.reload())`).catch(() => undefined);
+    await cdp.eval(panel, `chrome.storage.local.set({ "jun.keys": { openai: "sk-test" }, "jun.settings": { provider: "openai" } }).then(() => location.reload())`).catch(() => undefined);
     await until("the chat view", () => cdp.eval<boolean>(panel, "!!document.querySelector('.composer textarea')"));
     await shoot("chat");
     console.log(`  screenshots: ${shots.join(", ")}`);
+  });
+
+  await step("Sign in with ChatGPT: the extension sees the sign-in tab reach the 127.0.0.1 callback (nothing listens there)", async () => {
+    const url = await cdp.eval<string>(
+      sw,
+      `new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("no callback URL seen")), 8000);
+        chrome.tabs.create({ url: "about:blank" }).then((tab) => {
+          chrome.tabs.onUpdated.addListener(function seen(id, change) {
+            if (id !== tab.id || !change.url || !change.url.startsWith("http://127.0.0.1:1455/auth/callback")) return;
+            chrome.tabs.onUpdated.removeListener(seen);
+            clearTimeout(timer);
+            chrome.tabs.remove(id);
+            resolve(change.url);
+          });
+          chrome.tabs.update(tab.id, { url: "http://127.0.0.1:1455/auth/callback?code=c1&state=s1&client_id=app_x" });
+        });
+      })`,
+    );
+    assert.equal(new URL(url).searchParams.get("client_id"), "app_x");
   });
 
   await step("nothing of the page tools' is left in the page's own world", async () => {
