@@ -100,6 +100,7 @@ Worker conventions: throw `HttpError` for expected failures (rendered as `{ erro
 | `docs/research/07-posthog-tracking.md` | How posthog-js tracks visitors (identity, sessions, autocapture, rage/dead clicks, transport, privacy, replay, sizes) and what Jun took from it (D-107). |
 | `docs/research/09-slack.md` | Slack: how competitors and open-source desks (Chatwoot, Papercups code) do it, Slack's 2025 rate limits (internal apps exempt), manifests, Events API rules, Slack Connect, AI streaming; what it means for C-09 / T-13. |
 | `docs/research/10-inbox-forwarding.md` | Forwarding a support inbox (C-13): the design, provider quirks (Gmail's confirmation, Microsoft 365's outside-forwarding block), spam, identity, data. |
+| `docs/research/12-browser-extension.md` | The B2C browser extension (E-01, 2026-11-01): competitors (Claude in Chrome, Gemini auto browse, Comet, Nanobrowser…), Chrome Web Store rules, bring-your-own-AI (Sign in with ChatGPT's loopback-only redirect), open-source references (page-agent's and Nanobrowser's extensions on WXT) and the layout for `extension/`. |
 | `docs/research/11-chatbase-gap.md` | What Chatbase has that we don't (2026-10-29), saved to discuss later: abuse protection, drafts and versions, simulated-customer tests, ready-made actions, helpdesk extras, channels, developer side. |
 
 ## How we work (token use)
