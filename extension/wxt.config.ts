@@ -30,7 +30,9 @@ export default defineConfig({
     // JUN_EXT_TEST=1: a test build that may reach every page without a click (scripts/e2e-extension.ts).
     host_permissions: ["https://api.openai.com/*", "https://auth.openai.com/*", "http://127.0.0.1:1455/*", ...(process.env.JUN_EXT_TEST ? ["<all_urls>"] : [])],
     optional_host_permissions: ["https://*/*", "http://*/*"],
-    action: { default_title: "Ask Jun about this page" },
+    // The Jun mark (the desk's public/jun-agent.svg), rendered to PNG in extension/public/icon/ with headless Chrome.
+    icons: { 16: "icon/16.png", 32: "icon/32.png", 48: "icon/48.png", 128: "icon/128.png" },
+    action: { default_title: "Ask Jun about this page", default_icon: { 16: "icon/16.png", 32: "icon/32.png" } },
     // The island frame, put on the page by the content script.
     web_accessible_resources: [{ resources: ["island.html"], matches: ["<all_urls>"] }],
   },
