@@ -119,7 +119,7 @@ Worker conventions: throw `HttpError` for expected failures (rendered as `{ erro
 
 ## Decided (see `docs/decisions.md` log)
 
-- **Target customer: B2B SaaS.** Prioritise Slack Connect, debug context, issue-tracker links, account-level context.
+- **Target customer: B2B SaaS.** Prioritise Slack Connect, debug context, issue-tracker links, account-level context. A separate B2C surface, a standalone browser extension on the person's own AI (E-01, D-155), doesn't change the desk's priorities.
 - **Open source, one-click "Deploy to Cloudflare".** This is a hard constraint on every technical choice:
   - Everything must run on Cloudflare primitives the deploy button can auto-provision: Workers, Durable Objects, D1, Vectorize, R2, KV, Queues, Workers AI.
   - **No external services required** for a working install: no Postgres, Redis, Clerk/Auth0, or paid SaaS. Optional integrations are fine.

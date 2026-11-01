@@ -213,6 +213,12 @@ All `v1` rows were agreed on 2026-10-04; later versions are still mostly `propos
 | X-01 | Human co-browse (view and highlight visitor's page, masked inputs) | v3 | proposed | Crisp has it, Zendesk doesn't | 02 |
 | X-02 | AI co-browse: agent highlights and annotates elements to guide the user | later | proposed | Cobrowse.io; cutting-edge | 02 |
 
+## E — Browser extension (B2C)
+
+| ID | Feature | Ver | Status | Why / notes | Ref |
+|---|---|---|---|---|---|
+| E-01 | Standalone Chrome extension: on any website, a person asks how to do something and the AI reads the page and guides them or acts (click, type, choose, scroll, with Confirm), on their own AI (ChatGPT sign-in or an API key; no Jun server). Masking of page text is the person's switch (on by default). Lives in `extension/` (Manifest V3), reusing the widget UI and page control (AI-32) | later | proposed | **D-155 (2026-11-01):** the user's call, to reach consumers too (B2C) next to the B2B desk; bring your own AI, masking optional, `extension/` workspace. Proposed extras: secret fields hidden even unmasked, hand over to the site's own Jun agent where one runs, use a page's WebMCP tools first. Version not picked yet. Needs research on competitors and Chrome Web Store rules | — |
+
 ## A — Analytics
 
 | ID | Feature | Ver | Status | Why / notes | Ref |
