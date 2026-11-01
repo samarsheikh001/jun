@@ -38,6 +38,7 @@ export function Composer({
   control,
   suggestScroller: SuggestScroller,
   pill = false,
+  attach = true,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -62,6 +63,8 @@ export function Composer({
    * screenshot), the input and Send; the input moves above the buttons once the text wraps.
    */
   pill?: boolean;
+  /** The pill's "+" (files, screenshot); off where nothing can be uploaded (the browser extension, E-01). */
+  attach?: boolean;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -197,7 +200,7 @@ export function Composer({
   addFilesRef.current = addFiles;
   useEffect(() => {
     const target: Document | HTMLElement | null = pill ? document : root.current;
-    if (!target || disabled) return;
+    if (!target || disabled || !attach) return;
     const hasFiles = (e: DragEvent) => Boolean(e.dataTransfer?.types.includes("Files"));
     let depth = 0;
     const enter = (e: DragEvent) => {
@@ -236,7 +239,7 @@ export function Composer({
       t.removeEventListener("drop", drop);
       setDropping(false);
     };
-  }, [pill, disabled]);
+  }, [pill, disabled, attach]);
 
   const takeScreenshot = async () => {
     setError(null);
@@ -455,7 +458,7 @@ export function Composer({
               </div>
             )}
             <div className="composer-grid">
-              <button
+              {attach && <button
                 ref={plus}
                 type="button"
                 className={`composer-plus ${plusOpen ? "active" : ""}`}
@@ -471,7 +474,7 @@ export function Composer({
                 }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-              </button>
+              </button>}
               <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
               <textarea
                 ref={input}
@@ -483,7 +486,7 @@ export function Composer({
                 onChange={(e) => change(e.target.value)}
                 onKeyDown={onKeyDown}
                 onPaste={(e) => {
-                  if (e.clipboardData.files.length > 0) {
+                  if (attach && e.clipboardData.files.length > 0) {
                     e.preventDefault();
                     void addFiles(e.clipboardData.files);
                   }

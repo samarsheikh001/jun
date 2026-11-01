@@ -208,22 +208,35 @@ try {
     assert.equal(odd, "none");
   });
 
-  await step("the side panel draws: settings (Sign in with ChatGPT) first, then the chat", async () => {
-    const { targetId } = await cdp.send("Target.createTarget", { url: `chrome-extension://${extId}/sidepanel.html` });
-    const { sessionId: panel } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
-    await cdp.send("Emulation.setDeviceMetricsOverride", { width: 380, height: 640, deviceScaleFactor: 1, mobile: false }, panel);
-    await until("the settings view", () => cdp.eval<boolean>(panel, "[...document.querySelectorAll('.settings button')].some((b) => b.textContent === 'Sign in with ChatGPT')"));
+  await step("the island: the toolbar button's summon puts the widget's island on the page; it opens on the content script's word", async () => {
+    // What the background does on a toolbar click (its tab list, then the content script and a summon).
+    await cdp.eval(sw, `chrome.storage.session.set({ "jun.tabs": [${tabId}] }).then(() => chrome.scripting.executeScript({ target: { tabId: ${tabId} }, files: ["/content-scripts/page.js"] })).then(() => chrome.tabs.sendMessage(${tabId}, { type: "jun:summon", open: false }))`);
+    await until("the island frame", () => onPage<boolean>(`(() => { const f = document.querySelector('[data-jun-desk="extension"]')?.shadowRoot?.querySelector("iframe"); return !!f && f.style.clipPath.includes("calc"); })()`), 15000);
+    const island = await until("the island page", async () => {
+      const { targetInfos } = await cdp.send("Target.getTargets");
+      return targetInfos.find((t: { url: string }) => t.url.startsWith(`chrome-extension://${extId}/island.html`));
+    });
+    const { sessionId: frame } = await cdp.send("Target.attachToTarget", { targetId: island.targetId, flatten: true });
+    await until("the resting pill", () => cdp.eval<boolean>(frame, "!!document.querySelector('.i-rest')"));
+    // A read never sees the island (it's under [data-jun-desk]).
+    const r = await call({ type: "jun:run", name: "read_page", input: {}, mask: true });
+    assert.ok(r.ok && !JSON.stringify(r.result).includes("Ask about this page"), "the read saw the island");
+    await wait(900);
     const shots: string[] = [];
     const shoot = async (name: string) => {
-      const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, panel);
+      const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, page);
       const file = join(tmpdir(), `jun-ext-${name}.png`);
       writeFileSync(file, Buffer.from(shot.data, "base64"));
       shots.push(file);
     };
-    await shoot("settings");
-    await cdp.eval(panel, `chrome.storage.local.set({ "jun.keys": { openai: "sk-test" }, "jun.settings": { provider: "openai" } }).then(() => location.reload())`).catch(() => undefined);
-    await until("the chat view", () => cdp.eval<boolean>(panel, "!!document.querySelector('.composer textarea')"));
-    await shoot("chat");
+    await shoot("island-rest");
+    // "/" on the page opens it (as the widget's).
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "/", text: "/" }, page);
+    await until("the open island", () => cdp.eval<boolean>(frame, "!!document.querySelector('.i-open .composer')"));
+    await wait(900);
+    await shoot("island-open");
+    // Not signed in: it offers Sign in with ChatGPT, not a dead end.
+    assert.ok(await cdp.eval<boolean>(frame, "[...document.querySelectorAll('.i-foot button')].some((b) => b.textContent === 'Sign in with ChatGPT')"));
     console.log(`  screenshots: ${shots.join(", ")}`);
   });
 

@@ -1,4 +1,4 @@
-// The side panel's way into the tab (E-01): which site it shows, the person's per-site permission,
+// The island frame's way into its tab (E-01): which site it's on, the person's per-site permission,
 // injecting the content script on demand and asking it to run a tool.
 import { PAGE_SCRIPT, type PageRequest, type PageResponse } from "./protocol.ts";
 import { siteOf, type Site } from "./settings.ts";
@@ -6,13 +6,15 @@ import { siteOf, type Site } from "./settings.ts";
 export type Target = { tabId: number; title: string; site: Site };
 export type NoTarget = { problem: "no-tab" | "no-access" | "restricted"; host?: string; pattern?: string };
 
-/** The active tab of the panel's window and its site. Without access Chrome hides the URL. */
-export async function currentTarget(): Promise<Target | NoTarget> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return { problem: "no-tab" };
+/** The island's own tab (the background answers for the frame) and its site. */
+export async function islandTarget(): Promise<Target | NoTarget> {
+  const tabId = (await browser.runtime.sendMessage({ type: "jun:tab" }).catch(() => null)) as number | null;
+  if (typeof tabId !== "number") return { problem: "no-tab" };
+  const tab = await browser.tabs.get(tabId).catch(() => null);
+  if (!tab) return { problem: "no-tab" };
   const site = siteOf(tab.url);
   if ("problem" in site) return { problem: site.problem };
-  return { tabId: tab.id, title: tab.title ?? "", site };
+  return { tabId, title: tab.title ?? "", site };
 }
 
 /** Whether Jun keeps access to this site (an "Allow on this site" given before). activeTab alone lasts until the tab navigates away. */

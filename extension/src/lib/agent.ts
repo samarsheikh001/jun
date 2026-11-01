@@ -27,6 +27,8 @@ export interface TurnEvents {
   step(step: StepEvent): void;
   /** A click, typing or choice waits for the person; resolves with their answer. */
   confirm(request: { id: string; name: string; input: Record<string, unknown>; description: string }): Promise<Decision>;
+  /** The step starts on the page now (at once, or after the person's yes). */
+  running?(id: string): void;
 }
 
 export interface Turn {
@@ -69,6 +71,7 @@ export async function runTurn(turn: Turn): Promise<ModelMessage[]> {
           void call(target.tabId, { type: "jun:point", point: null });
           if (decision === "no") return "The person said no to this step. Don't do it; ask what they'd like instead.";
         }
+        on.running?.(toolCallId);
         const r = await call(target.tabId, { type: "jun:run", name: info.name, input, mask });
         if (r.ok) return info.name === "read_page" ? wrapPage(r.result) : String(r.result ?? "Done.");
         if (r.error === "navigated") return reloadedResult(info.name).result;

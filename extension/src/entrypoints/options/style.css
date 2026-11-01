@@ -97,3 +97,7 @@ small { display: block; font-size: 12px; margin-top: 4px; }
 .primary.big { padding: 9px 16px; align-self: stretch; }
 .account { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }
 .bad { color: var(--error); }
+
+/* The options page (a tab of its own). */
+.app.page { max-width: 560px; margin: 0 auto; height: auto; min-height: 100%; }
+img.logo { width: 28px; height: 28px; border-radius: 8px; background: none; }

@@ -15,8 +15,8 @@ npm run build -w extension
 ```
 
 Then in Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → `extension/dist/chrome-mv3`.
-Click the Jun button in the toolbar on any website, **Sign in with ChatGPT** in Settings (or paste an
-OpenAI API key) and ask.
+Click the Jun button in the toolbar on any website: the island appears at the bottom of the page.
+**Sign in with ChatGPT** on it (or add an OpenAI API key in Settings) and ask. `/` opens it.
 
 `npm run dev -w extension` opens a browser with the extension loaded and reloads it on changes.
 
@@ -24,9 +24,10 @@ OpenAI API key) and ask.
 
 | Part | Where | What |
 |---|---|---|
-| Side panel | `src/entrypoints/sidepanel/` | The chat, Confirm cards and settings. Runs the agent loop (`src/lib/agent.ts`: AI SDK `streamText` with the page tools) against the active tab |
-| Content script | `src/entrypoints/page.content.ts` | Injected on demand with `chrome.scripting` when you ask, never declared on every page. Runs the desk's shared page tools (`web/page-control/tools.ts`: `read_page`, `click`, `type_text`, `choose_option`, `scroll_page`, plus `point_at`) |
-| Background | `src/entrypoints/background.ts` | Opens the panel from the toolbar button (which grants `activeTab`) |
+| Island | `src/entrypoints/island/` | The chat: the widget's island (`web/widget/island.tsx`, `answer.tsx`, the pill `Composer`, `widget.css`) in an extension frame at the bottom of the page. Runs the agent loop (`src/lib/agent.ts`: AI SDK `streamText` with the page tools) against its tab; the chat is kept per tab in `storage.session` |
+| Content script | `src/entrypoints/page.content.ts` | Injected on demand with `chrome.scripting` when you summon Jun, never declared on every page. Hosts the island's frame like the widget's loader (`jun:css` sizes and clips it, `/` opens it) and runs the desk's shared page tools (`web/page-control/tools.ts`: `read_page`, `click`, `type_text`, `choose_option`, `scroll_page`, plus `point_at`) |
+| Background | `src/entrypoints/background.ts` | The toolbar button summons the island (the click grants `activeTab`); tells the island frame its tab; brings the island back after a page load on sites you allowed |
+| Settings | `src/entrypoints/options/` | Your AI, model, masking, when to ask |
 | Protocol | `src/lib/protocol.ts` | The panel ↔ page messages |
 
 **Sign in with ChatGPT:** OpenAI's documented flow for open-source, locally hosted apps, the same code
@@ -55,5 +56,5 @@ own key and sent only to OpenAI.
 
 ## Not yet
 
-Other providers (Anthropic, Gemini), runs that outlive the panel, several tabs, cross-origin frames, a
+Other providers (Anthropic, Gemini), runs that survive a page load mid-answer (the loop lives in the island frame), several tabs, cross-origin frames, a
 Chrome Web Store listing and privacy policy.
