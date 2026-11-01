@@ -30,6 +30,11 @@ Click the Jun button in the toolbar on any website: the island appears at the bo
 | Settings | `src/entrypoints/options/` | Your AI, model, masking, when to ask |
 | Protocol | `src/lib/protocol.ts` | The panel ↔ page messages |
 
+**Screenshots:** the island's "+" takes a screenshot of the tab with Chrome's tab capture (no
+screen-share prompt; the island hides for the shot; it needs the toolbar click's access to the page)
+or adds images from your device. You see it before it's sent; it goes to your AI with your question
+(`src/lib/images.ts`, scaled to 1600px), and the chat keeps a thumbnail.
+
 **Sign in with ChatGPT:** OpenAI's documented flow for open-source, locally hosted apps, the same code
 as the desk and the CLI (`packages/llm/src/chatgpt/`). Its redirect must be `http://127.0.0.1:1455/auth/callback`,
 which an extension can't listen on, so `src/lib/chatgpt.ts` opens the sign-in in a tab, reads the tab's

@@ -90,6 +90,14 @@ export default defineContentScript({
         sendResponse({ ok: true, result: null });
         return;
       }
+      if (type === "jun:island-hidden") {
+        // A screenshot is being taken: out of the picture (and the pointer's ring too), answered once painted.
+        const hidden = (message as { hidden?: boolean }).hidden === true;
+        if (frame) frame.style.visibility = hidden ? "hidden" : "";
+        if (hidden) tools.point(null);
+        requestAnimationFrame(() => requestAnimationFrame(() => sendResponse({ ok: true, result: null })));
+        return true;
+      }
       const request = readRequest(message);
       if (!request) return;
       const reply = (r: PageResponse) => sendResponse(r);

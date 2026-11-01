@@ -8,10 +8,12 @@
 import type { ModelMessage } from "ai";
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ActionParam, MessageAction } from "../../../../shared/actions.ts";
+import type { Attachment } from "../../../../shared/protocol.ts";
 import { Composer } from "../../../../web/components/Composer.tsx";
 import { AiAnswer, RunSteps, runLine, type ActionControls } from "../../../../web/widget/answer.tsx";
 import { Island, IslandChips, IslandControls, IslandRow, IslandTop, RestPill, StatusLine, type IslandSpot, type IslandState } from "../../../../web/widget/island.tsx";
-import { runTurn, TurnError, type Decision } from "../../lib/agent.ts";
+import { runTurn, TurnError, withoutImages, type Decision } from "../../lib/agent.ts";
+import { captureTab, prepareImage } from "../../lib/images.ts";
 import { signedIn, signIn } from "../../lib/chatgpt.ts";
 import { callPage, hasSiteAccess, islandTarget, requestSiteAccess, type NoTarget, type Target } from "../../lib/page.ts";
 import type { ToolInfo } from "../../lib/protocol.ts";
@@ -21,6 +23,8 @@ import { DEFAULT_SETTINGS, KEYS_KEY, readKeys, readSettings, SETTINGS_KEY, type 
 interface Exchange {
   id: string;
   question: string;
+  /** Thumbnails of the screenshots or images sent with it. */
+  images?: string[];
   actions: MessageAction[];
   text: string;
   streaming: boolean;
@@ -111,6 +115,8 @@ export function IslandApp() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const restored = useRef(false);
+  /** Images picked or captured in the composer, by attachment key, until they're sent. */
+  const files = useRef(new Map<string, File>());
 
   // Settings, the sign-in, this tab and its chat; then tell the host we're here.
   useEffect(() => {
@@ -151,7 +157,7 @@ export function IslandApp() {
   // Keep the chat for this tab (it comes back after a page load), once nothing is moving.
   useEffect(() => {
     if (!restored.current || busy || !isTarget(target)) return;
-    void browser.storage.session.set({ [chatKey(target.tabId)]: { exchanges, history: history.current } satisfies Saved });
+    void browser.storage.session.set({ [chatKey(target.tabId)]: { exchanges, history: withoutImages(history.current) } satisfies Saved });
   }, [exchanges, busy, target]);
 
   const ready = settings.provider === "chatgpt" ? !!account : !!keys.openai;
@@ -159,9 +165,9 @@ export function IslandApp() {
   const updateAction = (exId: string, runId: string, fn: (a: MessageAction) => MessageAction) =>
     update(exId, (ex) => ({ ...ex, actions: ex.actions.map((a) => (a.runId === runId ? fn(a) : a)) }));
 
-  async function send(text: string) {
+  async function send(text: string, attached: File[] = []) {
     text = text.trim();
-    if (!text || busy) return;
+    if ((!text && !attached.length) || busy) return;
     setNotice(null);
     if (!ready) {
       setNotice(settings.provider === "chatgpt" ? "Sign in with ChatGPT first." : "Add your OpenAI API key in Settings first.");
@@ -173,8 +179,16 @@ export function IslandApp() {
       setNotice(t.problem === "restricted" ? "Jun can't work on this page." : "Click the Jun button in the toolbar again on this page.");
       return;
     }
+    let images: Awaited<ReturnType<typeof prepareImage>>[] = [];
+    try {
+      images = await Promise.all(attached.map(prepareImage));
+    } catch {
+      setNotice("That image couldn't be read. Try another one.");
+      return;
+    }
     const exId = nextId();
-    setExchanges((all) => [...all, { id: exId, question: text, actions: [], text: "", streaming: true, error: null, at: Date.now() }]);
+    const question = text || (images.length > 1 ? "What do you see in these?" : "What do you see here?");
+    setExchanges((all) => [...all, { id: exId, question, ...(images.length ? { images: images.map((i) => i.thumb) } : {}), actions: [], text: "", streaming: true, error: null, at: Date.now() }]);
     setBusy(true);
     setRunOpened(false);
     setShowAll(false);
@@ -192,7 +206,8 @@ export function IslandApp() {
           target: t,
           tools,
           history: history.current,
-          text,
+          text: question,
+          images: images.map(({ base64, mediaType }) => ({ base64, mediaType })),
           signal: controller.signal,
           on: {
             text(delta) {
@@ -296,10 +311,22 @@ export function IslandApp() {
     ...(settings.confirm === "allow-always" ? { onAllowAlways: () => void (allowNext.current = true) } : {}),
   };
 
+  // "+": images from the device, or a screenshot of this tab (the island hides for it); they go to the AI with the question.
+  const upload = async (file: File): Promise<Attachment> => {
+    if (!file.type.startsWith("image/")) throw new Error("Only images can be added here.");
+    const key = `img-${nextId()}`;
+    files.current.set(key, file);
+    return { key, name: file.name, size: file.size, type: file.type };
+  };
+  const onSend = (body: string, attachments: Attachment[]) => {
+    const picked = attachments.flatMap((a) => (files.current.has(a.key) ? [files.current.get(a.key)!] : []));
+    for (const a of attachments) files.current.delete(a.key);
+    void send(body, picked);
+  };
   const row = (
     <IslandRow logoUrl={null}>
       <div className="w-composer-wrap">
-        <Composer pill attach={false} placeholder={isTarget(target) ? PLACEHOLDER : "Click the Jun button on a website"} upload={() => Promise.reject(new Error("No uploads here"))} onSend={(body) => void send(body)} />
+        <Composer pill screenshot capture={captureTab} placeholder={isTarget(target) ? PLACEHOLDER : "Click the Jun button on a website"} upload={upload} onSend={onSend} />
       </div>
     </IslandRow>
   );
@@ -328,6 +355,11 @@ export function IslandApp() {
       <Fragment key={ex.id}>
         <div className="msg own">
           <div className="bubble">{ex.question}</div>
+          {ex.images?.length ? (
+            <div className="x-shots">
+              {ex.images.map((src, i) => <img key={i} src={src} alt="Screenshot you sent" />)}
+            </div>
+          ) : null}
         </div>
         <div className="msg other ai">
           {steps.length > 0 && <RunSteps actions={steps} isRunning={isRunning} busy={latest && busy} />}
@@ -359,7 +391,8 @@ export function IslandApp() {
       )}
       {state === "open" && (
         <div className="i-open">
-          {ready && <IslandChips questions={SUGGESTIONS} onPick={(q) => void send(q)} />}
+          {/* Always shown, as in the widget: they also give the "+" menu its room above the row. */}
+          <IslandChips questions={SUGGESTIONS} onPick={(q) => void send(q)} />
           {notice && <p className="i-error" role="alert">{notice}</p>}
           {foot}
           {row}

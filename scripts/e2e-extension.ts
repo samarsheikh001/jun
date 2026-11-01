@@ -237,6 +237,18 @@ try {
     await shoot("island-open");
     // Not signed in: it offers Sign in with ChatGPT, not a dead end.
     assert.ok(await cdp.eval<boolean>(frame, "[...document.querySelectorAll('.i-foot button')].some((b) => b.textContent === 'Sign in with ChatGPT')"));
+    // "+" offers a screenshot of this tab; the island hides for it and comes back.
+    await cdp.eval(frame, "document.querySelector('.composer-plus').click()");
+    await until("the + menu", () => cdp.eval<boolean>(frame, "[...document.querySelectorAll('.composer-menu button')].some((b) => b.textContent.includes('Take a screenshot'))"));
+    await wait(400);
+    await shoot("island-plus");
+    const taken = await cdp.eval<{ ok: boolean; dataUrl?: string; error?: string; hiddenDuring?: boolean }>(frame, "chrome.runtime.sendMessage({ type: 'jun:shot' })");
+    assert.ok(taken.ok && taken.dataUrl?.startsWith("data:image/jpeg;base64,"), JSON.stringify(taken).slice(0, 200));
+    writeFileSync(join(tmpdir(), "jun-ext-captured.jpg"), Buffer.from(taken.dataUrl!.split(",")[1]!, "base64"));
+    shots.push(join(tmpdir(), "jun-ext-captured.jpg"));
+    assert.equal(await onPage<string>(`document.querySelector('[data-jun-desk="extension"]').shadowRoot.querySelector("iframe").style.visibility`), "", "the island stayed hidden");
+    await cdp.eval(frame, "document.querySelector('.composer-plus').click()");
+
     // A saved answer (as a page load brings it back): the answer view, with the widget's side padding.
     const saved = {
       exchanges: [{ id: "x1", question: "What can I do on this page?", text: "This is the **Account settings** page. You can:\n\n- Change your display name.\n- Pick a plan in **Plan**.\n- Save with **Save changes**.", streaming: false, error: null, at: Date.now(), actions: [{ runId: "r1", id: "r1", name: "read_page", description: "Read", risk: "auto", params: {}, required: [], input: {}, missing: [], status: "ok", result: null, canUndo: false, statusLine: "Reading the page" }] }],

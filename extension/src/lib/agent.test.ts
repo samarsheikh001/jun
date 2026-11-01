@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MockLanguageModelV4 } from "ai/test";
-import { runTurn, type Decision, type StepEvent } from "./agent.ts";
+import { runTurn, withoutImages, type Decision, type StepEvent } from "./agent.ts";
 import type { PageRequest, PageResponse, ToolInfo } from "./protocol.ts";
 import { DEFAULT_SETTINGS, type Settings } from "./settings.ts";
 
@@ -106,4 +106,25 @@ test("runTurn: no key and no model is a plain message", async () => {
     runTurn({ keys: { openai: "" }, settings: () => ({ ...DEFAULT_SETTINGS, provider: "openai" }), target, tools: TOOLS, history: [], text: "hi", signal: new AbortController().signal, on: { text() {}, step() {}, confirm: async () => "no" } }),
     /Add your OpenAI API key/,
   );
+});
+
+test("runTurn: a screenshot goes to the model as an image with the question; the kept history drops it", async () => {
+  const model = new MockLanguageModelV4({ doStream: [stream(say("I see a settings page."))] });
+  const history = await runTurn({
+    keys: { openai: "" },
+    settings: () => DEFAULT_SETTINGS,
+    target,
+    tools: TOOLS,
+    history: [],
+    text: "What is this?",
+    images: [{ base64: "/9j/AAAA", mediaType: "image/jpeg" }],
+    signal: new AbortController().signal,
+    model,
+    call: async () => ({ ok: true, result: null }),
+    on: { text() {}, step() {}, confirm: async () => "no" },
+  });
+  const sent = JSON.stringify(model.doStreamCalls[0]!.prompt);
+  assert.ok(sent.includes("What is this?") && sent.includes('"type":"file"') && sent.includes("image/jpeg"), sent);
+  const kept = JSON.stringify(withoutImages(history));
+  assert.ok(!kept.includes("/9j/AAAA") && kept.includes("A screenshot the person sent earlier"), kept);
 });

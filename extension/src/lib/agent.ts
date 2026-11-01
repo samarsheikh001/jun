@@ -39,6 +39,8 @@ export interface Turn {
   tools: ToolInfo[];
   history: ModelMessage[];
   text: string;
+  /** Images sent with the question (screenshots), base64. */
+  images?: { base64: string; mediaType: string }[];
   signal: AbortSignal;
   on: TurnEvents;
   /** Tests only: a mock model and page instead of OpenAI and the tab. */
@@ -56,7 +58,11 @@ export async function runTurn(turn: Turn): Promise<ModelMessage[]> {
   const { mask } = settings;
   const ai = turn.model ? { model: turn.model, prompt: (system: string) => ({ system }) } : await modelFor(settings, turn.keys);
   const call = turn.call ?? callPage;
-  const messages: ModelMessage[] = [...turn.history, { role: "user", content: turn.text }];
+  const images = turn.images ?? [];
+  const question: ModelMessage = images.length
+    ? { role: "user", content: [{ type: "text", text: turn.text || "Here's a screenshot of what I see." }, ...images.map((i) => ({ type: "image" as const, image: i.base64, mediaType: i.mediaType }))] }
+    : { role: "user", content: turn.text };
+  const messages: ModelMessage[] = [...turn.history, question];
 
   const tools: ToolSet = {};
   for (const info of turn.tools) {
@@ -134,4 +140,13 @@ export function providerMessage(error: unknown): string {
   if (e?.statusCode === 404) return "OpenAI doesn't know that model. Check the model name in Settings.";
   if (e?.statusCode === 429) return "OpenAI says you're over your limit or out of credit. Try again later or check your OpenAI account.";
   return e?.message ? `The AI failed: ${e.message.slice(0, 200)}` : "The AI failed. Try again.";
+}
+
+/** The history as kept between page loads: images replaced by a note (they're big; the live chat keeps them). */
+export function withoutImages(history: ModelMessage[]): ModelMessage[] {
+  return history.map((m) =>
+    m.role === "user" && Array.isArray(m.content)
+      ? { ...m, content: m.content.map((part) => (part.type === "image" || part.type === "file" ? { type: "text" as const, text: "[A screenshot the person sent earlier]" } : part)) }
+      : m,
+  );
 }

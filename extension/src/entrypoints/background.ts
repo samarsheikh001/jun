@@ -28,6 +28,20 @@ async function summon(tabId: number, open: boolean): Promise<boolean> {
   }
 }
 
+/** The visible part of the tab as a JPEG data URL, the island hidden while it's taken. */
+async function shot(tabId: number, windowId: number | undefined): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> {
+  if (!(await summoned()).includes(tabId)) return { ok: false, error: "Click the Jun button on this page first." };
+  try {
+    await browser.tabs.sendMessage(tabId, { type: "jun:island-hidden", hidden: true });
+    const dataUrl = await browser.tabs.captureVisibleTab(windowId ?? browser.windows.WINDOW_ID_CURRENT, { format: "jpeg", quality: 85 });
+    return { ok: true, dataUrl };
+  } catch {
+    return { ok: false, error: "Chrome didn't allow a screenshot here. Click the Jun button on this page, then try again." };
+  } finally {
+    await browser.tabs.sendMessage(tabId, { type: "jun:island-hidden", hidden: false }).catch(() => undefined);
+  }
+}
+
 export default defineBackground(() => {
   browser.action.onClicked.addListener((tab) => {
     if (tab.id !== undefined) void summon(tab.id, true);
@@ -41,6 +55,15 @@ export default defineBackground(() => {
       const tabId = sender.tab?.id;
       const fromIsland = sender.url?.startsWith(browser.runtime.getURL("/island.html"));
       void summoned().then((ids) => sendResponse(fromIsland && tabId !== undefined && ids.includes(tabId) ? tabId : null));
+      return true;
+    }
+    if (type === "jun:shot") {
+      // "Take a screenshot" in the island: the visible tab without the island (it hides for the shot).
+      // Needs activeTab (from the toolbar click; it ends when the tab leaves the page).
+      const tab = sender.tab;
+      const fromIsland = sender.url?.startsWith(browser.runtime.getURL("/island.html"));
+      if (!fromIsland || tab?.id === undefined) return;
+      void shot(tab.id, tab.windowId).then(sendResponse);
       return true;
     }
     if (type === "jun:dismiss" && sender.tab?.id !== undefined) void setSummoned(sender.tab.id, false);

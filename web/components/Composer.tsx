@@ -39,6 +39,7 @@ export function Composer({
   suggestScroller: SuggestScroller,
   pill = false,
   attach = true,
+  capture,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -65,6 +66,8 @@ export function Composer({
   pill?: boolean;
   /** The pill's "+" (files, screenshot); off where nothing can be uploaded (the browser extension, E-01). */
   attach?: boolean;
+  /** How "Take a screenshot" captures (null: cancelled); default the browser's screen-share prompt. The extension uses Chrome's tab capture (E-01). */
+  capture?: () => Promise<File | null>;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -79,7 +82,7 @@ export function Composer({
   const suggestList = useRef<HTMLUListElement>(null);
   const pendingCaret = useRef<number | null>(null);
   // S-15: a captured screenshot waiting for the visitor to send or discard it.
-  const canShoot = useMemo(() => screenshot && canCaptureScreen(), [screenshot]);
+  const canShoot = useMemo(() => screenshot && (Boolean(capture) || canCaptureScreen()), [screenshot, capture]);
   const [shot, setShot] = useState<{ file: File; url: string } | null>(null);
   const [shooting, setShooting] = useState(false);
   useEffect(() => () => {
@@ -245,7 +248,7 @@ export function Composer({
     setError(null);
     setShooting(true);
     try {
-      const file = await captureScreen();
+      const file = await (capture ?? captureScreen)();
       if (file) setShot({ file, url: URL.createObjectURL(file) });
     } catch (e) {
       setError((e as Error).message);
