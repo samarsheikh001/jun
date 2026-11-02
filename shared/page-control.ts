@@ -126,16 +126,13 @@ const CUT_NOTE = "\n… (the rest of the page was cut; scroll_page and read_page
 /**
  * The masked read, small enough that its JSON fits MAX_PAGE_READ_RESULT (so it's never cut
  * mid-string later). The header names the page by its raw URL: that becomes the clean one.
- * `mask: false` (E-01, D-155: the browser extension's switch, the person's own page to their own AI)
- * keeps the text and the URL as they are, only cut to size; private fields are never read either way.
  */
-export function pageRead(state: PageRead, origin: string, max = MAX_PAGE_READ_RESULT, mask = true): PageRead {
-  const cut = mask ? redact : (text: string, n: number) => String(text ?? "").slice(0, n);
-  const path = mask ? cleanUrl(state.url, origin) : state.url;
+export function pageRead(state: PageRead, origin: string, max = MAX_PAGE_READ_RESULT): PageRead {
+  const path = cleanUrl(state.url, origin);
   const url = path.startsWith("/") ? origin + path : path;
   const header = state.url ? state.header.split(state.url).join(url) : state.header;
-  const read: PageRead = { url, title: cut(state.title, 200), header: cut(header, 1000), content: "", footer: cut(state.footer, 200) };
-  const content = cut(state.content, max);
+  const read: PageRead = { url, title: redact(state.title, 200), header: redact(header, 1000), content: "", footer: redact(state.footer, 200) };
+  const content = redact(state.content, max);
   const size = (c: string) => JSON.stringify({ ...read, content: c }).length;
   if (size(content) <= max) return { ...read, content };
   // JSON escapes (tabs, quotes, newlines) make it longer than the text: cut until it fits.

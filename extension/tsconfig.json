@@ -1,9 +1,0 @@
-{
-  "extends": "./.wxt/tsconfig.json",
-  "compilerOptions": {
-    // Checked against React's types like the widget (tsconfig.web.json); built on Preact (wxt.config.ts).
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
-    "types": ["react", "react-dom"]
-  }
-}

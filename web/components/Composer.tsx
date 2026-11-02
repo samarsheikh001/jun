@@ -38,8 +38,6 @@ export function Composer({
   control,
   suggestScroller: SuggestScroller,
   pill = false,
-  attach = true,
-  capture,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -64,10 +62,6 @@ export function Composer({
    * screenshot), the input and Send; the input moves above the buttons once the text wraps.
    */
   pill?: boolean;
-  /** The pill's "+" (files, screenshot); off where nothing can be uploaded (the browser extension, E-01). */
-  attach?: boolean;
-  /** How "Take a screenshot" captures (null: cancelled); default the browser's screen-share prompt. The extension uses Chrome's tab capture (E-01). */
-  capture?: () => Promise<File | null>;
 }) {
   const [body, setBody] = useState("");
   const [note, setNote] = useState(false);
@@ -82,7 +76,7 @@ export function Composer({
   const suggestList = useRef<HTMLUListElement>(null);
   const pendingCaret = useRef<number | null>(null);
   // S-15: a captured screenshot waiting for the visitor to send or discard it.
-  const canShoot = useMemo(() => screenshot && (Boolean(capture) || canCaptureScreen()), [screenshot, capture]);
+  const canShoot = useMemo(() => screenshot && canCaptureScreen(), [screenshot]);
   const [shot, setShot] = useState<{ file: File; url: string } | null>(null);
   const [shooting, setShooting] = useState(false);
   useEffect(() => () => {
@@ -203,7 +197,7 @@ export function Composer({
   addFilesRef.current = addFiles;
   useEffect(() => {
     const target: Document | HTMLElement | null = pill ? document : root.current;
-    if (!target || disabled || !attach) return;
+    if (!target || disabled) return;
     const hasFiles = (e: DragEvent) => Boolean(e.dataTransfer?.types.includes("Files"));
     let depth = 0;
     const enter = (e: DragEvent) => {
@@ -242,13 +236,13 @@ export function Composer({
       t.removeEventListener("drop", drop);
       setDropping(false);
     };
-  }, [pill, disabled, attach]);
+  }, [pill, disabled]);
 
   const takeScreenshot = async () => {
     setError(null);
     setShooting(true);
     try {
-      const file = await (capture ?? captureScreen)();
+      const file = await captureScreen();
       if (file) setShot({ file, url: URL.createObjectURL(file) });
     } catch (e) {
       setError((e as Error).message);
@@ -461,7 +455,7 @@ export function Composer({
               </div>
             )}
             <div className="composer-grid">
-              {attach && <button
+              <button
                 ref={plus}
                 type="button"
                 className={`composer-plus ${plusOpen ? "active" : ""}`}
@@ -477,7 +471,7 @@ export function Composer({
                 }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-              </button>}
+              </button>
               <input ref={fileInput} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
               <textarea
                 ref={input}
@@ -489,7 +483,7 @@ export function Composer({
                 onChange={(e) => change(e.target.value)}
                 onKeyDown={onKeyDown}
                 onPaste={(e) => {
-                  if (attach && e.clipboardData.files.length > 0) {
+                  if (e.clipboardData.files.length > 0) {
                     e.preventDefault();
                     void addFiles(e.clipboardData.files);
                   }
