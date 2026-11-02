@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
-import { api, describeError, registerPasskey, signInWithPasskey, type Me } from "./api.ts";
+import { api, describeError, registerPasskey, signInWithPasskey, signInWithPassword, type Me } from "./api.ts";
 import { lastSession, rememberSession, Shell, ShellSkeleton } from "./Shell.tsx";
 import { useAction } from "./useAction.ts";
 import { Button } from "@/components/ui/button.tsx";
@@ -70,61 +70,116 @@ function Field({ label, hint, ...props }: { label: string; hint?: string } & Inp
 
 const formValues = (e: FormEvent<HTMLFormElement>) => Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
 
+type Method = "passkey" | "password";
+
+const MIN_PASSWORD = 10;
+
+function NewPasswordField() {
+  return <Field label="Password" name="password" type="password" required minLength={MIN_PASSWORD} autoComplete="new-password" hint={`At least ${MIN_PASSWORD} characters.`} />;
+}
+
+/** D-157: switches a form between a passkey and a password. */
+function MethodSwitch({ method, onChange }: { method: Method; onChange: (m: Method) => void }) {
+  return (
+    <p className="muted small">
+      <button type="button" className="link-button" onClick={() => onChange(method === "passkey" ? "password" : "passkey")}>
+        {method === "passkey" ? "Use a password instead" : "Use a passkey instead"}
+      </button>
+    </p>
+  );
+}
+
 function SetupPage({ onDone }: { onDone: () => void }) {
   const { busy, error, run } = useAction();
+  const [method, setMethod] = useState<Method>("passkey");
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const v = formValues(e);
+    const body = { token: v.token, workspaceName: v.workspaceName, name: v.name, email: v.email };
     run(async () => {
-      await registerPasskey("/setup", { token: v.token, workspaceName: v.workspaceName, name: v.name, email: v.email });
+      if (method === "passkey") await registerPasskey("/setup", body);
+      else await api("/setup/password", { body: { ...body, password: v.password } });
       onDone();
     });
   };
+  const subtitle = method === "passkey"
+    ? "Create the owner account. You'll sign in with a passkey: your fingerprint, face, or device PIN."
+    : "Create the owner account. You'll sign in with your email and a password.";
   return (
-    <Card title="Set up your desk" subtitle="Create the owner account. You'll sign in with a passkey: your fingerprint, face, or device PIN.">
+    <Card title="Set up your desk" subtitle={subtitle}>
       <form onSubmit={submit}>
         <Field label="Setup token" name="token" type="password" required autoComplete="off" hint="The SETUP_TOKEN you chose when deploying." />
         <Field label="Workspace name" name="workspaceName" required placeholder="Acme Support" />
         <Field label="Your name" name="name" required autoComplete="name" />
         <Field label="Email" name="email" type="email" required autoComplete="email" />
+        {method === "password" && <NewPasswordField />}
         {error && <p className="error">{error}</p>}
-        <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and finish setup"}</Button>
+        <Button disabled={busy}>{method === "passkey" ? (busy ? "Waiting for passkey…" : "Create passkey and finish setup") : busy ? "Setting up…" : "Finish setup"}</Button>
       </form>
+      <MethodSwitch method={method} onChange={setMethod} />
     </Card>
+  );
+}
+
+/** Email + password sign-in; `then` runs after it (joining an invite). */
+function PasswordSignIn({ busy, run, then }: { busy: boolean; run: (fn: () => Promise<void>) => void; then: () => Promise<void> | void }) {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const v = formValues(e);
+    run(async () => {
+      await signInWithPassword(v.email ?? "", v.password ?? "");
+      await then();
+    });
+  };
+  return (
+    <form onSubmit={submit}>
+      <Field label="Email" name="email" type="email" required autoComplete="username" />
+      <Field label="Password" name="password" type="password" required autoComplete="current-password" />
+      <Button variant="outline" disabled={busy}>{busy ? "Signing in…" : "Sign in with password"}</Button>
+    </form>
   );
 }
 
 function LoginPage({ onDone }: { onDone: () => void }) {
   const { busy, error, run } = useAction();
   return (
-    <Card title="Sign in" subtitle="Use the passkey you created for this desk.">
+    <Card title="Sign in" subtitle="Use your passkey, or the email and password you set for this desk.">
       {error && <p className="error">{error}</p>}
       <Button disabled={busy} onClick={() => run(async () => { await signInWithPasskey(); onDone(); })}>
-        {busy ? "Waiting for passkey…" : "Sign in with passkey"}
+        {busy ? "Waiting…" : "Sign in with passkey"}
       </Button>
-      <p className="muted small">New here? Ask your workspace admin for an invite link. Each person creates their own passkey.</p>
-      <p className="muted small">Owner lost access to every passkey? <a href="/recover">Recover with the setup token</a></p>
+      <div className="auth-or">or</div>
+      <PasswordSignIn busy={busy} run={run} then={onDone} />
+      <p className="muted small">New here? Ask your workspace admin for an invite link.</p>
+      <p className="muted small">Owner locked out? <a href="/recover">Recover with the setup token</a></p>
     </Card>
   );
 }
 
 function RecoverPage({ onDone }: { onDone: () => void }) {
   const { busy, error, run } = useAction();
+  const [method, setMethod] = useState<Method>("passkey");
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const { token } = formValues(e);
+    const v = formValues(e);
     run(async () => {
-      await registerPasskey("/recover", { token });
+      if (method === "passkey") await registerPasskey("/recover", { token: v.token });
+      else await api("/recover/password", { body: { token: v.token, password: v.password } });
       onDone();
     });
   };
   return (
-    <Card title="Recover owner access" subtitle="Enter the setup token to add a new passkey to the owner account.">
+    <Card
+      title="Recover owner access"
+      subtitle={method === "passkey" ? "Enter the setup token to add a new passkey to the owner account." : "Enter the setup token to set a new password on the owner account. Other browsers signed in as the owner are signed out."}
+    >
       <form onSubmit={submit}>
         <Field label="Setup token" name="token" type="password" required autoComplete="off" />
+        {method === "password" && <NewPasswordField />}
         {error && <p className="error">{error}</p>}
-        <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Add a new passkey"}</Button>
+        <Button disabled={busy}>{method === "passkey" ? (busy ? "Waiting for passkey…" : "Add a new passkey") : busy ? "Saving…" : "Set new password"}</Button>
       </form>
+      <MethodSwitch method={method} onChange={setMethod} />
       <p className="muted small"><a href="/">Back to sign in</a></p>
     </Card>
   );
@@ -134,24 +189,38 @@ function InvitePage({ token, signedInAs, onDone }: { token: string; signedInAs: 
   const [invite, setInvite] = useState<{ workspaceName: string; role: string } | null>(null);
   const { busy, error, run } = useAction();
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [method, setMethod] = useState<Method>("passkey");
+  const [existing, setExisting] = useState(false);
   useEffect(() => {
     api<{ workspaceName: string; role: string }>(`/invites/${token}`).then(setInvite, (e) => setLoadError(describeError(e)));
   }, [token]);
 
   if (loadError) return <Card title="Invite not available"><p className="error">{loadError}</p></Card>;
   if (!invite) return null;
-  // D-95: already on this desk (another workspace): join with the same account, no new passkey.
-  const join = () =>
-    run(async () => {
-      switchWorkspace(await api<{ workspaceId: string; workspaceSlug: string | null }>(`/invites/${token}/accept`, { body: {} }));
-    });
+  // D-95: already on this desk (another workspace): join with the same account, no new sign-in.
+  const accept = async () => {
+    switchWorkspace(await api<{ workspaceId: string; workspaceSlug: string | null }>(`/invites/${token}/accept`, { body: {} }));
+  };
   const role = `You've been invited as ${invite.role === "admin" ? "an admin" : "an agent"}.`;
   if (signedInAs) {
     return (
       <Card title={`Join ${invite.workspaceName}`} subtitle={role}>
         {error && <p className="error">{error}</p>}
-        <Button disabled={busy} onClick={join}>{busy ? "Joining…" : `Join as ${signedInAs}`}</Button>
+        <Button disabled={busy} onClick={() => run(accept)}>{busy ? "Joining…" : `Join as ${signedInAs}`}</Button>
         <p className="muted small">It appears in your workspace menu, next to your others.</p>
+      </Card>
+    );
+  }
+  if (existing) {
+    return (
+      <Card title={`Join ${invite.workspaceName}`} subtitle="Sign in with your account on this desk to join.">
+        {error && <p className="error">{error}</p>}
+        <Button disabled={busy} onClick={() => run(async () => { await signInWithPasskey(); await accept(); })}>
+          {busy ? "Waiting…" : "Sign in with passkey"}
+        </Button>
+        <div className="auth-or">or</div>
+        <PasswordSignIn busy={busy} run={run} then={accept} />
+        <p className="muted small"><button type="button" className="link-button" onClick={() => setExisting(false)}>Create a new account instead</button></p>
       </Card>
     );
   }
@@ -159,7 +228,8 @@ function InvitePage({ token, signedInAs, onDone }: { token: string; signedInAs: 
     e.preventDefault();
     const v = formValues(e);
     run(async () => {
-      await registerPasskey(`/invites/${token}`, { name: v.name, email: v.email });
+      if (method === "passkey") await registerPasskey(`/invites/${token}`, { name: v.name, email: v.email });
+      else await api(`/invites/${token}/password`, { body: { name: v.name, email: v.email, password: v.password } });
       onDone();
     });
   };
@@ -168,14 +238,14 @@ function InvitePage({ token, signedInAs, onDone }: { token: string; signedInAs: 
       <form onSubmit={submit}>
         <Field label="Your name" name="name" required autoComplete="name" />
         <Field label="Email" name="email" type="email" required autoComplete="email" />
+        {method === "password" && <NewPasswordField />}
         {error && <p className="error">{error}</p>}
-        <Button disabled={busy}>{busy ? "Waiting for passkey…" : "Create passkey and join"}</Button>
+        <Button disabled={busy}>{method === "passkey" ? (busy ? "Waiting for passkey…" : "Create passkey and join") : busy ? "Joining…" : "Create account and join"}</Button>
       </form>
+      <MethodSwitch method={method} onChange={setMethod} />
       <p className="muted small">
         Already have an account on this desk?{" "}
-        <a href="#" onClick={(e) => { e.preventDefault(); run(async () => { await signInWithPasskey(); switchWorkspace(await api<{ workspaceId: string; workspaceSlug: string | null }>(`/invites/${token}/accept`, { body: {} })); }); }}>
-          Sign in to join
-        </a>
+        <button type="button" className="link-button" onClick={() => setExisting(true)}>Sign in to join</button>
       </p>
     </Card>
   );

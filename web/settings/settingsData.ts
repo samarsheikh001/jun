@@ -69,7 +69,7 @@ export function sectionRequests(id: SectionId, workspaceId: string, canInvite: b
     case "team": return [`${ws}/members`, ...(canInvite ? [`${ws}/invites`] : [])];
     case "notifications": return [`${ws}/notifications`, `${ws}/push/subscriptions`, THIS_DEVICE];
     case "integrations": return [`${ws}/trackers`];
-    case "account": return ["/passkeys"];
+    case "account": return ["/passkeys", "/password"];
     case "desk": return deskOwner ? ["/desk/telemetry"] : [];
   }
 }

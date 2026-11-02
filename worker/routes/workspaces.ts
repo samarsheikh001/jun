@@ -1,6 +1,7 @@
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { Hono } from "hono";
 import { finishRegistration, startRegistration } from "../auth/passkeys.ts";
+import { hashPassword, newPassword } from "../auth/password.ts";
 import { createSession, requireUser } from "../auth/session.ts";
 import { newId, randomToken, sha256 } from "../lib/crypto.ts";
 import { email, object, readJson, text } from "../lib/validate.ts";
@@ -304,6 +305,27 @@ workspaces.post("/invites/:token/options", async (c) => {
   const taken = await c.env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(user.email).first();
   if (taken) throw new HttpError(409, "email_taken", "An account with that email already exists. Sign in with it to join.");
   return c.json(await startRegistration(c, "invite", user, { user, inviteHash: invite.tokenHash, workspaceId: invite.workspaceId, role: invite.role }));
+});
+
+// D-157: join with a password instead of a passkey.
+workspaces.post("/invites/:token/password", async (c) => {
+  const invite = await findInvite(c, c.req.param("token"));
+  const body = await readJson(c.req);
+  const user = { id: newId("usr"), name: text(body, "name", { max: 100 }), email: email(body) };
+  const password = newPassword(body, user.email);
+  const taken = await c.env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(user.email).first();
+  if (taken) throw new HttpError(409, "email_taken", "An account with that email already exists. Sign in with it to join.");
+  const hash = await hashPassword(password);
+  const now = Date.now();
+  const used = await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL").bind(now, invite.tokenHash),
+    // Only when this request is the one that used the invite.
+    c.env.DB.prepare("INSERT INTO users (id, name, email, password_hash, created_at) SELECT ?, ?, ?, ?, ? WHERE changes() = 1").bind(user.id, user.name, user.email, hash, now),
+    c.env.DB.prepare("INSERT INTO members (workspace_id, user_id, role, created_at) SELECT ?, ?, ?, ? WHERE changes() = 1").bind(invite.workspaceId, user.id, invite.role, now),
+  ]);
+  if (!used[2]?.meta.changes) throw new HttpError(410, "invite_invalid", "This invite link is invalid, used, or expired.");
+  await createSession(c, user.id);
+  return c.json({ ok: true });
 });
 
 workspaces.post("/invites/:token/verify", async (c) => {

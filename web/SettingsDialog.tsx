@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, registerPasskey, type Me } from "./api.ts";
 import { IssueTrackersPanel } from "./settings/IssueTrackersPanel.tsx";
 import { AssignmentPanel, SavedRepliesPanel, TagsPanel, TopicsMovedNote } from "./settings/InboxPanels.tsx";
@@ -190,7 +190,7 @@ const SECTION_CARDS: Record<SectionId, (canInvite: boolean) => string[]> = {
   team: (canInvite) => ["Members", ...(canInvite ? ["Invite people"] : [])],
   notifications: () => ["This device", "Notify me when"],
   integrations: () => ["Issue trackers", "GitHub", "Linear"],
-  account: () => ["Your account", "Your passkeys"],
+  account: () => ["Your account", "Your passkeys", "Your password"],
   desk: () => ["This desk", "Anonymous usage ping"],
 };
 
@@ -246,7 +246,7 @@ function SectionPanels({ id, me, workspace, workspaceId, canEdit, role, myId }: 
       return (
         <>
           <AccountPanel me={me} />
-          <PasskeysPanel />
+          <SignInPanels />
         </>
       );
     case "desk":
@@ -417,34 +417,95 @@ function VersionRow({ admin }: { admin: boolean }) {
   );
 }
 
-function PasskeysPanel() {
+/** Your passkeys and (D-157) your password: one stays, so you can always sign in. */
+function SignInPanels() {
   const [passkeys, setPasskeys] = useState<Passkey[]>(() => cachedGet<{ passkeys: Passkey[] }>("/passkeys")?.passkeys ?? []);
+  const [hasPassword, setHasPassword] = useState(() => cachedGet<{ hasPassword: boolean }>("/password")?.hasPassword ?? false);
   const { busy, error, run } = useAction();
-  const loadPasskeys = useCallback(async () => {
-    setPasskeys((await fetchSetting<{ passkeys: Passkey[] }>("/passkeys")).passkeys);
+  const load = useCallback(async () => {
+    const [keys, pw] = await Promise.all([fetchSetting<{ passkeys: Passkey[] }>("/passkeys"), fetchSetting<{ hasPassword: boolean }>("/password")]);
+    setPasskeys(keys.passkeys);
+    setHasPassword(pw.hasPassword);
   }, []);
   useEffect(() => {
-    loadPasskeys().catch(() => {});
-  }, [loadPasskeys]);
+    load().catch(() => {});
+  }, [load]);
 
   return (
+    <>
+      <SettingsCard
+        title="Your passkeys"
+        description="Add a passkey on a second device so you can't get locked out."
+        action={<Button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await load(); })}>Add passkey</Button>}
+      >
+        {error && <p className="error">{error}</p>}
+        {passkeys.length === 0 ? (
+          <p className="muted small">No passkeys yet. You sign in with your password.</p>
+        ) : (
+          <ul className="list">
+            {passkeys.map((p) => (
+              <li key={p.id}>
+                <span>{p.name ?? "Passkey"} {p.backedUp ? <em className="tag">synced</em> : null}</span>
+                <span className="muted small">added {date(p.createdAt)} · last used {date(p.lastUsedAt)}</span>
+                {(passkeys.length > 1 || hasPassword) && (
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await load(); })}>Remove</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsCard>
+      <PasswordPanel hasPassword={hasPassword} canRemove={passkeys.length > 0} onChange={load} />
+    </>
+  );
+}
+
+function PasswordPanel({ hasPassword, canRemove, onChange }: { hasPassword: boolean; canRemove: boolean; onChange: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const { busy, error, run } = useAction();
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const v = Object.fromEntries(new FormData(form)) as Record<string, string>;
+    run(async () => {
+      if (v.password !== v.repeat) throw new Error("The two new passwords don't match.");
+      await api("/password", { method: "PUT", body: { current: v.current, password: v.password } });
+      form.reset();
+      setOpen(false);
+      setSaved(true);
+      await onChange();
+    });
+  };
+  return (
     <SettingsCard
-      title="Your passkeys"
-      description="Add a passkey on a second device so you can't get locked out."
-      action={<Button disabled={busy} onClick={() => run(async () => { await registerPasskey("/passkeys"); await loadPasskeys(); })}>Add passkey</Button>}
+      title="Your password"
+      description={hasPassword
+        ? "You can sign in with your email and this password. Changing it signs out your other browsers."
+        : "Optional: set one to sign in with your email and a password where a passkey isn't handy."}
+      action={!open && (
+        <Button variant="outline" onClick={() => { setOpen(true); setSaved(false); }}>{hasPassword ? "Change password" : "Set a password"}</Button>
+      )}
     >
-      {error && <p className="error">{error}</p>}
-      <ul className="list">
-        {passkeys.map((p) => (
-          <li key={p.id}>
-            <span>{p.name ?? "Passkey"} {p.backedUp ? <em className="tag">synced</em> : null}</span>
-            <span className="muted small">added {date(p.createdAt)} · last used {date(p.lastUsedAt)}</span>
-            {passkeys.length > 1 && (
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api(`/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); await loadPasskeys(); })}>Remove</Button>
-            )}
-          </li>
-        ))}
-      </ul>
+      {saved && !open && <p className="muted small">Password saved.</p>}
+      {open && (
+        <form className="password-form" onSubmit={submit}>
+          {hasPassword && <Input name="current" type="password" placeholder="Current password" autoComplete="current-password" required aria-label="Current password" />}
+          <Input name="password" type="password" placeholder="New password (10+ characters)" autoComplete="new-password" minLength={10} required aria-label="New password" />
+          <Input name="repeat" type="password" placeholder="New password again" autoComplete="new-password" minLength={10} required aria-label="New password again" />
+          {error && <p className="error">{error}</p>}
+          <div className="password-form-actions">
+            <Button disabled={busy}>{busy ? "Saving…" : "Save password"}</Button>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </form>
+      )}
+      {!open && hasPassword && canRemove && (
+        <>
+          {error && <p className="error">{error}</p>}
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => run(async () => { await api("/password", { method: "DELETE" }); await onChange(); })}>Remove password</Button>
+        </>
+      )}
     </SettingsCard>
   );
 }
@@ -486,7 +547,7 @@ function TeamPanel({ workspaceId, myRole, myId }: { workspaceId: string; myRole:
     <>
       <SettingsCard
         title="Members"
-        description={<>Each person signs in with their own passkey.{myRole === "owner" && " Admins can invite and manage agents; only you can manage admins."}</>}
+        description={<>Each person signs in with their own passkey or password.{myRole === "owner" && " Admins can invite and manage agents; only you can manage admins."}</>}
       >
         {error && <p className="error">{error}</p>}
         <ul className="list">

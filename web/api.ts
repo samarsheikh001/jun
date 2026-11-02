@@ -53,6 +53,11 @@ export async function signInWithPasskey(): Promise<void> {
   await api("/auth/login/verify", { body: { response } });
 }
 
+/** D-157: email + password. */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  await api("/auth/password", { body: { email, password } });
+}
+
 /** Turns WebAuthn and API errors into something worth showing a person. */
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) return error.message;

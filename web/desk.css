@@ -291,6 +291,10 @@ pre.code { margin: 0; padding: 10px 12px; background: var(--muted); border-radiu
 .auth-card > form + p, .auth-card > [data-slot="button"] + p { margin-top: 16px; }
 .auth-card [data-slot="button"] { width: 100%; }
 .auth-card > [data-slot="button"] { margin-top: 12px; }
+/* D-157: "or" between the passkey button and the password form. */
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 16px 0 4px; color: var(--muted-foreground); font-size: 12px; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.auth-card .link-button { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
 
 /* Pages use the full main area; panels are flat sections split by a rule, not boxed cards. */
 .content { width: 100%; padding: 24px 32px; display: grid; gap: 24px; align-content: start; }
@@ -2941,3 +2945,6 @@ a.ask-chip:hover { background: var(--muted); }
   .approval-keys { display: none; }
   .approval-foot { justify-content: flex-end; }
 }
+/* D-157: Settings → Account → Your password. */
+.password-form { display: grid; gap: 10px; max-width: 360px; }
+.password-form-actions { display: flex; gap: 8px; }

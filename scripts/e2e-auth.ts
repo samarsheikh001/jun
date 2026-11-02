@@ -148,7 +148,93 @@ await step("recovery with the setup token adds a new owner passkey", async () =>
   assert.equal((await fresh.call("/me")).json.user.name, "Ada");
 });
 
+// D-157: email + password beside passkeys.
+await step("password: set one, sign in with it, change it (other browsers signed out), remove rules", async () => {
+  assert.equal((await browser.call("/password")).json.hasPassword, false);
+  // No password yet: wrong-password and no-account answers look the same.
+  const none = await new Client().call("/auth/password", { body: { email: "ada@acme.test", password: "whatever-long-1" } });
+  assert.equal(none.status, 401);
+  assert.equal(none.json.error.code, "wrong_password");
+
+  assert.equal((await browser.call("/password", { method: "PUT", body: { password: "short" } })).json.error.code, "weak_password");
+  assert.equal((await browser.call("/password", { method: "PUT", body: { password: "first long password" } })).status, 200);
+  assert.equal((await browser.call("/password")).json.hasPassword, true);
+
+  const other = new Client();
+  const signIn = await other.call("/auth/password", { body: { email: "ADA@acme.test", password: "first long password" } });
+  assert.equal(signIn.status, 200, JSON.stringify(signIn.json));
+  assert.equal((await other.call("/me")).json.user.name, "Ada");
+  // Untrimmed: a trailing space is a different password.
+  assert.equal((await new Client().call("/auth/password", { body: { email: "ada@acme.test", password: "first long password " } })).status, 401);
+
+  // Changing needs the current one, and signs out the other browser but not this one.
+  assert.equal((await browser.call("/password", { method: "PUT", body: { current: "nope nope nope", password: "second long password" } })).status, 403);
+  assert.equal((await browser.call("/password", { method: "PUT", body: { current: "first long password", password: "second long password" } })).status, 200);
+  assert.equal((await other.call("/me")).json.user, null);
+  assert.equal((await browser.call("/me")).json.user.name, "Ada");
+  assert.equal((await new Client().call("/auth/password", { body: { email: "ada@acme.test", password: "second long password" } })).status, 200);
+
+  // With a password, the last passkey can go; then the password can't.
+  const keys = (await browser.call("/passkeys")).json.passkeys as { id: string }[];
+  assert.ok(keys.length >= 1);
+  for (const key of keys) assert.equal((await browser.call(`/passkeys/${encodeURIComponent(key.id)}`, { method: "DELETE" })).status, 200);
+  assert.equal((await browser.call("/password", { method: "DELETE" })).json.error.code, "last_sign_in");
+  // A passkey again, then the password can be removed.
+  assert.equal((await browser.register("/passkeys", owner)).status, 200);
+  assert.equal((await browser.call("/password", { method: "DELETE" })).status, 200);
+  assert.equal((await new Client().call("/auth/password", { body: { email: "ada@acme.test", password: "second long password" } })).status, 401);
+});
+
+await step("password: an invitee joins with one; the link stays single use; existing account joins by signing in", async () => {
+  const workspaceId = (await browser.call("/me")).json.memberships[0].workspaceId as string;
+  const invite = await browser.call(`/workspaces/${workspaceId}/invites`, { body: { role: "agent" } });
+  const token = new URL(invite.json.url).pathname.split("/").pop()!;
+  const joiner = new Client();
+  assert.equal((await joiner.call(`/invites/${token}/password`, { body: { name: "Hedy", email: "hedy@acme.test", password: "tiny" } })).status, 400);
+  const res = await joiner.call(`/invites/${token}/password`, { body: { name: "Hedy", email: "hedy@acme.test", password: "frequency hopping 1942" } });
+  assert.equal(res.status, 200, JSON.stringify(res.json));
+  assert.equal((await joiner.call("/me")).json.memberships[0].role, "agent");
+  assert.equal((await joiner.call("/passkeys")).json.passkeys.length, 0);
+  assert.equal((await joiner.call("/password")).json.hasPassword, true);
+  // Used: nobody else gets an account from it.
+  const again = await new Client().call(`/invites/${token}/password`, { body: { name: "Eve", email: "eve@acme.test", password: "another long one 1" } });
+  assert.equal(again.status, 410);
+  assert.equal((await new Client().call("/auth/password", { body: { email: "eve@acme.test", password: "another long one 1" } })).status, 401);
+
+  // A second workspace's invite: Hedy signs in with her password and accepts.
+  const second = await browser.call("/workspaces", { body: { name: "Second" } });
+  assert.equal(second.status, 200, JSON.stringify(second.json));
+  const secondId = second.json.workspaceId as string;
+  const invite2 = await browser.call(`/workspaces/${secondId}/invites`, { body: { role: "agent" } });
+  const token2 = new URL(invite2.json.url).pathname.split("/").pop()!;
+  const fresh = new Client();
+  assert.equal((await fresh.call(`/invites/${token2}/password`, { body: { name: "Hedy", email: "hedy@acme.test", password: "frequency hopping 1942" } })).json.error.code, "email_taken");
+  assert.equal((await fresh.call("/auth/password", { body: { email: "hedy@acme.test", password: "frequency hopping 1942" } })).status, 200);
+  assert.equal((await fresh.call(`/invites/${token2}/accept`, { body: {} })).status, 200);
+  assert.equal((await fresh.call("/me")).json.memberships.length, 2);
+});
+
+await step("password: guessing locks the email after 10 misses", async () => {
+  const guesser = new Client();
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await guesser.call("/auth/password", { body: { email: "hedy@acme.test", password: `guess number ${i}` } })).status, 401);
+  }
+  const locked = await guesser.call("/auth/password", { body: { email: "hedy@acme.test", password: "frequency hopping 1942" } });
+  assert.equal(locked.status, 429);
+  assert.equal(locked.json.error.code, "too_many_attempts");
+});
+
+await step("password: the setup token sets a new owner password and signs the owner out elsewhere", async () => {
+  const fresh = new Client();
+  assert.equal((await fresh.call("/recover/password", { body: { token: "wrong-token-wrong-token", password: "recovered password 1" } })).status, 403);
+  assert.equal((await fresh.call("/recover/password", { body: { token: SETUP_TOKEN, password: "recovered password 1" } })).status, 200);
+  assert.equal((await fresh.call("/me")).json.user.name, "Ada");
+  assert.equal((await browser.call("/me")).json.user, null);
+  assert.equal((await browser.call("/auth/password", { body: { email: "ada@acme.test", password: "recovered password 1" } })).status, 200);
+});
+
 await step("signed-out requests to protected routes get 401", async () => {
+  assert.equal((await new Client().call("/password")).status, 401);
   assert.equal((await new Client().call("/passkeys")).status, 401);
 });
 

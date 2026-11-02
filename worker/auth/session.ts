@@ -41,7 +41,13 @@ export async function destroySession(c: AppContext): Promise<void> {
   deleteCookie(c, SESSION_COOKIE, { path: "/", secure: isSecure(c) });
 }
 
-export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
+/** Signs this person out everywhere but this browser (after a password change). */
+export async function endOtherSessions(c: AppContext, userId: string): Promise<void> {
+  const token = getCookie(c, SESSION_COOKIE);
+  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?").bind(userId, token ? await sha256(token) : "").run();
+}
+
+export const requireUser =createMiddleware<AppEnv>(async (c, next) => {
   const user = await getSessionUser(c);
   if (!user) throw new HttpError(401, "unauthenticated", "Sign in first.");
   c.set("user", user);
