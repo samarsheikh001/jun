@@ -7,6 +7,7 @@ import { deskHref, navigate } from "../lib/router.ts";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { SkelText } from "@/components/ui/skeleton.tsx";
 import { AskChat, askDesk, AskThreads, newAskChat, useAskStarted } from "./AskChat.tsx";
+import { assistantOff, type AssistantAi } from "./AskPanel.tsx";
 
 // I-19 (D-127): Home, the page a workspace opens on. The daily brief (numbers worked out on the
 // server, worded by the AI when it's on, else written in code; cached per member per day) and,
@@ -16,7 +17,7 @@ interface BriefResponse {
   brief: Brief;
   /** The AI is wording today's brief: POST …/home/brief for it. */
   writing: boolean;
-  ai: { available: boolean; reason?: string; message?: string };
+  ai: AssistantAi;
 }
 
 /** Kept for this tab, so coming back to Home shows it at once (then refreshes it quietly). */
@@ -357,13 +358,7 @@ export function HomePage({ workspaceId, me, role, hub }: { workspaceId: string; 
       .finally(() => setRefreshing(false));
   };
 
-  const ai = data?.ai;
-  const settingsLink = role === "agent" ? "an admin can turn it on in Settings → AI" : <>turn it on in <DeskLink path="/settings/ai">Settings → AI</DeskLink></>;
-  const off: ReactNode | null = !ai || ai.available
-    ? null
-    : ai.reason === "ai_off"
-      ? <>The assistant needs the AI, which is off for this workspace: {settingsLink}.</>
-      : <>{ai.message} {role === "agent" ? null : <DeskLink path="/settings/ai">Settings → AI</DeskLink>}</>;
+  const off = assistantOff(data?.ai, role);
 
   const started = useAskStarted(workspaceId);
   const askAbout = (question: string) => {

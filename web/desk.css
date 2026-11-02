@@ -2610,6 +2610,37 @@ a.digest-item:hover .digest-arrow { transform: translateX(2px); }
 .home-ask, .home-ask * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .home-ask [data-slot="scroll-area-viewport"] { scrollbar-width: none; }
 .home-chat .wchat-rows { padding: 16px 16px 12px; gap: 16px; }
+/* D-158: the assistant on every other page. A window-tall pane on the right like Home's: beside the page
+   on wide screens (the page makes room), over it on the inbox, narrower screens and phones. */
+.ask-panel {
+  --ask-w: clamp(360px, 30vw, 440px);
+  position: fixed; z-index: 55; top: 8px; right: 8px; bottom: 8px; width: var(--ask-w); max-width: calc(100vw - 16px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border); border-radius: calc(var(--radius) + 6px); background: var(--background);
+  box-shadow: 0 24px 64px -12px rgb(0 0 0 / 0.22), 0 4px 12px rgb(0 0 0 / 0.08);
+  animation: ask-panel-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ask-panel-in { from { opacity: 0; transform: translateX(16px); } }
+@media (prefers-reduced-motion: reduce) { .ask-panel { animation: none; } }
+.ask-panel .home-chat, .ask-panel .home-chat.empty { flex: 1; height: auto; min-height: 0; margin: 0; border: 0; border-radius: 0; background: transparent; }
+.ask-panel .home-chat.empty { justify-content: flex-end; }
+.ask-panel .home-ask-head { flex: none; }
+.ask-panel, .ask-panel * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+@media (min-width: 1280px) {
+  .desk-inset[data-ask="beside"] { padding-right: calc(clamp(360px, 30vw, 440px) + 16px); }
+  .desk-inset[data-ask="beside"] .ask-panel { box-shadow: none; animation: none; }
+}
+@media (max-width: 640px) {
+  .ask-panel { inset: 0; width: auto; max-width: none; border: 0; border-radius: 0; }
+}
+/* The page's subject the next question is about (a chat, a person, an agent file); × leaves it out. */
+.ask-context { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 16px -4px; font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.ask-context-kind { flex: none; }
+.ask-context-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 8px; border-radius: 999px; background: var(--muted); color: var(--foreground); font-weight: 500; }
+.ask-context-drop { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.ask-context-drop:hover { background: var(--muted); color: var(--foreground); }
+.ask-context-drop:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.ask-context-drop > svg { width: 12px; height: 12px; }
 .ask-off { margin: 0; padding: 16px 16px 4px; font-size: 13px; line-height: 20px; color: var(--muted-foreground); }
 .ask-off a { color: var(--foreground); }
 .skel-composer { display: flex; align-items: center; min-height: 44px; margin: 12px; padding: 0 18px; border-radius: 22px; background: var(--card); box-shadow: var(--shadow-md); }

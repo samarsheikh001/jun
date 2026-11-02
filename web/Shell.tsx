@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, ContactsIcon, KeyIcon, FlashIcon, HelpIcon, HomeIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
+import { ArrowUpIcon, AsteriskIcon, BotIcon, ChannelsIcon, ChartColumnIcon, ChatIcon, ColumnsIcon, ContactsIcon, KeyIcon, FlashIcon, HelpIcon, HomeIcon, InboxIcon, McpIcon, SearchIcon, SettingsIcon, SignOutIcon, UsersIcon } from "@/components/icons";
 import { knownUpdate, UPDATE_HELP, useUpdate, type LatestRelease } from "./lib/updates.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
@@ -24,6 +24,7 @@ import { LiveSocket } from "./lib/socket.ts";
 import { playChime, unlockSoundOnInteraction } from "./lib/sound.ts";
 import { ReportsPage } from "./reports/ReportsPage.tsx";
 import { HomePage } from "./home/HomePage.tsx";
+import { AskPanel, focusAsk, setAskPanel, useAskPanelOpen } from "./home/AskPanel.tsx";
 import { deskHref, deskPathname, navigate, usePath } from "./lib/router.ts";
 import { slugOf, withoutWorkspace } from "./lib/workspace-url.ts";
 import { movedFromSettings, SettingsDialog } from "./SettingsDialog.tsx";
@@ -75,6 +76,15 @@ const NAV_GROUPS = [
 ] as const;
 
 /** Which sidebar entry a path belongs to. */
+/** D-158: Ctrl/⌘ J opens the assistant, goes to it when it's open elsewhere, and closes it from inside; the sidebar button just toggles. On Home it's the docked one. */
+function toggleAssistant(fromKey: boolean): void {
+  if (sectionOf(deskPathname()) === "home") return focusAsk();
+  const panel = document.querySelector(".ask-panel");
+  if (panel && fromKey && !panel.contains(document.activeElement)) return focusAsk();
+  setAskPanel(!panel);
+  if (!panel) focusAsk();
+}
+
 function sectionOf(pagePath: string) {
   return pagePath.startsWith("/home") ? "home"
     : pagePath.startsWith("/knowledge") ? "knowledge"
@@ -395,6 +405,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       const { inbox, thread } = bridge;
       switch (command) {
         case "palette": return overlay === "palette" ? closeOverlay() : openOverlay("palette");
+        case "assistant": return toggleAssistant(true);
         case "help": return openOverlay("help");
         case "go-home": return navigate("/home");
         case "go-inbox": return navigate("/inbox");
@@ -413,7 +424,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented && !(e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey))) return;
+      if (e.defaultPrevented && !((e.key.toLowerCase() === "k" || e.key.toLowerCase() === "j") && (e.ctrlKey || e.metaKey))) return;
       const otherDialog = Array.from(document.querySelectorAll("dialog[open]")).some((d) => !d.classList.contains("palette"));
       const { command, state } = dispatchShortcut(
         {
@@ -455,6 +466,10 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const obDone = ob ? STEP_ORDER.filter((k) => ob.steps[k]).length : 0;
   const showGetStarted = Boolean(ob && !ob.dismissed && obDone < STEP_ORDER.length && workspace.role !== "agent");
   const canEdit = workspace.role !== "agent";
+  // D-158: the assistant beside every page but Home (where it's already docked). Over the inbox,
+  // whose own panels need the width; beside the others on wide screens (CSS decides).
+  const askOpen = useAskPanelOpen();
+  const askShown = askOpen && section !== "home";
   const conversationId = pagePath.match(/^\/inbox\/([\w-]+)/)?.[1] ?? null;
   // D-91: until the widget is on a site, its sidebar entry carries a dot (it still opens the Playground;
   // D-121: opening straight on the Install sheet was confusing, the page's chip and button lead there).
@@ -564,6 +579,15 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
                 <kbd className="ml-auto">{modKey()} K</kbd>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {section !== "home" && (
+              <SidebarMenuItem>
+                <SidebarMenuButton type="button" onClick={() => toggleAssistant(false)} isActive={askShown} aria-pressed={askShown} aria-keyshortcuts="Control+J Meta+J" tooltip={`Assistant (${modKey()} J)`}>
+                  <AsteriskIcon />
+                  <span>Assistant</span>
+                  <kbd className="ml-auto">{modKey()} J</kbd>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <ThemeButton />
             </SidebarMenuItem>
@@ -627,7 +651,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           </SidebarMenu>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset className="desk-inset">
+      <SidebarInset className="desk-inset" data-ask={askShown ? (section === "inbox" ? "over" : "beside") : undefined}>
       <header className="desk-mobile-bar">
         <SidebarTrigger />
         <div className="brand"><DeskIcon /><span>Jun</span></div>
@@ -665,6 +689,7 @@ export function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
       )}
       </PageErrorBoundary>
       </ScrollArea>
+      {askShown && <PageErrorBoundary><AskPanel workspaceId={workspace.workspaceId} userId={me.user.id} role={workspace.role} path={pagePath} overlay={section === "inbox"} /></PageErrorBoundary>}
       {settingsOpen && <PageErrorBoundary><SettingsDialog me={me} workspace={workspace} path={path} onClose={closeSettings} /></PageErrorBoundary>}
       </SidebarInset>
       {overlay === "palette" && <CommandPalette workspaceId={workspace.workspaceId} meId={me.user.id} onClose={closeOverlay} onHelp={openHelp} onToast={showNotice} />}

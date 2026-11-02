@@ -54,6 +54,7 @@ import {
   ToolIcon,
   TrashIcon,
   UsersIcon,
+  XIcon,
 } from "../components/icons.tsx";
 import { formatTime } from "../lib/thread.ts";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.tsx";
@@ -77,6 +78,8 @@ import { InsightCharts } from "./InsightCharts.tsx";
 import { TestChatCard } from "./TestChatCard.tsx";
 import { AskInput, highlight, type AskInputHandle } from "./AskInput.tsx";
 import { DeskLink } from "./DeskLink.tsx";
+import { mentionToken, type MentionOption } from "../lib/ask-mentions.ts";
+import { contextLabel } from "../lib/ask-context.ts";
 
 // I-19 (D-127): Home's ask box. A streamed chat with the desk assistant (POST …/home/ask, NDJSON): its
 // read steps, answers that link to the desk's own pages, and a proposed change as a card with Confirm /
@@ -992,7 +995,8 @@ function AssistantRow({ ws, turn, live, thread, latest }: { ws: string; turn: As
 }
 
 /** `userId`: the member, so the thread is kept in this browser for them (D-132); without it, this tab only. */
-export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string; userId?: string; disabled: ReactNode | null }) {
+/** `context` (D-158): the page's subject; a typed question starts with its reference unless it's dropped. */
+export function AskChat({ workspaceId, userId, disabled, context, onDropContext }: { workspaceId: string; userId?: string; disabled: ReactNode | null; context?: MentionOption | null; onDropContext?: () => void }) {
   // Before the first paint, so a reload opens on the kept thread.
   useLayoutEffect(() => {
     if (userId) bind(workspaceId, userId);
@@ -1009,6 +1013,10 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
     askDesk(workspaceId, text);
     setMessage("");
     input.current?.focus();
+  };
+  const sendTyped = (text: string) => {
+    if (!context) return send(text);
+    send(text.includes(`@${context.kind}:${context.id}`) ? text : `${mentionToken(context)} ${text.trim()}`);
   };
   const lastQuestion = [...thread.turns].reverse().find((t) => t.role === "user");
   const empty = thread.turns.length === 0 && !thread.live;
@@ -1083,12 +1091,23 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
         </div>
       )}
       {disabled && <p className="ask-off">{disabled}</p>}
+      {context && !disabled && (
+        <div className="ask-context" title={`Your question will be about ${contextLabel(context)}`}>
+          <span className="ask-context-kind">On screen</span>
+          <span className="ask-context-name">{contextLabel(context)}</span>
+          {onDropContext && (
+            <button type="button" data-plain className="ask-context-drop" aria-label="Leave this out of the question" title="Leave it out" onClick={onDropContext}>
+              <XIcon />
+            </button>
+          )}
+        </div>
+      )}
       <form
         className="ask-bar"
         data-disabled={disabled ? "" : undefined}
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
-          send(message);
+          sendTyped(message);
         }}
       >
         <AskInput
@@ -1096,13 +1115,13 @@ export function AskChat({ workspaceId, userId, disabled }: { workspaceId: string
           ws={workspaceId}
           value={message}
           onChange={setMessage}
-          onSend={send}
+          onSend={sendTyped}
           onNewChat={() => {
             newAskChat(workspaceId);
             input.current?.focus();
           }}
           disabled={Boolean(disabled)}
-          placeholder={disabled ? "The assistant needs the AI on" : "Ask, @ to mention a chat or person, / for commands"}
+          placeholder={disabled ? "The assistant needs the AI on" : "Ask, @ to mention, / for commands"}
         />
         {streaming ? (
           <Button type="button" size="icon-sm" aria-label="Stop" title="Stop" onClick={() => stop(workspaceId)}>

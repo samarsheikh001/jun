@@ -108,3 +108,11 @@ test("shortcuts: g then i/v/d/s; the prefix expires and takes precedence over r"
   assert.equal(run(key("r"), inbox, g.state, 1000 + PREFIX_TIMEOUT_MS + 1).command, "reply", "expired prefix");
   assert.equal(run(key("i", { typing: true }), inbox, g.state, 1100).command, null);
 });
+
+test("shortcuts: Ctrl+J / ⌘J toggles the assistant, also while typing, never over a dialog", () => {
+  assert.equal(run(key("j", { ctrlKey: true, typing: true })).command, "assistant");
+  assert.equal(run(key("J", { metaKey: true })).command, "assistant");
+  assert.equal(run(key("j", { ctrlKey: true }), { inbox: false, modal: "other" }).command, null);
+  assert.equal(run(key("j", { ctrlKey: true }), { inbox: true, modal: "palette" }).command, null);
+  assert.equal(run(key("j"), { inbox: true, modal: "none" }).command, "next");
+});

@@ -91,6 +91,7 @@ export function matchesFilter(query: string, fields: readonly (string | null | u
 
 export type ShortcutCommand =
   | "palette"
+  | "assistant"
   | "help"
   | "next"
   | "previous"
@@ -166,6 +167,10 @@ export function dispatchShortcut(input: KeyInput, state: ShortcutState, context:
   if ((input.ctrlKey || input.metaKey) && !input.altKey && !input.shiftKey && key === "k") {
     return context.modal === "other" ? none : { command: "palette", state: INITIAL_SHORTCUT_STATE };
   }
+  // D-158: the assistant panel, also from a text field (its own prompt bar closes it again).
+  if ((input.ctrlKey || input.metaKey) && !input.altKey && !input.shiftKey && key === "j") {
+    return context.modal === "none" ? { command: "assistant", state: INITIAL_SHORTCUT_STATE } : none;
+  }
   if (context.modal !== "none" || input.typing || input.ctrlKey || input.metaKey || input.altKey) return none;
 
   if (state.prefix === "g" && now - state.at <= PREFIX_TIMEOUT_MS && !input.shiftKey) {
@@ -185,6 +190,7 @@ export const SHORTCUT_HELP: { group: string; keys: { keys: string[]; alt?: strin
     group: "Anywhere",
     keys: [
       { keys: ["Ctrl", "K"], label: "Command palette" },
+      { keys: ["Ctrl", "J"], label: "Assistant" },
       { keys: ["?"], label: "Keyboard shortcuts" },
       { keys: ["g", "h"], label: "Go to Home" },
       { keys: ["g", "i"], label: "Go to Inbox" },

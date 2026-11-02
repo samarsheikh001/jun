@@ -41,6 +41,14 @@ async function takeTurn(c: AppContext, workspaceId: string): Promise<void> {
   if (!ok) throw new HttpError(429, "rate_limited", `That's a lot of questions: try again in ${Math.max(1, Math.ceil(retryAfterMs / 60_000))} min.`);
 }
 
+// D-158: whether the assistant can answer, for its panel on other pages (Home reads it with the brief).
+home.get("/workspaces/:id/home/ai", async (c) => {
+  const workspaceId = c.req.param("id");
+  await member(c, workspaceId);
+  const available = await assistantModel(c.env, workspaceId);
+  return c.json({ ai: "model" in available ? { available: true as const } : { available: false as const, reason: available.skipped, message: available.message } });
+});
+
 home.get("/workspaces/:id/home/brief", async (c) => {
   const workspaceId = c.req.param("id");
   await member(c, workspaceId);
